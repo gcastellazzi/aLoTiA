@@ -6,7 +6,10 @@
   --muted: #666;
   --line: #d6d6d6;
   --panel: #f6f6f6;
-  --accent: #b0272f;
+  /* Brick: the same house colour the guide uses. Not the same as the red the
+     THRUST LINE is drawn in (#A2142F, kept as it is because every published
+     figure uses it); this one is chrome, that one is data. */
+  --accent: #9c3a29;
 }
 
 * { box-sizing: border-box; }

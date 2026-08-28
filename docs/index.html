@@ -11,13 +11,21 @@
       --surface: #ffffff;
       --text: #1b2129;
       --muted: #667081;
-      --accent: #1e4d8c;
-      --accent-soft: #e8f0fa;
+      /* Brick. The application has always drawn in a red of its own, and the
+         guide used to answer it in blue; one warm accent for both is the whole
+         point of a house colour. Earthier than the university's crimson,
+         because the subject is fired clay. */
+      --accent: #9c3a29;
+      --accent-soft: #f8ece8;
+      /* Equations are set in a cool slate instead, so that a formula is never
+         mistaken for the emphasis colour sitting next to it. */
+      --eq: #3f4a58;
+      --eq-soft: #edf0f3;
       /* The application's own inks, so the guide and the drawing agree. */
-      --lot: #a32b22;          /* the line of thrust, and the load line */
-      --lot-soft: #f8ebe9;
-      --cable: #3d6b4a;        /* Hooke's cable */
-      --cable-soft: #e9f1eb;
+      --lot: #a2142f;          /* the line of thrust, and the load line */
+      --lot-soft: #f8ebee;
+      --cable: #1f6f3f;        /* Hooke's cable */
+      --cable-soft: #e7f1eb;
       --stone: #8a6a3f;        /* the voussoirs */
       --stone-soft: #f6f0e6;
       --border: #e3e6ea;
@@ -33,12 +41,14 @@
         --surface: #1b2027;
         --text: #e6e9ed;
         --muted: #9aa4b1;
-        --accent: #8fb5e4;
-        --accent-soft: #1d2a3b;
-        --lot: #e08a80;
-        --lot-soft: #2b1d1b;
-        --cable: #94c4a2;
-        --cable-soft: #1a251d;
+        --accent: #e2957f;
+        --accent-soft: #2c1d18;
+        --eq: #a9b7c6;
+        --eq-soft: #212831;
+        --lot: #e58198;
+        --lot-soft: #2b1b20;
+        --cable: #79c295;
+        --cable-soft: #17241c;
         --stone: #d2ae7c;
         --stone-soft: #262019;
         --border: #2e353f;
@@ -64,7 +74,7 @@
     .num, table td, code, kbd { font-variant-numeric: tabular-nums; }
 
     header {
-      background: linear-gradient(135deg, #163a6b 0%, #1e4d8c 55%, #2b6cb0 100%);
+      background: linear-gradient(135deg, #5c2018 0%, #9c3a29 55%, #b8583f 100%);
       color: #fff;
       padding: 2.5rem 1.25rem 2rem;
     }
@@ -200,7 +210,7 @@
     }
 
     .callout {
-      background: var(--accent-soft);
+      background: var(--code-bg);
       border-left: 4px solid var(--accent);
       padding: 0.85rem 1rem;
       border-radius: 0 8px 8px 0;
@@ -276,8 +286,8 @@
     .eq {
       margin: 1rem 0;
       padding: 0.9rem 1.1rem;
-      background: var(--accent-soft);
-      border-left: 3px solid var(--accent);
+      background: var(--eq-soft);
+      border-left: 3px solid var(--eq);
       border-radius: 0 6px 6px 0;
       font-size: 1.05rem;
       overflow-x: auto;
@@ -293,11 +303,11 @@
     .keyidea {
       margin: 1.1rem 0;
       padding: 0.9rem 1.1rem;
-      background: var(--lot-soft);
-      border-left: 3px solid var(--lot);
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
       border-radius: 0 6px 6px 0;
     }
-    .keyidea strong { color: var(--lot); }
+    .keyidea strong { color: var(--accent); }
 
     /* What each colour on the drawing means, matching the application. */
     .legend {
