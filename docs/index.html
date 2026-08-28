@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>aLOTofImaginArches — User Guide</title>
+  <meta name="description" content="User guide for aLOTofImaginArches: interactive funicular analysis and line of thrust for masonry arches, in the browser.">
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --surface: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #1e4d8c;
+      --accent-soft: #e8f0fa;
+      --border: #e5e7eb;
+      --code-bg: #f3f4f6;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      --radius: 12px;
+      --max: 980px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    header {
+      background: linear-gradient(135deg, #163a6b 0%, #1e4d8c 55%, #2b6cb0 100%);
+      color: #fff;
+      padding: 2.5rem 1.25rem 2rem;
+    }
+
+    header .wrap {
+      max-width: var(--max);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    header img {
+      width: 110px;
+      height: auto;
+      border-radius: 10px;
+      background: #fff;
+      padding: 0.35rem;
+    }
+
+    header h1 {
+      margin: 0 0 0.35rem;
+      font-size: clamp(1.6rem, 3vw, 2.1rem);
+      line-height: 1.2;
+    }
+
+    header p {
+      margin: 0;
+      color: #ffffff;
+      opacity: 1;
+      max-width: 52rem;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+    }
+
+    nav.toc {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    nav.toc .wrap {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 0.65rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      font-size: 0.92rem;
+    }
+
+    nav.toc a {
+      color: var(--accent);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    nav.toc a:hover { text-decoration: underline; }
+
+    main {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+
+    h2 {
+      margin-top: 0;
+      color: var(--accent);
+      font-size: 1.45rem;
+      border-bottom: 2px solid var(--accent-soft);
+      padding-bottom: 0.45rem;
+    }
+
+    h3 {
+      margin-top: 1.5rem;
+      font-size: 1.08rem;
+      color: #111827;
+    }
+
+    p, li { color: #374151; }
+
+    ul, ol { padding-left: 1.25rem; }
+
+    li { margin: 0.35rem 0; }
+
+    code, kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9em;
+      background: var(--code-bg);
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+    }
+
+    figure {
+      margin: 1.25rem 0;
+      padding: 0;
+    }
+
+    figure img {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: block;
+    }
+
+    figcaption {
+      margin-top: 0.55rem;
+      font-size: 0.92rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .callout {
+      background: var(--accent-soft);
+      border-left: 4px solid var(--accent);
+      padding: 0.85rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin: 1rem 0;
+    }
+
+    .callout strong { color: var(--accent); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+      margin: 1rem 0;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.55rem 0.65rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f9fafb;
+      color: #111827;
+    }
+
+    .steps li { margin-bottom: 0.5rem; }
+
+    .launch {
+      display: inline-block;
+      margin-top: 0.9rem;
+      padding: 0.6rem 1.15rem;
+      background: #fff;
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+    }
+
+    .launch:hover { background: var(--accent-soft); }
+
+    .legacy { opacity: 0.95; }
+
+    .legacy h2 { color: var(--muted); border-bottom-color: var(--border); }
+
+    .keyparam th:first-child { width: 34%; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+
+    footer {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 0 1.25rem 3rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    footer a { color: var(--accent); }
+
+    @media (max-width: 640px) {
+      header .wrap { grid-template-columns: 1fr; text-align: center; }
+      header img { margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <img src="images/logo.png" alt="aLOTofImaginArches logo">
+      <div>
+        <h1>aLOTofImaginArches — User Guide</h1>
+        <p>
+          Interactive graphical statics of masonry arches: trace an arch over a photograph, build the
+          force polygon, and move the line of thrust (LOT) through its three degrees of freedom while
+          the software checks whether it stays inside the masonry.
+          For graduate courses in masonry and historical structures (MHMS, HMWS).
+        </p>
+        <a class="launch" href="app/">Open the application &rarr;</a>
+      </div>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Table of contents">
+    <div class="wrap">
+      <a href="#start">Start here</a>
+      <a href="#idea">The idea</a>
+      <a href="#interface">Interface</a>
+      <a href="#workflow">Workflow</a>
+      <a href="#examples">Examples</a>
+      <a href="#trace">Trace your own</a>
+      <a href="#scale">Scale &amp; units</a>
+      <a href="#forces">Loads</a>
+      <a href="#dof">Three degrees of freedom</a>
+      <a href="#admissibility">Admissibility</a>
+      <a href="#bow">Reading both drawings</a>
+      <a href="#ends">Fixing both ends</a>
+      <a href="#profile">Whole profiles</a>
+      <a href="#dome">Poleni's dome</a>
+      <a href="#mechanism">Mechanism</a>
+      <a href="#cable">Hooke's cable</a>
+      <a href="#save">Save &amp; reopen</a>
+      <a href="#tips">Troubleshooting</a>
+      <a href="#matlab">MATLAB version</a>
+    </div>
+  </nav>
+
+  <main>
+    <section id="start">
+      <h2>Start here</h2>
+      <p>
+        <a href="app/"><strong>Open the application</strong></a>. There is nothing to install and no
+        licence to buy: it is a web page. It runs from any modern browser, on your own machine, offline
+        once the page has loaded.
+      </p>
+      <p>
+        Everything you do stays in your browser. No image, no traced arch and no saved file is ever
+        uploaded anywhere — which also means that closing the tab loses your work unless you
+        <a href="#save">save it</a> first.
+      </p>
+      <div class="callout">
+        <strong>Reading the source:</strong> the application is plain JavaScript modules with no build
+        step, so the code that runs is exactly the code in the repository, under
+        <code>docs/app/js/</code>. The mechanics lives in <code>js/core/</code> and is worth reading:
+        <code>statics.js</code> is the force polygon and the funicular polygon, with the classical terms
+        as its variable names.
+      </div>
+    </section>
+
+    <section id="idea">
+      <h2>The idea in one paragraph</h2>
+      <p>
+        A masonry arch stands not because it is in <em>the</em> state of equilibrium but because it is in
+        <em>one</em> of infinitely many. Under Heyman's assumptions — no tensile strength, unlimited
+        compressive strength, no sliding — the <strong>safe theorem</strong> says that if you can find
+        <em>any</em> line of thrust in equilibrium with the loads that lies wholly within the masonry,
+        the arch is safe. For a two-dimensional arch that line has three free parameters: the
+        <em>&infin;<sup>3</sup></em> of the classical literature. This software exists so that you can
+        take hold of those three parameters and move them.
+      </p>
+      <p>
+        The weights of the voussoirs, taken in order from one springing to the other, are laid end to end
+        down a vertical <strong>load line</strong>. A point off that line, the <strong>pole</strong>, is
+        joined to every division of it; those segments are the <strong>rays</strong>. Back in the drawing,
+        starting from a springing, you walk parallel to the first ray until the vertical through the first
+        block centroid, turn onto the second ray, and so on. The polygon that results is the
+        <strong>funicular polygon</strong>, and for an arch it is the <strong>line of thrust</strong>.
+      </p>
+    </section>
+
+    <section id="interface">
+      <h2>Main interface</h2>
+      <p>
+        The window has a control panel on the left and two plots: the <strong>arch and line of thrust</strong>,
+        and the <strong>force polygon</strong>. The graphics deliberately imitate the MATLAB original —
+        boxed axes with inward ticks, a pale grid, translucent force bands — so that the pictures in the
+        course slides and the pictures on screen mean the same thing.
+      </p>
+      <p>
+        The control panel is in three tabs. <strong>Geometry</strong> is everything that defines the
+        section; <strong>LoT</strong> everything that moves the line of thrust; <strong>Mechanism</strong>
+        everything about collapse. A few controls appear in more than one tab &mdash; the thrust
+        slider, the choice of A and B &mdash; so the mechanism can be driven without leaving it; they
+        are the same control, not a copy, and moving either moves both.
+      </p>
+      <p>
+        Under each plot sits a row of view tools: <em>fit</em>, <em>fit the width</em>, <em>fit the
+        height</em>, and zoom. Dragging pans, as before &mdash; except on the 3-D block view, where
+        dragging turns the solid and shift-dragging pans it.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Panel section</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Example</strong></td><td>Load one of the stored examples.</td></tr>
+          <tr><td><strong>Trace your own</strong></td><td>Load an image, trace intrados and extrados, generate blocks.</td></tr>
+          <tr><td><strong>Trace a whole profile</strong></td><td>Trace closed outlines instead, and cut them into blocks with radial cuts.</td></tr>
+          <tr><td><strong>Add a block</strong></td><td>Draw a single block of N sides.</td></tr>
+          <tr><td><strong>Points A and B</strong></td><td>Fix where the line of thrust starts and ends.</td></tr>
+          <tr><td><strong>Applied forces</strong></td><td>Add point loads by clicking.</td></tr>
+          <tr><td><strong>Scale and units</strong></td><td>Turn pixels into metres; choose the unit system.</td></tr>
+          <tr><td><strong>Equilibrium state</strong></td><td>The three sliders that move the line of thrust.</td></tr>
+          <tr><td><strong>Dome slice &mdash; Poleni</strong></td><td>Treat the arch as a lune of a dome: the weights follow the width.</td></tr>
+          <tr><td><strong>Mechanism</strong></td><td>Hinges, macro-blocks, the degree of freedom, and the collapse states.</td></tr>
+          <tr><td><strong>Admissibility</strong></td><td>The verdict: does the line stay inside the ring?</td></tr>
+          <tr><td><strong>Save and reopen</strong></td><td>Write the whole session to a JSON file, and read it back.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Under the plots runs a <strong>toolbar</strong> carrying the unit system, the switches for what
+        to draw, and the view reset. It is there rather than in the panel because those are the controls
+        you reach for constantly: the panel scrolls, the toolbar does not, and the plots keep the full
+        height of the window whatever you are doing in the panel.
+      </p>
+      <p>
+        Both plots keep <strong>equal scales on the two axes</strong>. This matters more than it sounds:
+        a ten per cent anisotropy is invisible to the eye and would falsify every length you read off the
+        drawing, so the property is enforced whenever the window changes shape.
+      </p>
+    </section>
+
+    <section id="workflow">
+      <h2>Recommended workflow</h2>
+      <ol class="steps">
+        <li><strong>Look at a stored example first</strong> to see what a finished analysis looks like.</li>
+        <li><strong>Load your own image</strong> — a photograph, a survey drawing, a scan of a plate.</li>
+        <li><strong>Trace the intrados, then the extrados.</strong></li>
+        <li><strong>Choose the number of voussoirs</strong> and generate the blocks.</li>
+        <li><strong>Set the scale</strong> from a known distance, and the out-of-plane thickness and unit weight.</li>
+        <li><strong>Add loads</strong>, if the exercise has any.</li>
+        <li><strong>Hunt for an admissible line</strong> with the three sliders.</li>
+        <li><strong>Save</strong> before you close the tab.</li>
+      </ol>
+      <div class="callout">
+        Steps 5 and 6 can be done in either order, but do them <em>before</em> reading any force off the
+        screen: until a scale is set, every length is in pixels and every &ldquo;weight&rdquo; is pixels
+        squared times a density.
+      </div>
+    </section>
+
+    <section id="examples">
+      <h2>Stored examples</h2>
+      <p>
+        Twenty-eight examples come with the application, converted from the <code>.mat</code> files of the
+        MATLAB version. Pick one from the <strong>Example</strong> menu; the background image, the blocks,
+        the weights and the stored solution all come with it.
+      </p>
+      <p>They are not all alike, and the application tells you which kind you have opened:</p>
+      <table>
+        <thead>
+          <tr><th>Kind</th><th>How many</th><th>What happens</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Complete and reproducible</td><td>15</td>
+            <td>The force polygon and the thrust line are <em>recomputed from the geometry</em> and agree
+                with the stored solution to machine precision. The thrust slider is live.</td>
+          </tr>
+          <tr>
+            <td>No stored solution</td><td>6</td>
+            <td>Geometry only; the solution is computed fresh.</td>
+          </tr>
+          <tr>
+            <td>Internally inconsistent</td><td>6</td>
+            <td>The stored solution does not correspond to the stored geometry — usually because loads
+                were applied but never written to the file, or blocks were added afterwards. A warning
+                appears and the <em>stored</em> line is drawn, because the application will not
+                manufacture one it cannot justify.</td>
+          </tr>
+        </tbody>
+      </table>
+      <figure>
+        <img src="images/example_funicular_poleni.png" alt="Poleni example with the funicular solution">
+        <figcaption>
+          Poleni's plate of 1748 for the dome of St Peter's — the drawing in which the hanging-chain
+          analogy was first put to a real structure, and the founding example of this method.
+        </figcaption>
+      </figure>
+    </section>
+
+    <section id="trace">
+      <h2>Trace your own arch</h2>
+      <ol class="steps">
+        <li><strong>Load an image</strong> under <em>Trace your own</em>. Any photograph will do; a
+            straight-on elevation gives a truer geometry than an oblique one.</li>
+        <li><strong>Trace intrados</strong> — click along the inner face. Double-click, or press
+            <kbd>Enter</kbd>, to finish; <kbd>Esc</kbd> cancels.</li>
+        <li><strong>Trace extrados</strong> — the outer face, the same way. Direction does not matter:
+            a reversed curve is detected and put right.</li>
+        <li><strong>Blocks</strong> — set how many voussoirs you want and press
+            <strong>Generate blocks</strong>. The two curves are resampled by arc length, so the joints
+            come out evenly spaced along the arch rather than evenly spaced in <em>x</em>.</li>
+      </ol>
+      <p>The trace is checked before it is used. You will be told if:</p>
+      <ul>
+        <li>there are too few points to define a curve;</li>
+        <li>the two curves coincide — there is no masonry between them;</li>
+        <li>the two curves <strong>cross</strong>, which produces inverted blocks. This one is easy to do
+            by accident near a springing and impossible to see afterwards, so it is caught explicitly.</li>
+      </ul>
+      <div class="callout">
+        <strong>Choosing the number of blocks:</strong> more blocks is not automatically better. The
+        computed line of thrust is a polygon inscribed in the true funicular curve, and a coarse polygon
+        can &ldquo;cut corners&rdquo; that a real arch cannot — so a very coarse subdivision is slightly
+        optimistic. Sixteen to thirty is a sensible range for a semicircular ring.
+      </div>
+    </section>
+
+    <section id="scale">
+      <h2>Scale and units</h2>
+      <p>
+        Until you set a scale, everything is in pixels. To set one, press <strong>Pick reference</strong>,
+        click two points whose real separation you know, and type that distance. Lengths then scale by
+        <em>k</em>, areas by <em>k</em><sup>2</sup>, and weights accordingly.
+      </p>
+      <table class="keyparam">
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Unit system</strong></td><td>SI (m, kN), N–mm, or kgf–cm.</td></tr>
+          <tr><td><strong>Unit weight</strong></td>
+              <td>A <em>weight</em> density, so that <em>W</em> = area &times; thickness &times; &gamma;
+                  with no hidden <em>g</em>. About 20 kN/m³ for masonry.</td></tr>
+          <tr><td><strong>Thickness</strong></td>
+              <td>The out-of-plane depth, as a <em>physical</em> length. Getting this wrong is a factor of
+                  the scale on every force, and nothing downstream would flag it.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        After scaling, the application reports the <strong>span and rise</strong> of the arch. Read them.
+        They are the quickest check that the reference distance was entered correctly: if the span of a
+        bridge comes out as three metres, something went in wrong.
+      </p>
+    </section>
+
+    <section id="forces">
+      <h2>Applied loads</h2>
+      <p>
+        Type a magnitude, press <strong>Add a force</strong>, and click where it acts. Loads are taken as
+        vertical and downward.
+      </p>
+      <p>
+        A load and a voussoir weight are treated identically by the construction — both are stations on
+        the load line — so a point load simply joins the same ordered sequence as an extra station, and
+        the thrust line gains one vertex at its abscissa.
+      </p>
+    </section>
+
+    <section id="dof">
+      <h2>The three degrees of freedom</h2>
+      <p>
+        This is the heart of the tool. Three sliders, three parameters, and every combination is an
+        equilibrium state — though only some of them are <em>admissible</em>.
+      </p>
+      <table class="keyparam">
+        <thead><tr><th>Slider</th><th>What it moves</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Horizontal thrust</strong></td>
+            <td>The pole's distance from the load line. Moving the pole away raises the thrust and
+                flattens the line.</td>
+          </tr>
+          <tr>
+            <td><strong>Start on the springing joint</strong></td>
+            <td>Where the line leaves its springing: 0 at the intrados, 1 at the extrados.</td>
+          </tr>
+          <tr>
+            <td><strong>Reaction at that springing</strong></td>
+            <td>The pole's height along the load line, which is exactly how the total weight divides
+                between the two vertical reactions.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        The <em>far</em> end is not a fourth parameter: it follows. The last ray is carried on until it
+        meets the other joint, and the application reports where it lands. If it lands outside that joint,
+        the line has left the masonry at the springing and the state is not admissible.
+      </p>
+      <div class="callout">
+        The last two sliders need a <strong>traced</strong> arch, because they slide the ends along
+        joints, and only a traced arch has joints. A stored example carries just its two springing points,
+        so for those only the thrust is free.
+      </div>
+    </section>
+
+    <section id="admissibility">
+      <h2>Admissibility</h2>
+      <p>
+        For every joint the application computes where the line crosses it, as a fraction running from
+        0 at the intrados to 1 at the extrados. The verdict tells you either how many joints the line
+        violates, which is worst and on which face — or, when it fits, how much room is left.
+      </p>
+      <p>
+        Switch on <strong>Joints and crossings</strong> under <em>Show</em> to see the crossings marked
+        one by one. A joint where the line runs close to a face is where a hinge would form.
+      </p>
+      <h3>What to try in class</h3>
+      <p>
+        Trace a semicircular ring and make it thin. Below a certain thickness <em>no</em> setting of the
+        three sliders is admissible: that is the classical minimum-thickness problem, and Heyman's answer
+        for a continuous ring is <em>t</em>/<em>r</em><sub>i</sub> &asymp; 0.108. Measured with this
+        software on a ring of 16 voussoirs, the least admissible ratio is about
+        <strong>0.115</strong> — and, without being told what to look for, the limit line it finds runs
+        through the <strong>extrados at both springings</strong> and needs a thrust of about one fifth of
+        the total weight, which is the textbook limit state.
+      </p>
+      <div class="callout">
+        Try the same thing with the two end sliders left at their midpoints and you will find nothing
+        admissible until about 0.198 — nearly twice Heyman's value. Pinning the ends of the line throws
+        away two of the three degrees of freedom, and the criterion becomes far stricter than the safe
+        theorem actually is. It is a good illustration of why the multiplicity matters.
+      </div>
+    </section>
+
+    <section id="bow">
+      <h2>Reading the two drawings together</h2>
+      <p>
+        In the force polygon the <strong>rays</strong> are drawn dashed, because they are construction
+        lines rather than forces: the only full lines there are the load line itself and the polygon.
+      </p>
+      <p>
+        Switch on <strong>Ray letters</strong> in the toolbar and each ray is lettered <em>a</em>,
+        <em>b</em>, <em>c</em>&hellip; down the load line, with <strong>the same letter on the
+        corresponding segment of the line of thrust</strong>. Segment <em>c</em> of the thrust line is
+        parallel to ray <em>c</em>, and the length of that ray is the force the segment carries. This is
+        Bow's notation, and it is what lets you carry a force from one drawing to the other by eye.
+      </p>
+      <div class="callout">
+        Past <em>z</em> the sequence continues <em>aa</em>, <em>ba</em>, <em>ca</em>&hellip;: the
+        first character cycles fastest, which keeps the letters that fall next to each other on the
+        drawing short and easy to tell apart.
+      </div>
+      <div class="callout">
+        On an arch with many voussoirs not every ray is lettered — they would overlap into a smear.
+        The application letters every second, third or fourth, whichever keeps the drawing readable,
+        and uses the <em>same</em> spacing in both plots so the correspondence holds.
+      </div>
+    </section>
+
+    <section id="ends">
+      <h2>Fixing both ends</h2>
+      <p>
+        Press <strong>Pick A</strong> and <strong>Pick B</strong> and click the two points the line
+        of thrust must run between, then switch on <strong>Impose both ends</strong>. The thrust
+        stays yours; the other two parameters become <em>results</em>, because once the thrust and
+        the two ends are fixed there is nothing left to choose.
+      </p>
+      <p>
+        The force polygon shows how it is done, in the classical way. A <strong>trial pole</strong>
+        <em>O&prime;</em> gives a preliminary funicular &mdash; drawn dashed on the arch &mdash;
+        which misses B; the closing error says how far the pole's <em>ordinate</em> was out, and the
+        corrected pole <em>O</em> sits directly above or below it, at the same thrust.
+      </p>
+      <div class="callout">
+        <strong>Try this.</strong> With both ends imposed, move the <em>reaction</em> slider. The
+        trial pole travels a long way and the correction stretches with it &mdash; and the final
+        pole does not move at all. It cannot: the correction is exact, not a search, so wherever
+        you start from you arrive at the same place.
+      </div>
+    </section>
+
+    <section id="profile">
+      <h2>Tracing a whole profile</h2>
+      <p>
+        An intrados and an extrados describe a ring of even thickness and nothing else. For a
+        section the two faces cannot capture &mdash; a haunch filled to a horizontal extrados, a
+        pier that widens at its base, or the <strong>two shells of St Peter's dome</strong> &mdash;
+        trace the outline instead.
+      </p>
+      <ol class="steps">
+        <li><strong>Trace an outline</strong>, clicking round a closed curve, and press the button
+            again to close it. Repeat for as many curves as the section has.</li>
+        <li><strong>Pick the centre of the cuts.</strong></li>
+        <li>Set the number of blocks and press <strong>Cut into blocks</strong>.</li>
+      </ol>
+      <p>
+        Every outline is cut at the same angles, which is what makes the pieces at one cut belong to
+        the same voussoir. On a double shell each block therefore comes out in <strong>two
+        pieces</strong>, and it is weighed as both: its centroid is the centroid of the pair, which
+        for a dome is precisely the quantity the analysis turns on.
+      </p>
+      <div class="callout">
+        Where a cut crosses several shells, the joint is taken across the whole cut &mdash; the air
+        between the shells included. The admissibility check is therefore approximate on a
+        multi-shell section, and generous rather than strict.
+      </div>
+    </section>
+
+    <section id="dome">
+      <h2>Poleni's dome</h2>
+      <p>
+        A barrel vault cut into voussoirs gives blocks of <strong>constant width</strong>, and a
+        block weighs its area times that width. A <strong>dome</strong> cut into lunes gives nothing
+        of the sort: each lune is bounded by two meridian planes, so its width is proportional to
+        the distance from the axis &mdash; broad at the major parallel, closing to nothing at the
+        crown. That is what Poleni saw in 1748, and it is why a dome is not an arch.
+      </p>
+      <p>
+        Switch on <strong>Treat the arch as a dome lune</strong> in the Dome panel, set the slice
+        angle, and the weights follow &mdash; and so does the line of thrust. The panel reports how
+        far the lune tapers, which is the number that explains the result before you look at the
+        drawing.
+      </p>
+      <table>
+        <thead><tr><th>Same ring, 16 equal blocks, 15&deg; slice</th><th>barrel</th><th>dome</th></tr></thead>
+        <tbody>
+          <tr><td>share of the total weight taken by a springing block</td><td>6.25&nbsp;%</td><td>9.75&nbsp;%</td></tr>
+          <tr><td>share taken by the crown block</td><td>6.25&nbsp;%</td><td>0.96&nbsp;%</td></tr>
+        </tbody>
+      </table>
+      <p>
+        The <strong>axis of revolution</strong> defaults to the vertical through the mid-point of
+        the two springings, which is right for any symmetric arch. Where it is not &mdash; a
+        historical plate whose dome is off-centre in the crop &mdash; type the abscissa, or press
+        <strong>Pick the axis on the drawing</strong> and click it.
+      </p>
+      <div class="callout">
+        The weight of each voussoir is computed by <strong>Pappus' theorem</strong>,
+        <em>V</em> = <em>A</em>&thinsp;&theta;&thinsp;<em>r&#772;</em>, with <em>r&#772;</em> the
+        distance of the block's centroid from the axis. It is exact for a plane region turned about
+        an axis in its plane &mdash; not an approximation to be refined.
+      </div>
+
+      <h3>Seeing the blocks</h3>
+      <p>
+        The right-hand pane carries two tabs. <strong>Force polygon</strong> is the construction;
+        <strong>Blocks</strong> shows the voussoirs as solids in three dimensions &mdash; straight
+        prisms of the thickness you set, or, with Poleni on, the revolved lune with the axis marked.
+        Drag to turn nothing: the viewpoint is fixed, as it was in the MATLAB version, but you can
+        pan and zoom as in the other plots.
+      </p>
+    </section>
+
+    <section id="mechanism">
+      <h2>Mechanism and collapse</h2>
+      <p>
+        The line of thrust cannot leave the thickness of the arch. Where it would, it stays
+        <strong>hooked</strong> at the point &mdash; intrados or extrados &mdash; between two
+        voussoirs, and that point is a <strong>hinge</strong>. While the line runs clear of both
+        faces nothing is located: the arch is a single body on two supports and its equilibrium
+        state is not determined. Each face the line touches divides the arch into one more rigid
+        macro-block.
+      </p>
+
+      <h3>The count</h3>
+      <p>
+        Take the two springings as hinges throughout. Then <em>h</em> hinges carry
+        <em>h</em>&nbsp;&minus;&nbsp;1 bodies, each with three freedoms in the plane, and each hinge
+        removes two:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>interior hinges</th><th>hinges <em>h</em></th><th>bodies <em>b</em></th>
+            <th>3<em>b</em> &minus; 2<em>h</em></th><th>state</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>0</td><td>2</td><td>1</td><td>&minus;1</td>
+              <td>once hyperstatic &mdash; not determined</td></tr>
+          <tr><td>1</td><td>3</td><td>2</td><td>0</td>
+              <td>isostatic &mdash; the three-pin arch, equilibrium possible</td></tr>
+          <tr><td>2</td><td>4</td><td>3</td><td>+1</td>
+              <td>a mechanism &mdash; collapse</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Which arches this works on</h3>
+      <p>
+        Everything in this section needs the <strong>joints</strong>: the cuts between the
+        voussoirs, which is where the software asks whether the line has left the masonry. An arch
+        you trace yourself has them by construction. A <em>stored example</em> does not &mdash; the
+        MATLAB files saved the blocks and never saved the cuts &mdash; so the software recovers them
+        from the blocks: two voussoirs abut along one face, and that face is the joint. Twelve of the
+        twenty-eight examples come back as a whole chain and open the whole analysis. Where the
+        blocks are not a chain the panel says so and names the reason rather than inventing cuts and
+        drawing a verdict on them.
+      </p>
+
+      <h3>Driving it</h3>
+      <p>
+        Switch on <strong>Drive from the thrust</strong> in the Mechanism panel. The thrust slider
+        alone then commands the line: the other two parameters are chosen for you to hold it as far
+        from both faces as it will go, so hinges appear only when the thrust really forces them.
+        Start in the middle and walk outwards, and you will see the count above happen in order.
+      </p>
+      <p>
+        <strong>H min</strong> and <strong>H max</strong> jump to the two collapse states. On a
+        semicircular ring the software recovers the classical patterns without being told what to
+        look for: five hinges at minimum thrust &mdash; the springings, the intrados at the haunches
+        and the extrados at the crown &mdash; and four at maximum thrust.
+      </p>
+
+      <h3>The kinematics</h3>
+      <p>
+        Once the arch is a mechanism the <strong>Displacement</strong> slider comes alive and the
+        macro-blocks turn about their instantaneous centres, marked
+        <em>C</em><sub>1</sub>, <em>C</em><sub>2</sub>&hellip; on the drawing. The bodies pinned to
+        the ground turn about their own springings; the centre of a middle body is where the two
+        lines through the neighbouring centres and the hinges they share meet, which is Kennedy's
+        theorem &mdash; the software finds it by solving the velocity field rather than by
+        construction, so it works for five hinges as well as four.
+      </p>
+      <h3>Masonry cannot pass through itself</h3>
+      <p>
+        A hinge sits at one face of its joint, so the joint has to open at the <em>other</em>: a
+        hinge on the intrados opens towards the extrados. The software measures that opening and
+        runs the mechanism in whichever sense produces it &mdash; the direction is taken from the
+        mechanics, not from the arithmetic.
+      </p>
+      <p>
+        Some hinge patterns have <strong>no good sense at all</strong>, and that is worth seeing.
+        On a symmetric ring at maximum thrust both haunch hinges fall on the intrados, which leaves
+        the crown block turning about a point on the axis instead of dropping: one haunch opens
+        exactly as the other shuts. The panel says so and the displacement slider stays inactive,
+        rather than animating a motion the stones could not perform. <strong>A positive degree of
+        freedom is not by itself a collapse mode</strong> &mdash; the joints have to be able to
+        open.
+      </p>
+
+      <div class="callout">
+        <strong>Why the drawing is integrated rather than simply rotated:</strong> an instantaneous
+        centre is exactly that, instantaneous. Turning each block about its centre by a finite angle
+        keeps the blocks rigid but pulls the hinges apart &mdash; visibly, at any amplitude worth
+        looking at. The motion is therefore advanced in small steps with the centres recomputed each
+        time, so the blocks stay rigid <em>and</em> the hinges stay shut.
+      </div>
+    </section>
+
+    <section id="cable">
+      <h2>Hooke's cable</h2>
+      <p>
+        Switch on <strong>Hooke's cable</strong> to see the same polygon reflected about the chord
+        joining the two springings: the shape a chain would hang in under the same loads, hung from
+        the very points <em>A</em> and <em>B</em> the arch springs from. The two ends stay anchored
+        however unequal the springings are.
+      </p>
+      <p style="text-align:center; font-style:italic;">
+        Ut pendet continuum flexile, sic stabit contiguum rigidum inversum.
+      </p>
+      <p style="text-align:center; color:var(--muted);">
+        &ldquo;As hangs the flexible line, so but inverted will stand the rigid arch.&rdquo;
+        — Robert Hooke, 1676
+      </p>
+    </section>
+
+    <section id="save">
+      <h2>Save and reopen</h2>
+      <p>
+        <strong>Save work&hellip;</strong> writes the whole session to a single JSON file: the traced
+        curves, the blocks and joints, the weights, the applied loads, the scale, the unit system and the
+        three parameters of the equilibrium state. <strong>Reopen&hellip;</strong> reads it back.
+      </p>
+      <ul>
+        <li>The <strong>background image is not in the file</strong>. Photographs run to megabytes; the
+            file records the image's <em>name</em> and you load it again if you want it.</li>
+        <li>Everything derivable — the force polygon, the thrust line, the joint crossings — is
+            deliberately left out and recomputed on opening, so a file you save today stays readable
+            after the software is corrected.</li>
+        <li>A damaged or foreign file is <strong>refused with a message</strong> rather than half-loaded.</li>
+      </ul>
+      <div class="callout">
+        The file is small and self-contained, which makes it a practical thing to hand in: an exercise can
+        be set as <em>photograph an arch in this city, trace it, and find an admissible line</em>, and the
+        answer is one JSON file.
+      </div>
+    </section>
+
+    <section id="tips">
+      <h2>Troubleshooting</h2>
+      <ul>
+        <li><strong>Nothing is drawn.</strong> Check the <em>Show</em> switches, and that blocks were
+            generated after tracing.</li>
+        <li><strong>The arch looks squashed.</strong> It should not: the axes are kept equal. If you have
+            just resized the window and something looks wrong, press <strong>Reset view</strong>.</li>
+        <li><strong>The forces are absurdly large or small.</strong> Almost always the scale or the
+            out-of-plane thickness. Check the reported span first.</li>
+        <li><strong>&ldquo;No joints for this example&rdquo;.</strong> The stored files hold the
+            voussoirs but never held the cuts between them, so the software recovers the joints from
+            the blocks themselves &mdash; and refuses where the blocks are not a chain of abutting
+            voussoirs. Twelve of the twenty-eight examples open the whole analysis; the Poleni domes
+            interleave two shells, and the cathedral sections carry piers and detached members. The
+            message says which case you are in. Any of them can be cut properly with
+            <a href="#profile">trace a whole profile</a>.</li>
+        <li><strong>&ldquo;Stored solution not recomputable&rdquo;.</strong> The example is one of the six
+            inconsistent ones; the line shown is the one saved with the file.</li>
+        <li><strong>The blocks came out inverted.</strong> The two traced curves cross somewhere. Clear
+            the trace and redo it, watching the springings.</li>
+      </ul>
+    </section>
+
+    <section id="matlab" class="legacy">
+      <h2>The original MATLAB application</h2>
+      <p>
+        The browser application described above supersedes the MATLAB App Designer version, which has been
+        used in the course since 2018 and is no longer developed. It is not part of this repository: the
+        <code>.mlapp</code>, its <code>external_functions/</code>, the full corpus of twenty-eight
+        converted examples with their <code>.mat</code> originals, the converter, and the three
+        click-by-click PDF tutorials are all in the development repository,
+        <a href="https://github.com/gcastellazzi/aLOTofImaginArches">github.com/gcastellazzi/aLOTofImaginArches</a>.
+      </p>
+      <p>
+        Its workflow is close enough that those tutorials remain useful, but note that the browser version
+        differs in two ways that matter: the ends of the thrust line are <a href="#dof">free</a>, and the
+        unit weight is entered as a <em>weight</em> density rather than a mass density.
+      </p>
+      <p>
+        A cross-platform desktop port, <strong>pyLOT</strong>, reads the same <code>.mat</code> files and
+        is likewise no longer developed:
+        <a href="https://github.com/gcastellazzi/pyLOT">github.com/gcastellazzi/pyLOT</a>.
+      </p>
+      <figure>
+        <img src="images/app_screenshot.png" alt="The MATLAB application">
+        <figcaption>The MATLAB App Designer version, whose graphical idiom the browser version keeps.</figcaption>
+      </figure>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      aLOTofImaginArches — open-source educational software, MIT licence.
+      Repository:
+      <a href="https://github.com/gcastellazzi/aLoTiA">github.com/gcastellazzi/aLoTiA</a>.
+      Developed at DICAM, University of Bologna, for the courses
+      <em>Mechanics of Historical Masonry Structures</em> and
+      <em>Historical Masonry and Wooden Structures</em>.
+    </p>
+    <p>
+      <em>Ut pendet continuum flexile, sic stabit contiguum rigidum inversum.</em>
+    </p>
+  </footer>
+</body>
+</html>

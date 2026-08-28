@@ -1,0 +1,288 @@
+/* Deliberately plain: the page frames two MATLAB-looking figures and must not
+   compete with them. Everything is system fonts and flat greys. */
+
+:root {
+  --ink: #222;
+  --muted: #666;
+  --line: #d6d6d6;
+  --panel: #f6f6f6;
+  --accent: #b0272f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: #fff;
+}
+
+header {
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid var(--line);
+}
+header h1 { margin: 0; font-size: 19px; letter-spacing: 0.2px; }
+header .sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+a { color: var(--accent); }
+
+/* The page fills the window and never scrolls as a whole: the control panel
+   scrolls inside itself, so the two plots stay put and stay as large as the
+   window allows. Every ancestor of the canvas therefore needs a DEFINITE
+   height, which is what the grid rows and the min-height:0 below provide. */
+html, body { height: 100%; }
+body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 0;
+  min-height: 0;
+}
+
+#panel {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  padding: 14px 16px;
+  /* The one scrolling region on the page. */
+  overflow-y: auto;
+  min-height: 0;
+}
+/* The panel is three tabbed panes: Geometry, LoT, Mechanism. The tab strip
+   is the same one the right-hand pane uses. */
+#panel .tabs { position: sticky; top: 0; background: var(--panel); z-index: 2;
+  padding-bottom: 4px; margin-bottom: 8px; }
+#panel .pane[hidden] { display: none; }
+#panel section { margin-bottom: 20px; }
+#panel h2 {
+  margin: 0 0 7px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+#panel label { display: block; margin: 3px 0; font-size: 13px; }
+#panel select,
+#panel input[type=range],
+#panel button { width: 100%; }
+#panel select, #panel button {
+  padding: 5px 6px;
+  font: inherit;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 3px;
+}
+#panel button { cursor: pointer; }
+#panel button:hover { background: #eee; }
+
+.meta { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-style: italic; }
+.warn {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  font-size: 12px;
+  border-left: 3px solid #c8860a;
+  background: #fdf6e6;
+  color: #6b4a03;
+}
+
+/* The right-hand column: the two plots, and the toolbar under them. */
+#stage {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+#plots {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 12px;
+  padding: 12px;
+  min-height: 0;
+}
+/* The tab strip over the second plot: force polygon or block arch. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.tabs .tab {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-bottom-color: transparent;
+  background: var(--panel);
+  border-radius: 4px 4px 0 0;
+  color: var(--muted);
+}
+.tabs .tab.active {
+  background: #fff;
+  color: inherit;
+  font-weight: 600;
+}
+.tabs .tab:hover { background: #eee; }
+#side canvas[hidden] { display: none; }
+
+figure {
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The per-plot view tools, tucked under the canvas. */
+.viewtools {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.viewtools button {
+  padding: 1px 7px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 3px;
+}
+.viewtools button:hover { background: #eee; }
+.viewtools .hint { margin: 0 0 0 4px; font-size: 11px; }
+.viewtools[hidden] { display: none; }
+
+figcaption {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+/* NEVER height:100% here. A canvas sized as a percentage of a parent whose
+   own height depends on its content feeds back on itself and grows without
+   bound -- it reached thirty thousand pixels before this was pinned down.
+   flex:1 with min-height:0 is safe because the height then comes from the
+   grid rows above, which do not consult the content. */
+canvas {
+  display: block;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--line);
+  background: #fff;
+  touch-action: none;
+  cursor: grab;
+}
+canvas:active { cursor: grabbing; }
+
+footer {
+  padding: 9px 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The toolbar: units and what to draw, under the view and always in reach,
+   so that neither is buried in the scrolling panel. */
+#toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 20px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 12px;
+}
+#toolbar .group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+#toolbar .glabel {
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+#toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+#toolbar input[type=checkbox] { margin: 0; }
+#toolbar select,
+#toolbar button {
+  padding: 2px 5px;
+  font: inherit;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 3px;
+}
+#toolbar button { cursor: pointer; }
+#toolbar button:hover { background: #eee; }
+
+@media (max-width: 900px) {
+  /* Narrow: let the page scroll normally again, and give the canvases a
+     definite height of their own, since there are no longer full-height rows
+     to inherit one from. */
+  html, body { height: auto; }
+  body { display: block; overflow: visible; }
+  main { display: block; }
+  #panel { border-right: none; border-bottom: 1px solid var(--line); overflow: visible; }
+  #stage { display: block; }
+  #plots { grid-template-columns: 1fr; }
+  figure { display: block; }
+  canvas { height: 60vh; flex: none; }
+}
+
+/* ------------------------------------------------------------ tracing UI -- */
+#panel .row { display: flex; gap: 6px; margin: 6px 0; }
+#panel .row button { flex: 1; }
+#panel label.file { display: block; font-size: 13px; margin-bottom: 6px; }
+#panel label.file input { width: 100%; font-size: 12px; margin-top: 3px; }
+#panel label.inline {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin: 5px 0; font-size: 13px;
+}
+#panel label.inline input { width: 76px; padding: 3px 5px; font: inherit;
+  border: 1px solid var(--line); border-radius: 3px; }
+#panel button.armed {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+#panel button.armed:hover { background: #8e1f26; }
+
+#panel label.inline select { width: 110px; padding: 3px 4px; font: inherit;
+  border: 1px solid var(--line); border-radius: 3px; }
+#panel button + button { margin-top: 6px; }
+#panel section > button { margin-top: 4px; }
+
+ul.forces { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; }
+ul.forces li {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+ul.forces button {
+  width: auto; padding: 0 6px; line-height: 1.4; font-size: 11px;
+  border: 1px solid var(--line); background: #fff; cursor: pointer;
+  border-radius: 3px; color: var(--accent);
+}
+ul.forces button:hover { background: #f0e2e3; }
+
+.verdict {
+  margin: 4px 0 0; padding: 7px 9px; font-size: 12.5px; border-radius: 3px;
+  border-left: 3px solid var(--line); background: #fff; color: var(--muted);
+}
+.verdict.ok { border-left-color: #2e7d32; background: #edf7ee; color: #1b5e20; }
+.verdict.bad { border-left-color: var(--accent); background: #fbecec;
+  color: #7d1c22; }

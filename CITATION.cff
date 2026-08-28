@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+title: aLOTofImaginArches
+message: >-
+  If you use this software, please cite it using the metadata from this file.
+type: software
+authors:
+  - given-names: Giovanni
+    family-names: Castellazzi
+    email: giovanni.castellazzi@unibo.it
+    affiliation: >-
+      Department of Civil, Chemical, Environmental and Materials Engineering
+      (DICAM), University of Bologna, Italy
+repository-code: 'https://github.com/gcastellazzi/aLoTiA'
+url: 'https://gcastellazzi.github.io/aLoTiA/app/'
+abstract: >-
+  Interactive graphical statics of masonry arches in the browser. A photograph
+  of a real arch is traced into voussoirs, scaled and loaded, and the line of
+  thrust is then moved through its three degrees of freedom while the software
+  checks, joint by joint, whether it stays inside the masonry. Where the line
+  would leave the ring it stays hooked at a face, that point becomes a hinge,
+  and the collapse mechanism is counted and drawn. The tool exists to make the
+  infinity of admissible equilibrium states of an arch something a student can
+  take hold of and move.
+keywords:
+  - masonry arches
+  - graphical statics
+  - line of thrust
+  - funicular polygon
+  - limit analysis
+  - collapse mechanism
+  - structural engineering education
+  - historical structures
+license: MIT
+version: 1.1.0
+date-released: '2026-08-28'

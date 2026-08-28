@@ -1,0 +1,71 @@
+# Changelog
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and the project uses [semantic versioning](https://semver.org/).
+
+## [1.1.0] — 2026-08-28
+
+### Added
+
+- **The joints of a stored example are recovered from its voussoirs**
+  (`core/joints.js`). The converted MATLAB files never carried the cuts
+  between the blocks, and without them admissibility and the whole mechanism
+  analysis had nothing to work on: on every one of the twenty-eight shipped
+  examples the panel read *"available for a traced arch, which has joints"*,
+  the Mechanism tab stayed empty, and **H min** and **H max** did nothing. The
+  features the software exists for were reachable only by tracing a photograph
+  from scratch. Twelve of the examples now open the whole analysis.
+- Where the blocks are not a chain of abutting voussoirs the recovery refuses
+  and **says which examples and why** — the Poleni domes flattened their
+  two-piece blocks and interleaved the two shells; the Amiens and San Francesco
+  sections carry piers and detached members. Those are reachable through *trace
+  a whole profile*, which builds proper joints from the outline.
+- `npm start`: a static server for `docs/` in the standard library and nothing
+  else, because ES modules are refused over `file://`.
+- `CITATION.cff`, `codemeta.json`, `CONTRIBUTING.md`, and a test workflow
+  across three operating systems and three versions of Node.
+- Fourteen tests for the recovery, including a round trip against
+  `blocksBetween`, which builds both the blocks and the joints so the recovery
+  can be checked against a known answer rather than against itself.
+
+### Fixed
+
+- **`collapseRange` could miss a narrow admissible band entirely.** It stopped
+  at the first sample of a sixty-step grid that happened to be admissible,
+  which tests a boolean on a grid: `Ctesifonte_01` stands only between
+  *H*/*W* = 0.041 and 0.061, the grid samples 0.0397 and 0.0593, and a real
+  arch was reported as standing at no thrust at all. The seed now follows the
+  maximum of the clearance, which is continuous, and zooms in on it.
+- **H min and H max did not reach the states they name.** The thrust slider
+  stepped in whole per cent, so the button asked for 4.24 % of the travel and
+  got 4 %; on `Example_3_Heyman_arch` the least clearance then came out at
+  0.026, above the 0.02 that counts as touching, and the panel answered *"once
+  hyperstatic"* to a press of **H min**. The slider's step is now 0.01.
+- **Six examples could not be analysed at all.** They were saved before a line
+  of thrust was ever computed, and the consistency check treats "no stored
+  solution" like "a stored solution that does not match": the thrust slider was
+  disabled and the panel said *"not available for this example"* about an arch
+  it had the blocks, the weights and the joints for. Nothing was missing but a
+  pole, which the mechanism search computes for itself. The Nervi bridge now
+  gives four hinges and a one-degree collapse mechanism.
+- **An example with neither joints nor stored springings crashed the update.**
+  `funicular` was handed `null` for the point to start walking from and threw
+  in the middle of the redraw, so the drawing kept the previous arch and the
+  panels kept the previous arch's verdicts — worse than an empty plot. It now
+  returns an empty line, and the panel says to pick both ends or trace the arch.
+- **The collapse band was inherited from the previous arch.** It is recomputed
+  from a signature, but an arch without joints never reaches that branch and
+  kept whatever band was last on screen.
+- **The mechanism verdict went stale on changing example.** It was reported
+  only on the branch that drives from the thrust, so choosing a Poleni dome
+  after a Heyman arch went on saying *"isostatic — three hinges"* about an arch
+  the panel had no joints for.
+
+## [1.0.0] — 2026-08-15
+
+The first browser version: the whole MATLAB application ported to plain ES
+modules with no build step and no dependencies, checked against the twenty-eight
+converted examples. Tracing, scale and units, applied loads, three degrees of
+freedom, admissibility, hinges and the collapse mechanism, Poleni's dome, the
+3-D block view, both ends imposed, whole profiles, Bow's notation, Hooke's
+cable, and save and reopen.

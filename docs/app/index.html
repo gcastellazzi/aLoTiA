@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aLOTofImaginArches — funicular analysis of masonry arches</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header>
+  <h1>aLOTofImaginArches</h1>
+  <p class="sub">Interactive line of thrust and funicular analysis of masonry
+    arches &mdash; <a href="../index.html">user guide</a></p>
+</header>
+
+<main>
+  <aside id="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab active" id="tabGeom" role="tab">Geometry</button>
+      <button class="tab" id="tabLot" role="tab">LoT</button>
+      <button class="tab" id="tabMech" role="tab">Mechanism</button>
+    </div>
+    <div class="pane" id="paneGeom">
+    <section>
+      <h2>Example</h2>
+      <select id="example"></select>
+      <p id="meta" class="meta"></p>
+      <p id="warn" class="warn" hidden></p>
+    </section>
+    <section id="traceSection">
+      <h2>Trace your own</h2>
+      <label class="file">Load an image
+        <input type="file" id="imageFile" accept="image/*">
+      </label>
+      <div class="row">
+        <button id="traceInner">Trace intrados</button>
+        <button id="traceOuter">Trace extrados</button>
+      </div>
+      <p class="hint" id="traceHint">Click along a curve; double-click, or
+        press Enter, to finish. Esc cancels.</p>
+      <label class="inline">Blocks
+        <input type="number" id="nBlocks" min="1" max="200" value="16">
+      </label>
+      <label class="inline"><span id="gammaLabel">Unit weight kN/m³</span>
+        <input type="number" id="gamma" min="0" step="0.5" value="20">
+      </label>
+      <label class="inline"><span id="thickLabel">Thickness m</span>
+        <input type="number" id="thick" min="0" step="0.1" value="1">
+      </label>
+      <div class="row">
+        <button id="makeBlocks">Generate blocks</button>
+        <button id="clearTrace">Clear</button>
+      </div>
+      <p id="traceStatus" class="meta"></p>
+    </section>
+    <section>
+      <h2>Circular ring</h2>
+      <p class="hint">An exact ring from its numbers, with no image to trace.
+        The published figures for the admissible band and the least admissible
+        thickness are computed on this ring, so a point of either can be
+        checked here by hand.</p>
+      <label class="inline">Inner radius
+        <input type="number" id="ringRi" min="0.01" step="0.5" value="4">
+      </label>
+      <label class="inline">Thickness ratio t/r<sub>i</sub>
+        <input type="number" id="ringTri" min="0.001" step="0.01" value="0.15">
+      </label>
+      <label class="inline">Blocks
+        <input type="number" id="ringN" min="1" max="200" value="16">
+      </label>
+      <button id="makeRing">Generate ring</button>
+      <p id="ringStatus" class="meta">uses the unit weight and thickness above</p>
+    </section>
+    <section>
+      <h2>Trace a whole profile</h2>
+      <div class="row">
+        <button id="traceProfile">Trace an outline</button>
+        <button id="clearProfiles">Clear</button>
+      </div>
+      <p class="hint">For a section the two faces cannot describe: a filled
+        haunch, a widening pier, or the two shells of a dome. Trace each closed
+        outline in turn; the joints come from rays out of a picked centre, so
+        every shell is cut at the same angles.</p>
+      <button id="pickCutCentre">Pick the centre of the cuts</button>
+      <label class="inline">Blocks
+        <input type="number" id="nCuts" min="1" max="200" value="16">
+      </label>
+      <button id="cutProfile" disabled>Cut into blocks</button>
+      <p id="profileStatus" class="meta">no outline traced</p>
+    </section>
+
+    <section>
+      <h2>Add a block</h2>
+      <label class="inline">Sides
+        <input type="number" id="nSides" min="3" max="24" value="4">
+      </label>
+      <button id="addBlock">Draw a block</button>
+      <p class="hint">Click the corners in turn. Useful for a pier, a fill, or
+        anywhere the radial cut does not suit the shape.</p>
+    </section>
+
+    <section>
+      <h2>Scale</h2>
+      <button id="pickRef">Pick a reference length</button>
+      <label class="inline">is
+        <input type="number" id="refLength" min="0" step="0.1" value="10">
+      </label>
+      <button id="applyScale" disabled>Apply scale</button>
+      <p id="scaleStatus" class="meta">not scaled &mdash; lengths are pixels</p>
+    </section>
+    <section id="domeSection">
+      <h2>Dome slice &mdash; Poleni</h2>
+      <label><input type="checkbox" id="poleni"> Treat the arch as a dome lune</label>
+      <p class="hint">A barrel vault cut into voussoirs gives blocks of constant
+        width. A <em>dome</em> cut into lunes does not: each is bounded by two
+        meridian planes, so it is broad at the major parallel and closes to
+        nothing at the crown. The weights follow, and so does the line of
+        thrust &mdash; this is what Poleni saw in 1748.</p>
+      <label class="inline">Slice angle &deg;
+        <input type="number" id="domeAngle" min="1" max="360" step="1" value="15">
+      </label>
+      <label class="inline">Axis x
+        <input type="number" id="domeAxis" step="0.001" value="0">
+      </label>
+      <button id="pickAxis">Pick the axis on the drawing</button>
+      <p id="domeStatus" class="meta">off &mdash; constant thickness</p>
+    </section>
+    </div>
+    <div class="pane" id="paneLot" hidden>
+    <section>
+      <h2>Points A and B</h2>
+      <label><input type="checkbox" id="imposeEnds"> Impose both ends</label>
+      <div class="row">
+        <button id="pickA">Pick A</button>
+        <button id="pickB">Pick B</button>
+      </div>
+      <p id="endsStatus" class="meta">not set &mdash; the ends follow the joints</p>
+      <p class="hint">With both ends imposed the thrust stays free and the other
+        two parameters become results: the pole's ordinate is whatever carries
+        the line from A to B. The force polygon shows the construction &mdash;
+        a trial pole, the closing error, the corrected pole.</p>
+    </section>
+    <section>
+      <h2>Applied forces</h2>
+      <label class="inline"><span id="forceLabel">Magnitude kN</span>
+        <input type="number" id="forceMag" min="0" step="1" value="100">
+      </label>
+      <div class="row">
+        <button id="addForce">Add a force</button>
+        <button id="clearForces">Clear</button>
+      </div>
+      <p class="hint">Click where it acts. Forces are taken as vertical and
+        downward, and join the blocks in the same sequence.</p>
+      <ul id="forceList" class="forces"></ul>
+    </section>
+    <section>
+      <h2>Equilibrium state</h2>
+      <label for="thrust">Horizontal thrust</label>
+      <input id="thrust" type="range" min="0" max="100" step="0.01" value="50">
+      <p class="meta"><span id="thrustValue">&mdash;</span></p>
+
+      <label for="startPos">Start on the springing joint</label>
+      <input id="startPos" type="range" min="0" max="100" value="50" disabled>
+      <p class="meta"><span id="startValue">&mdash;</span></p>
+
+      <label for="split">Reaction at that springing</label>
+      <input id="split" type="range" min="5" max="95" value="50" disabled>
+      <p class="meta"><span id="splitValue">&mdash;</span></p>
+
+      <p class="hint">Three numbers fix the line, and these are they: the pole&rsquo;s
+        distance from the load line, which is the thrust; where the line leaves
+        its springing joint; and how the total weight divides between the two
+        reactions. Together they are the
+        <em>&infin;<sup>3</sup></em> the tool exists to show. The last two need
+        a traced arch, which has joints for the ends to slide along.</p>
+    </section>
+    <section>
+      <h2>Admissibility</h2>
+      <p id="admissible" class="verdict">&mdash;</p>
+      <p class="hint">The thrust line must stay inside the ring. If it does,
+        the safe theorem says the arch stands. A ring too thin at the
+        mid-points of its end joints may still be admissible once those ends
+        are free: the limit line runs through the <em>extrados</em> at both
+        springings.</p>
+    </section>
+      <section>
+        <h2>Hooke's cable</h2>
+        <label><input type="checkbox" id="showCable2"> Show the hanging cable</label>
+        <label for="cableWeights">Weight circles</label>
+        <input id="cableWeights" type="range" min="0" max="100" value="0">
+        <p class="hint">A circle at each vertex with its area proportional to the
+          weight carried there. On a dome lune the springing circles dwarf the
+          crown ones, which is the taper made visible.</p>
+      </section>
+    </div>
+    <div class="pane" id="paneMech" hidden>
+    <section id="mechanismSection">
+      <h2>Mechanism</h2>
+      <label><input type="checkbox" id="mechOn"> Drive from the thrust</label>
+      <p class="hint">The line of thrust cannot leave the ring: where it would,
+        it stays hooked at the intrados or the extrados between two voussoirs,
+        and that point is a hinge. With this on, the thrust slider alone
+        commands the line &mdash; the other two parameters are chosen to keep
+        it as far from both faces as it can be, so hinges form on their own as
+        the thrust is pushed.</p>
+      <p id="mechVerdict" class="verdict">&mdash;</p>
+      <p id="mechCount" class="meta"></p>
+      <div class="row">
+        <button id="goHmin" disabled>H min</button>
+        <button id="goHmax" disabled>H max</button>
+      </div>
+      <p id="mechBand" class="meta"></p>
+      <label for="mechAmp">Displacement</label>
+      <input id="mechAmp" type="range" min="0" max="100" value="0" disabled>
+      <p class="hint">Live only once the arch is a mechanism: the macro-blocks
+        turn about their own instantaneous centres, and the hinges stay shut.</p>
+    </section>
+      <section>
+        <h2>Points A and B</h2>
+        <label><input type="checkbox" id="imposeEnds2"> Impose both ends</label>
+        <div class="row">
+          <button id="pickA2">Pick A</button>
+          <button id="pickB2">Pick B</button>
+        </div>
+        <p class="hint">The same controls as in the LoT tab.</p>
+      </section>
+      <section>
+        <h2>Horizontal thrust</h2>
+        <input id="thrustM" type="range" min="0" max="100" value="50">
+        <p class="meta"><span id="thrustValueM">&mdash;</span></p>
+        <p class="hint">The same control as in the LoT tab, repeated here so the
+          mechanism can be driven without leaving it.</p>
+      </section>
+    </div>
+    <section>
+      <h2>Save and reopen</h2>
+      <button id="saveState">Save work&hellip;</button>
+      <button id="loadState">Reopen&hellip;</button>
+      <input id="stateFile" type="file" accept=".json,application/json" hidden>
+      <p id="saveStatus" class="meta">&mdash;</p>
+      <p class="hint">Writes everything &mdash; the traced curves, the blocks,
+        the applied forces, the scale and the equilibrium state &mdash; to one
+        JSON file. The background image is not included: reopen it separately.</p>
+    </section>
+  </aside>
+
+  <div id="stage">
+  <div id="plots">
+    <figure>
+      <canvas id="main"></canvas>
+      <div class="viewtools" data-ax="main">
+        <button data-act="fit" title="Fit">fit</button>
+        <button data-act="fitx" title="Fit the width">&#8596;</button>
+        <button data-act="fity" title="Fit the height">&#8597;</button>
+        <button data-act="in" title="Zoom in">+</button>
+        <button data-act="out" title="Zoom out">&minus;</button>
+      </div>
+      <figcaption>Arch and line of thrust</figcaption>
+    </figure>
+    <figure id="side">
+      <div class="tabs" role="tablist">
+        <button class="tab active" id="tabForce" role="tab">Force polygon</button>
+        <button class="tab" id="tabSolid" role="tab">Blocks</button>
+      </div>
+      <canvas id="force"></canvas>
+      <canvas id="solid" hidden></canvas>
+      <div class="viewtools" data-ax="side">
+        <button data-act="fit" title="Fit">fit</button>
+        <button data-act="fitx" title="Fit the width">&#8596;</button>
+        <button data-act="fity" title="Fit the height">&#8597;</button>
+        <button data-act="in" title="Zoom in">+</button>
+        <button data-act="out" title="Zoom out">&minus;</button>
+      </div>
+      <div class="viewtools" id="solidTools" hidden>
+        <button data-view3d="front" title="Look at the face">front</button>
+        <button data-view3d="corner" title="Three quarters">3/4</button>
+        <span class="hint">drag to turn &middot; wheel to zoom &middot; shift-drag to pan</span>
+      </div>
+      <figcaption id="sideCaption">Force polygon</figcaption>
+    </figure>
+  </div>
+
+  <div id="toolbar">
+    <div class="group">
+      <span class="glabel">Units</span>
+      <select id="system">
+        <option value="SI">SI &mdash; m, kN</option>
+        <option value="Nmm">N-mm</option>
+        <option value="kgcm">kg-cm</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <span class="glabel">Show</span>
+      <label><input type="checkbox" id="showImage" checked> Image</label>
+      <label><input type="checkbox" id="showBlocks" checked> Blocks</label>
+      <label><input type="checkbox" id="showWeights"> Weights</label>
+      <label><input type="checkbox" id="showThrust" checked> Thrust line</label>
+      <label><input type="checkbox" id="showCable"> Hooke's cable</label>
+      <label><input type="checkbox" id="showLabels"> Block numbers</label>
+      <label><input type="checkbox" id="showJoints"> Joints</label>
+      <label><input type="checkbox" id="showRays"> Ray letters</label>
+      <label><input type="checkbox" id="showMech"> Mechanism</label>
+    </div>
+
+    <div class="group">
+      <span class="glabel">View</span>
+      <label><input type="checkbox" id="flipY"> Flip Y</label>
+      <button id="reset">Reset view</button>
+    </div>
+  </div>
+  </div>
+</main>
+
+<footer>
+  <p>MIT licensed &middot;
+    <a href="https://github.com/gcastellazzi/aLoTiA">source</a>
+    &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

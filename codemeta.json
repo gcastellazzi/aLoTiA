@@ -1,0 +1,48 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "aLOTofImaginArches",
+  "description": "Interactive graphical statics of masonry arches in the browser: trace an arch over a photograph, build the force polygon, and move the line of thrust through its three degrees of freedom while the software checks joint by joint whether it stays inside the masonry, forms hinges, and collapses.",
+  "identifier": "https://github.com/gcastellazzi/aLoTiA",
+  "codeRepository": "https://github.com/gcastellazzi/aLoTiA",
+  "url": "https://gcastellazzi.github.io/aLoTiA/app/",
+  "issueTracker": "https://github.com/gcastellazzi/aLoTiA/issues",
+  "license": "https://spdx.org/licenses/MIT",
+  "version": "1.1.0",
+  "dateModified": "2026-08-28",
+  "programmingLanguage": [
+    { "@type": "ComputerLanguage", "name": "JavaScript", "version": "ES2022 modules" }
+  ],
+  "runtimePlatform": ["Any modern web browser", "Node.js >= 18 (tests only)"],
+  "operatingSystem": ["Any"],
+  "softwareRequirements": [],
+  "developmentStatus": "active",
+  "applicationCategory": "Structural engineering",
+  "keywords": [
+    "masonry arches",
+    "graphical statics",
+    "line of thrust",
+    "funicular polygon",
+    "limit analysis",
+    "collapse mechanism",
+    "structural engineering education"
+  ],
+  "author": [
+    {
+      "@type": "Person",
+      "givenName": "Giovanni",
+      "familyName": "Castellazzi",
+      "email": "giovanni.castellazzi@unibo.it",
+      "affiliation": {
+        "@type": "Organization",
+        "name": "DICAM, University of Bologna"
+      }
+    }
+  ],
+  "maintainer": {
+    "@type": "Person",
+    "givenName": "Giovanni",
+    "familyName": "Castellazzi",
+    "email": "giovanni.castellazzi@unibo.it"
+  }
+}

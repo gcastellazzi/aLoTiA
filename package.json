@@ -1,0 +1,42 @@
+{
+  "name": "alotofimaginarches",
+  "version": "1.1.0",
+  "description": "Interactive funicular and line-of-thrust analysis of masonry arches, in the browser",
+  "license": "MIT",
+  "author": "Giovanni Castellazzi <giovanni.castellazzi@unibo.it> (DICAM, University of Bologna)",
+  "homepage": "https://gcastellazzi.github.io/aLoTiA/app/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gcastellazzi/aLoTiA.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gcastellazzi/aLoTiA/issues"
+  },
+  "keywords": [
+    "masonry",
+    "arch",
+    "graphical-statics",
+    "line-of-thrust",
+    "funicular",
+    "limit-analysis",
+    "collapse-mechanism",
+    "structural-engineering",
+    "education"
+  ],
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node tools/serve.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "comment": [
+    "There are no dependencies and there is no build step, on purpose.",
+    "docs/app is plain ES modules, served as-is by GitHub Pages, so the",
+    "source a student reads is the source that runs. This file exists only",
+    "so that Node knows the .js files are modules, to name the test command,",
+    "and to offer `npm start`, which is node:http and nothing else."
+  ]
+}

@@ -1,0 +1,470 @@
+{
+ "_meta": {
+  "source": "Utah_Arch.mat",
+  "converted": "2026-08-13",
+  "tool": "tools/mat2json.py",
+  "note": "MATLAB field names preserved; empty arrays are null."
+ },
+ "data": {
+  "xy_Center": [
+   934.6258102151928,
+   211.5962998629578
+  ],
+  "xy_Point_B": [
+   935.100761582681,
+   26.469704410244617
+  ],
+  "xy_Point_A": [
+   119.5190718766968,
+   116.06011729461409
+  ],
+  "angle_Top_Center": null,
+  "angle_Bottom_Center": null,
+  "angle_Top_Center_deg": null,
+  "angle_Bottom_Center_deg": null,
+  "angle_Block_deg": null,
+  "angle_Block": null,
+  "angle_factors": null,
+  "ImageFile": null,
+  "previous_image_scaling_factor": null,
+  "current_image_scaling_factor": null,
+  "Arch_region_Position": null,
+  "Arch_region": null,
+  "A_Blocks": [
+   72247.51618477158,
+   39477.13586537665,
+   39145.2133272187,
+   6660.5165563368,
+   13105.486972827224,
+   33790.35699112092,
+   28607.12641456686,
+   26313.43333208022,
+   29082.165387995592,
+   37427.94813686069,
+   12791.581684910056
+  ],
+  "W_Blocks": [
+   722475.1618477157,
+   394771.3586537665,
+   391452.13327218697,
+   66605.165563368,
+   131054.86972827224,
+   337903.56991120917,
+   286071.2641456686,
+   263134.3333208022,
+   290821.65387995593,
+   374279.48136860685,
+   127915.81684910055
+  ],
+  "Thickness_Blocks": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "Reference_distance": null,
+  "Resize_reference": null,
+  "Blocks_coordinates": null,
+  "Blocks_coordinates_4_points": [
+   {
+    "x": [
+     589.7537779177004,
+     553.1301992666392,
+     957.5155468721061,
+     980.1153468646987,
+     977.1244212748618,
+     934.6258102151928
+    ],
+    "y": [
+     251.27184340160738,
+     86.4657394718322,
+     13.218582169709862,
+     40.625226860254145,
+     107.92105263157896,
+     211.5962998629578
+    ]
+   },
+   {
+    "x": [
+     589.7537779177005,
+     601.9616374680543,
+     589.7537779177004,
+     934.6258102151928,
+     904.1061613393085,
+     876.638477351013
+    ],
+    "y": [
+     373.35043890514453,
+     310.78515870958176,
+     251.27184340160738,
+     211.5962998629578,
+     281.79149227749167,
+     350.4607022482313
+    ]
+   },
+   {
+    "x": [
+     518.0326030593724,
+     577.545918367347,
+     588.304094596096,
+     872.4420256305789,
+     836.5509185525389,
+     803.6507370643355
+    ],
+    "y": [
+     519.8447535093892,
+     451.1755435386495,
+     368.1315789473686,
+     354.6724137931035,
+     441.40925589836667,
+     498.2368421052632
+    ]
+   },
+   {
+    "x": [
+     488.1080873365679,
+     516.5066206155782,
+     802.1552742694172,
+     742.336762472684
+    ],
+    "y": [
+     543.1007259528133,
+     522.8967183969777,
+     499.7323049001817,
+     534.1279491833031
+    ]
+   },
+   {
+    "x": [
+     502.7727786214303,
+     493.616883958665,
+     652.3190581132633,
+     678.2607596577649,
+     682.8387069891476,
+     592.8057428052889
+    ],
+    "y": [
+     794.5215933923479,
+     724.3264009778139,
+     684.6508574391644,
+     681.5988925515759,
+     745.690155190933,
+     773.1578391792289
+    ]
+   },
+   {
+    "x": [
+     469.20116485795745,
+     482.93500685210546,
+     488.1080873365679,
+     742.336762472684,
+     648.1226063928292,
+     497.0808641060779
+    ],
+    "y": [
+     573.2541390421867,
+     574.7801214859809,
+     543.1007259528133,
+     534.1279491833031,
+     683.6742286751362,
+     721.0607985480945
+    ]
+   },
+   {
+    "x": [
+     290.6612189340345,
+     434.10356865069065,
+     469.20116485795745,
+     499.72081373384174,
+     397.4799899996295,
+     312.0249731471535
+    ],
+    "y": [
+     747.2161376347271,
+     582.410033704952,
+     573.2541390421867,
+     791.4696285047594,
+     797.5735582799363,
+     782.3137338419941
+    ]
+   },
+   {
+    "x": [
+     191.4723600874105,
+     382.22016556168734,
+     411.21383199377743,
+     443.25946331345585,
+     290.6612189340345,
+     231.1479036260601
+    ],
+    "y": [
+     583.9360161487464,
+     542.7344901663024,
+     571.7281565983925,
+     577.8320863735693,
+     747.2161376347271,
+     673.9689803326049
+    ]
+   },
+   {
+    "x": [
+     162.47869365532046,
+     261.6675525019444,
+     324.2328326975072,
+     382.22016556168734,
+     189.9463776436163,
+     183.84244786843948
+    ],
+    "y": [
+     365.72052668617346,
+     361.1425793547909,
+     454.22750842623793,
+     542.7344901663024,
+     574.7801214859809,
+     469.4873328641801
+    ]
+   },
+   {
+    "x": [
+     55.6599225897254,
+     298.29113115300555,
+     328.81078002888984,
+     261.6675525019444,
+     162.47869365532046,
+     128.90707989184773
+    ],
+    "y": [
+     173.44673876810248,
+     132.24521278565862,
+     236.01201896366524,
+     361.1425793547909,
+     365.72052668617346,
+     216.17424719434038
+    ]
+   },
+   {
+    "x": [
+     13.03289010704087,
+     302.96955442794166,
+     298.43738656987296,
+     153.37749546279494,
+     63.64972776769511,
+     42.71324863883851
+    ],
+    "y": [
+     130.7192303418644,
+     74.25787992147855,
+     125.86660617059903,
+     151.28947368421052,
+     167.73956442831218,
+     155.77586206896558
+    ]
+   }
+  ],
+  "xyg_Blocks": [
+   [
+    773.299158158678,
+    135.51784290893787
+   ],
+   [
+    753.0222877871387,
+    294.23683488969544
+   ],
+   [
+    702.9540412436269,
+    434.5590336702439
+   ],
+   [
+    648.6376529100457,
+    524.2165864779299
+   ],
+   [
+    588.2876272896959,
+    736.7063447838526
+   ],
+   [
+    586.619556131108,
+    613.5846901650582
+   ],
+   [
+    411.6877746892838,
+    709.4662386084844
+   ],
+   [
+    309.02794812896474,
+    626.9253948660395
+   ],
+   [
+    254.53615964967042,
+    472.2616501600386
+   ],
+   [
+    217.88104346356837,
+    241.86774200899129
+   ],
+   [
+    170.1434331790608,
+    123.56595631490981
+   ]
+  ],
+  "Preliminar_Funicolar_Problem": {
+   "u1": [
+    [
+     -1128828.269513551,
+     1693242.4042703263
+    ],
+    [
+     -1128828.269513551,
+     970767.2424226105
+    ],
+    [
+     -1128828.269513551,
+     575995.883768844
+    ],
+    [
+     -1128828.269513551,
+     184543.7504966571
+    ],
+    [
+     -1128828.269513551,
+     117938.5849332891
+    ],
+    [
+     -1128828.269513551,
+     -13116.284794983221
+    ],
+    [
+     -1128828.269513551,
+     -351019.8547061924
+    ],
+    [
+     -1128828.269513551,
+     -637091.118851861
+    ],
+    [
+     -1128828.269513551,
+     -900225.4521726631
+    ],
+    [
+     -1128828.269513551,
+     -1191047.106052619
+    ],
+    [
+     -1128828.269513551,
+     -1565326.5874212258
+    ],
+    [
+     1128828.269513551,
+     1693242.4042703263
+    ]
+   ],
+   "u2": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ],
+    [
+     0.0,
+     1.0
+    ]
+   ]
+  },
+  "Final_Funicolar_Problem": null,
+  "polyin_Arch": null,
+  "xyG_polyin_Arch": null,
+  "alphabet_letters": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  "xy_Pole_Prime": [
+   [
+    0.0,
+    -1693242.4042703263
+   ],
+   [
+    1128828.269513551,
+    -1693242.4042703263
+   ]
+  ],
+  "xy_Pole_Def": [
+   1128828.269513551,
+   -1866720.4095138803
+  ],
+  "Force_Funicolar_Polygon": null,
+  "LOT_Force": null,
+  "LOT_xy": null,
+  "Number_of_Blocks": 11.0,
+  "Folder_Examples": "/Users/gcastellazzi/Dropbox/GitHub/aLOTofImaginArches/Examples/",
+  "alpha_W_Blocks": 0.0,
+  "HorizontalThrust": 1128828.269513551,
+  "PolenihpSwitch": {
+   "Value": "Off"
+  },
+  "Reaction_at_A": null,
+  "Reaction_at_B": null,
+  "Reaction_at_A_Components": null,
+  "Reaction_at_B_Components": null,
+  "Conversion_Unit_Force_scaling": 1.0,
+  "Conversion_Unit_Pressure_scaling": 1.0,
+  "Conversion_Unit_Mass_scaling": 1.0,
+  "Conversion_Unit_Length_scaling": 1.0,
+  "Conversion_Unit_Specific_Weight_scaling": 1.0,
+  "UNISYS": "SI",
+  "Unit_Length_scaling": 1.0,
+  "Unit_Mass_to_Weight": 10.0,
+  "ImageFileName": "Utah_Arch.jpg",
+  "ImageSize": [
+   1051,
+   824
+  ],
+  "_frame": {
+   "coordinates": "pixels",
+   "units_per_pixel": 1.0,
+   "inferred": true
+  }
+ }
+}
