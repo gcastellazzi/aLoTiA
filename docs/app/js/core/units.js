@@ -113,6 +113,54 @@ export function scaleModel(model, k, { thicknessInPixels = true } = {}) {
   };
 }
 
+/**
+ * A STORED example rescaled, its saved solution carried with it.
+ *
+ * `scaleModel` is for the interactive path: the student traces an arch, picks
+ * two points, states the distance, and the geometry is rescaled. A stored
+ * example is different in one decisive way -- it carries the solution MATLAB
+ * computed, and eight of the twelve shipped examples are checked against it to
+ * machine precision. Rescaling the geometry and leaving the force polygon
+ * where it was would break exactly the audit the paper rests on: the
+ * consistency check compares the first column of the polygon against the
+ * weights, and they would no longer agree.
+ *
+ * So the SOLUTION IS SCALED TOO, by the same factors the geometry is: lengths
+ * by k, and every force by the same power that carries the weights. Both sides
+ * of every comparison then move together, the relative errors are untouched,
+ * and the example reproduces as exactly after scaling as before it.
+ *
+ * The weights follow the interactive convention -- k squared, the out-of-plane
+ * thickness taken as a physical depth rather than a pixel count -- because that
+ * is what the application does when a student scales an arch by hand, and two
+ * conventions for one operation would be worse than either.
+ *
+ * @param {object} model  as `fromExample` builds it
+ * @param {number} k      units per pixel
+ */
+export function scaleStoredExample(model, k) {
+  if (!(k > 0) || k === 1) return model;
+  const kF = k * k;                       // a force, following the weights
+  const pt = (q) => (q ? [q[0] * k, q[1] * k] : q);
+
+  return {
+    ...scaleModel(model, k, { thicknessInPixels: false }),
+    centre: pt(model.centre),
+    // The stored solution, in step with the geometry.
+    forcePolygon: model.forcePolygon
+      ? model.forcePolygon.map((row) => row.map((v) => v * kF)) : null,
+    thrustForce: Array.isArray(model.thrustForce)
+      ? model.thrustForce.map((v) => v * kF) : model.thrustForce,
+    horizontalThrust: typeof model.horizontalThrust === 'number'
+      ? model.horizontalThrust * kF : model.horizontalThrust,
+    poleTrial: Array.isArray(model.poleTrial)
+      ? model.poleTrial.map((r) => (Array.isArray(r) ? r.map((v) => v * kF) : r * kF))
+      : model.poleTrial,
+    poleFinal: Array.isArray(model.poleFinal)
+      ? model.poleFinal.map((v) => v * kF) : model.poleFinal,
+  };
+}
+
 /** Convert a length between systems. */
 export function convertLength(value, from, to) {
   return (value * SYSTEMS[from].length.toBase) / SYSTEMS[to].length.toBase;

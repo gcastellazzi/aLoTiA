@@ -72,26 +72,26 @@
    0.5462887062286155
   ],
   "Thickness_Blocks": [
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0,
-   1000.0
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000,
+   1000
   ],
   "Reference_distance": 318.3980486595959,
   "Resize_reference": 318.3980486595959,
@@ -549,88 +549,88 @@
    ],
    "u2": [
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ]
    ]
   },
@@ -723,88 +723,88 @@
    ],
    "u2": [
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ]
    ]
   },
@@ -813,7 +813,7 @@
   "alphabet_letters": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
   "xy_Pole_Prime": [
    [
-    0.0,
+    0,
     -5.462887062286163
    ],
    [
@@ -822,7 +822,7 @@
    ]
   ],
   "xy_Pole_Def": [
-   0.0,
+   0,
    -5.462887062286164
   ],
   "Force_Funicolar_Polygon": [
@@ -1107,7 +1107,7 @@
     2007.077623985912
    ]
   ],
-  "Number_of_Blocks": 20.0,
+  "Number_of_Blocks": 20,
   "UNISYS": "Nmm",
   "ImageFileName": "Example_1_Circular_arch_comparison.jpg",
   "ImageSize": [
@@ -1116,8 +1116,14 @@
   ],
   "_frame": {
    "coordinates": "pixels",
-   "units_per_pixel": 1.0,
+   "units_per_pixel": 1,
    "inferred": true
+  },
+  "_scale": {
+   "units_per_pixel": 0.003722661703,
+   "system": "SI",
+   "source": "nominal — the source figure is a dimensionless semicircular ring; 8 m span gives the 4 m radius the paper's reference ring uses",
+   "declared_span": 8
   }
  }
 }

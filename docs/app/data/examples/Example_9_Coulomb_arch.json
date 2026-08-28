@@ -52,16 +52,16 @@
    15975.284199699998
   ],
   "Thickness_Blocks": [
-   1.0,
-   2.0,
-   3.0,
-   4.0,
-   5.0,
-   6.0,
-   7.0,
-   8.0,
-   9.0,
-   10.0
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10
   ],
   "Reference_distance": null,
   "Resize_reference": null,
@@ -323,48 +323,48 @@
    ],
    "u2": [
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ]
    ]
   },
@@ -417,48 +417,48 @@
    ],
    "u2": [
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ],
     [
-     0.0,
-     1.0
+     0,
+     1
     ]
    ]
   },
@@ -467,12 +467,12 @@
    "s1": "b'MCOS'",
    "s2": "b'polyshape'",
    "arr": [
-    3707764736.0,
-    2.0,
-    1.0,
-    1.0,
-    1.0,
-    1.0
+    3707764736,
+    2,
+    1,
+    1,
+    1,
+    1
    ]
   },
   "xyG_polyin_Arch": [
@@ -482,7 +482,7 @@
   "alphabet_letters": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
   "xy_Pole_Prime": [
    [
-    0.0,
+    0,
     -37446.03356230362
    ],
    [
@@ -646,7 +646,7 @@
     27.617190434456305
    ]
   ],
-  "Number_of_Blocks": 10.0,
+  "Number_of_Blocks": 10,
   "UNISYS": "SI",
   "ImageFileName": "Example_9_Coulomb_arch.png",
   "ImageSize": [
@@ -655,8 +655,14 @@
   ],
   "_frame": {
    "coordinates": "pixels",
-   "units_per_pixel": 1.0,
+   "units_per_pixel": 1,
    "inferred": true
+  },
+  "_scale": {
+   "units_per_pixel": 0.007685662814,
+   "system": "SI",
+   "source": "nominal — Coulomb's figure carries no dimensions",
+   "declared_span": 5
   }
  }
 }

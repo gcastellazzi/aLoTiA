@@ -24,6 +24,32 @@ and the project uses [semantic versioning](https://semver.org/).
 - `tools/reproduce/`, the generators behind every computed figure and table of
   the paper, with `REPRODUCING.md` stating the expected values.
 
+### Added
+
+- **An example can declare its own size**, as a `_scale` block in its JSON
+  giving how many units one pixel is worth, the system, and — required —
+  `source`, where the dimension came from. The MATLAB files carry pixel
+  coordinates and no statement of what the picture measures, so most examples
+  opened labelled in pixels. **A scale without a source is refused** and the
+  arch stays in pixels: a number without a provenance, in a repository
+  published beside a paper, cannot be told from a guess. The source is shown
+  under the example's name, so an arch scaled from a published span and one
+  scaled to a round number for the drawing's sake can be told apart.
+
+  Scaling carries the **stored MATLAB solution** with the geometry — the force
+  polygon, the poles, the thrust — because rescaling the blocks alone would
+  break exactly the audit the paper rests on: the consistency check compares
+  the first column of the polygon against the weights, and they would stop
+  agreeing. A test asserts that a scaled example is still consistent and still
+  reproduces its stored polygon to 10⁻⁹.
+
+  Four textbook figures are scaled nominally, and say so: the circular
+  comparison to an 8 m span, Heyman's arch to 5 m, Coulomb's to 5 m, the
+  pointed arch to 4 m. The real structures — Notre-Dame, Poleni, Landscape
+  Arch, the Utah arch, San Francesco — are deliberately left in pixels until
+  their spans can be stated with a source. `tools/setscale.js` writes the
+  block, computing the factor from the span you declare.
+
 ### Changed
 
 - **The unit menu now converts instead of relabelling.** It used to change the

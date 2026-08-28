@@ -99,6 +99,7 @@ extrados at the crown — and four at maximum thrust.
 | `tests/` | 160 tests, run by the Node test runner |
 | `tools/serve.js` | a static server for `docs/`, in the standard library and nothing else |
 | `tools/reproduce/` | the generators behind every computed figure and table of the paper, and `REPRODUCING.md` |
+| `tools/setscale.js` | declares an example's real size, with the source of the dimension |
 
 Run it locally, and run the tests:
 

@@ -45,6 +45,7 @@ const DATA = 'data/examples/';
 const el = (id) => document.getElementById(id);
 const ui = {
   example: el('example'), meta: el('meta'), warn: el('warn'),
+  scaleSource: el('scaleSource'),
   thrust: el('thrust'), thrustValue: el('thrustValue'), reset: el('reset'),
   startPos: el('startPos'), startValue: el('startValue'),
   split: el('split'), splitValue: el('splitValue'),
@@ -243,6 +244,15 @@ function describe() {
     `coordinates: ${m.frame.coordinates}`,
   ].filter(Boolean);
   ui.meta.textContent = parts.join(' · ');
+
+  // WHERE THE SIZE CAME FROM, on screen and not only in the file. An example
+  // scaled from a published span and one scaled to a round number for the sake
+  // of the drawing look identical once drawn, and a reader comparing a span
+  // against the literature has to be able to tell them apart. The scale bar
+  // says how big; this says how much to believe it.
+  ui.scaleSource.hidden = !m.scaleSource;
+  ui.scaleSource.textContent = m.scaleSource
+    ? `scale: ${m.scaleSource}` : '';
 
   if (state.consistent && !state.consistent.ok) {
     ui.warn.hidden = false;

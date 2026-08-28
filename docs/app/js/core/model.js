@@ -12,9 +12,20 @@
  * themselves. Where the stored blocks are not a chain of abutting voussoirs
  * the recovery refuses, and `jointRecovery` carries the reason for the panel
  * to show.
+ *
+ * One field is ADDED to the stored format rather than read from MATLAB:
+ * `_scale`. The .mat files hold pixel coordinates and no statement of what the
+ * picture measures, so an arch of a real building comes up labelled in pixels
+ * and the scale bar can only say `px`. `_scale` supplies the missing sentence
+ * -- how many units one pixel is worth, in which system, and, REQUIRED,
+ * `source`: where the dimension comes from. A number without a provenance is
+ * exactly what should not be shipped in a published dataset, so one without a
+ * source is refused and the example is left in pixels. Examples with no
+ * `_scale` at all are untouched, which is most of them.
  */
 
 import { jointsFromBlocks } from './joints.js';
+import { scaleStoredExample } from './units.js';
 
 /** A MATLAB field that may be a scalar, a 1-element list, or absent. */
 function scalar(v, fallback = null) {
@@ -35,7 +46,7 @@ export function fromExample(json) {
   const frame = d._frame ?? { coordinates: 'pixels', units_per_pixel: 1 };
   const recovered = jointsFromBlocks(polys);
 
-  return {
+  const model = {
     name: json._meta?.source ?? null,
 
     // Geometry, in the frame declared by _frame. READ THE FRAME: in twelve of
@@ -78,6 +89,36 @@ export function fromExample(json) {
     imageSize: d.ImageSize ?? null,
 
     frame,
+  };
+
+  return applyStoredScale(model, d._scale);
+}
+
+/**
+ * Apply an example's declared scale, if it has one worth trusting.
+ *
+ * REFUSED WITHOUT A SOURCE. `units_per_pixel` alone is a bare number, and a
+ * bare number in a published dataset is indistinguishable from a guess. The
+ * field has to say where the dimension came from -- a measured drawing, a
+ * published span, or the word "nominal" for a textbook figure that has no true
+ * size at all -- and an example that cannot say is left in pixels, where the
+ * scale bar reads `px` and claims nothing.
+ *
+ * @param {object} model
+ * @param {object} [scale]  {units_per_pixel, system, source}
+ */
+function applyStoredScale(model, scale) {
+  if (!scale) return model;
+  const k = scalar(scale.units_per_pixel);
+  const source = typeof scale.source === 'string' ? scale.source.trim() : '';
+  if (!(k > 0) || !source) {
+    return { ...model, scaleWarning: 'the declared scale has no source and was ignored' };
+  }
+  if (model.frame?.coordinates === 'physical') return model;   // already scaled
+  return {
+    ...scaleStoredExample(model, k),
+    units: scale.system ?? model.units,
+    scaleSource: source,
   };
 }
 

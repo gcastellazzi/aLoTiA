@@ -493,6 +493,25 @@
                   the scale on every force, and nothing downstream would flag it.</td></tr>
         </tbody>
       </table>
+      <h3>The examples' own sizes</h3>
+      <p>
+        A stored example carries pixel coordinates and, in the MATLAB files, no statement at all of what
+        the picture measures &mdash; so most of them open labelled in pixels, and the scale bar honestly
+        says <code>px</code>. An example may now declare its size in the JSON, as a
+        <code>_scale</code> block giving how many units one pixel is worth <em>and where that dimension
+        came from</em>. A scale with no stated source is refused and the arch stays in pixels: a number
+        without a provenance in a published dataset cannot be told from a guess. Whatever the source
+        says is shown under the example's name, so an arch scaled from a published span and one scaled to
+        a round number for the sake of the drawing can be told apart.
+      </p>
+      <p>
+        <strong>The size is not the weight.</strong> Scaling carries the stored MATLAB solution with the
+        geometry, so the example still reproduces exactly &mdash; but its weights remain the numbers the
+        original file held, in whatever units those were. Type a <em>unit weight</em> and a
+        <em>thickness</em> and the arch is weighed from its real geometry: the nominal 5&nbsp;m Heyman
+        arch goes from a meaningless 10<sup>&minus;4</sup> to 249&nbsp;kN. The line of thrust does not
+        move &mdash; it never depended on the size of the forces, only on their ratios.
+      </p>
       <p>
         After scaling, the application reports the <strong>span and rise</strong> of the arch. Read them.
         They are the quickest check that the reference distance was entered correctly: if the span of a

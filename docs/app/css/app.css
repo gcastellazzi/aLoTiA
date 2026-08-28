@@ -286,3 +286,12 @@ ul.forces button:hover { background: #f0e2e3; }
 .verdict.ok { border-left-color: #2e7d32; background: #edf7ee; color: #1b5e20; }
 .verdict.bad { border-left-color: var(--accent); background: #fbecec;
   color: #7d1c22; }
+
+/* Where a stored example's size came from. Quieter than the warning, because
+   it is not a problem -- but present, because "nominal" and "measured" look
+   the same once the arch is drawn. */
+#panel .scale-source {
+  font-style: italic;
+  opacity: 0.85;
+  margin-top: 2px;
+}

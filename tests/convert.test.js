@@ -26,6 +26,13 @@ import { weighBlocks, centroidsOf } from '../docs/app/js/core/trace.js';
 import { area as signedArea, centroid } from '../docs/app/js/core/geometry.js';
 import { forcePolygon, freeThrustLine, jointCrossings } from '../docs/app/js/core/statics.js';
 import { collapseRange } from '../docs/app/js/core/mechanism.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fromExample, consistency, poleOf } from '../docs/app/js/core/model.js';
+import { poleFromForcePolygon } from '../docs/app/js/core/statics.js';
+
+const EXAMPLES = new URL('../docs/app/data/examples/', import.meta.url).pathname;
+const readRaw = (f) => JSON.parse(fs.readFileSync(path.join(EXAMPLES, f), 'utf8'));
 
 const KEYS = Object.keys(SYSTEMS);
 
@@ -209,4 +216,69 @@ test('the horizontal thrust converts as a force, and its ratio is invariant', ()
     // The number an engineer actually quotes: H over W.
     assert.ok(Math.abs(got.lot.points.length - ref.lot.points.length) === 0);
   }
+});
+
+// ------------------------------------------- a declared scale on an example --
+
+test('a declared scale carries the stored solution with the geometry', () => {
+  // THE TRAP. Rescaling the blocks and leaving the force polygon where it was
+  // breaks exactly the audit the paper rests on: `consistency` compares the
+  // first column of the polygon against the weights, and they stop agreeing.
+  // Both sides have to move together.
+  const files = fs.readdirSync(EXAMPLES)
+    .filter((f) => f.endsWith('.json') && f !== 'index.json');
+  let scaled = 0;
+  for (const f of files) {
+    const raw = readRaw(f);
+    if (!raw.data._scale) continue;
+    scaled++;
+
+    const m = fromExample(raw);
+    assert.equal(m.frame.coordinates, 'physical', f);
+    assert.ok(m.scaleSource, `${f}: a scale without a source was applied`);
+
+    // Whatever it was before, it must still be after.
+    const before = consistency(fromExample({ ...raw, data: { ...raw.data, _scale: undefined } }));
+    const after = consistency(m);
+    assert.equal(after.ok, before.ok, `${f}: consistency changed with the scale`);
+
+    if (after.ok) {
+      // And the stored polygon is still reproduced from the scaled weights.
+      const { pole } = poleOf(m, poleFromForcePolygon);
+      const fp = forcePolygon(m.weights, pole);
+      const ref = m.forcePolygon.flat();
+      const got = fp.magnitudes.flat();
+      const scale = Math.max(...ref.map(Math.abs));
+      const worst = Math.max(...got.map((v, i) => Math.abs(v - ref[i]) / scale));
+      assert.ok(worst < 1e-9, `${f}: force polygon differs by ${worst}`);
+    }
+  }
+  assert.ok(scaled >= 1, 'no example carries a declared scale any more');
+});
+
+test('a scale without a source is refused, and the arch stays in pixels', () => {
+  const raw = readRaw('Example_0_Landscape_arch.json');
+  const bad = { ...raw, data: { ...raw.data, _scale: { units_per_pixel: 0.093 } } };
+  const m = fromExample(bad);
+  assert.equal(m.frame.coordinates, 'pixels');
+  assert.match(m.scaleWarning, /no source/);
+});
+
+test('a declared scale does not move the mechanics either', () => {
+  const raw = readRaw('Example_3_Heyman_arch.json');
+  assert.ok(raw.data._scale, 'this test needs a scaled example');
+  const withScale = fromExample(raw);
+  const without = fromExample({ ...raw, data: { ...raw.data, _scale: undefined } });
+
+  const band = (m) => collapseRange(blocksLike({
+    centroids: m.centroids, weights: m.weights,
+    areas: m.areas, thickness: m.centroids.map(() => 0),
+  }), m.joints);
+
+  const a = band(without);
+  const b = band(withScale);
+  assert.ok(a && b);
+  // The collapse thrusts are fractions of the total weight: pure numbers.
+  assert.ok(Math.abs(a.min - b.min) < 1e-6, `H min ${a.min} vs ${b.min}`);
+  assert.ok(Math.abs(a.max - b.max) < 1e-6, `H max ${a.max} vs ${b.max}`);
 });
