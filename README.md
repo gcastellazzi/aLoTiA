@@ -49,6 +49,9 @@ reads is exactly the source that runs.
   with them.
 - **Two views** of the right-hand pane: the force polygon, or the voussoirs as
   solids in three dimensions, prismatic or revolved.
+- **A scale bar** on both plots, chequered like a map's, on a round 1-2-5
+  value that follows the zoom. On the arch it measures a length; on the force
+  polygon it measures a **force**, because every length on that drawing is one.
 - **Both ends imposed**: fix where the line starts and ends, and see the
   classical trial-pole construction that gets it there &mdash; exactly, in one
   correction, not by searching.

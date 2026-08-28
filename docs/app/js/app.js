@@ -6,6 +6,7 @@
  */
 
 import { Axes } from './render/axes.js';
+import { drawScaleBar } from './render/scalebar.js';
 import {
   drawBlocks, drawThrustLine, drawCable, drawWeights, drawSupports,
   drawForcePolygon, drawArrow, drawThrustLabels, labelStride,
@@ -52,6 +53,7 @@ const ui = {
   showWeights: el('showWeights'), showThrust: el('showThrust'),
   showCable: el('showCable'), showLabels: el('showLabels'),
   showRays: el('showRays'), showMech: el('showMech'),
+  showScale: el('showScale'),
   mechOn: el('mechOn'), mechVerdict: el('mechVerdict'),
   mechCount: el('mechCount'), mechBand: el('mechBand'),
   mechAmp: el('mechAmp'), goHmin: el('goHmin'), goHmax: el('goHmax'),
@@ -701,6 +703,27 @@ function fitForceView() {
   }, 0.12);
 }
 
+/**
+ * What one data unit is called, in each of the two panes.
+ *
+ * The arch is drawn in the model's own frame, so it is metres only once the
+ * arch has been scaled and pixels until then -- and a bar reading "200 px" is
+ * the most visible warning on the drawing that the numbers are not yet
+ * lengths. On the force polygon EVERY LENGTH IS A FORCE: the load line is the
+ * weights end to end and the pole's abscissa is the horizontal thrust, so that
+ * bar carries the force label of the same system, and "(unscaled)" where the
+ * panels say the same.
+ */
+function barUnits() {
+  const m = state.model;
+  const scaled = m && m.frame && m.frame.coordinates === 'physical';
+  const sys = SYSTEMS[state.system];
+  return {
+    length: scaled ? (sys?.length.label ?? '') : 'px',
+    force: scaled ? (sys?.force.label ?? '') : '(unscaled)',
+  };
+}
+
 function draw() {
   const m = state.model;
   if (!m) return;
@@ -785,6 +808,7 @@ function draw() {
   drawForces();
   drawReference();
   mainAx.decorate();
+  if (ui.showScale.checked) drawScaleBar(mainAx, { unit: barUnits().length });
 
   if (sideView() === 'solid') {
     drawSolidView();
@@ -800,6 +824,7 @@ function draw() {
     });
   }
   forceAx.decorate();
+  if (ui.showScale.checked) drawScaleBar(forceAx, { unit: barUnits().force });
 }
 
 /* ---------------------------------------------------------------- tracing -- */
@@ -2063,7 +2088,8 @@ ui.stateFile.addEventListener('change', (e) => {
   e.target.value = '';
 });
 for (const k of ['showImage', 'showBlocks', 'showWeights', 'showThrust',
-  'showCable', 'showLabels', 'showJoints', 'showRays', 'showMech']) {
+  'showCable', 'showLabels', 'showJoints', 'showRays', 'showMech',
+  'showScale']) {
   ui[k].addEventListener('change', draw);
 }
 ui.flipY.addEventListener('change', () => {

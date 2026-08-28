@@ -3,6 +3,33 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A chequered scale bar on both plots**, bottom right, hidden or shown with
+  *Scale bar* in the toolbar. The value is always round — 1, 2 or 5 times a
+  power of ten, off the same ladder the axis ticks use — and follows the zoom.
+  On the arch it measures a length, in the unit system chosen in the toolbar or
+  in `px` while the arch is unscaled; **on the force polygon it measures a
+  force**, because the load line is the weights laid end to end and the pole's
+  abscissa is the horizontal thrust, so every length on that drawing is one.
+- **An exact circular ring from its numbers** — inner radius, thickness ratio,
+  voussoirs — in the Geometry panel. `circularArch()` had existed since the
+  port but nothing outside the tests called it, so the ring the published
+  figures are computed on could not be built in the browser at all: a reader
+  checking a point of them had to trace two arcs over an image by hand, which
+  does not give the same numbers. Measured against the published data, the band
+  now agrees to within the figure's own grid step.
+- `tools/reproduce/`, the generators behind every computed figure and table of
+  the paper, with `REPRODUCING.md` stating the expected values.
+
+### Fixed
+
+- The subscript in *Thickness ratio t/rᵢ* was pushed to the far side of the
+  panel: `label.inline` is a flex row, so the bare text and the `<sub>` became
+  two items and `space-between` drove them apart.
+
 ## [1.1.0] — 2026-08-28
 
 ### Added
