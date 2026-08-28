@@ -96,7 +96,7 @@ extrados at the crown — and four at maximum thrust.
 |---|---|
 | `docs/app/` | the application: `js/core/` is the mechanics, `js/render/` the drawing |
 | `docs/index.html` | the user guide |
-| `tests/` | 160 tests, run by the Node test runner |
+| `tests/` | 180 tests, run by the Node test runner |
 | `tools/serve.js` | a static server for `docs/`, in the standard library and nothing else |
 | `tools/reproduce/` | the generators behind every computed figure and table of the paper, and `REPRODUCING.md` |
 | `tools/setscale.js` | declares an example's real size, with the source of the dimension |
@@ -116,44 +116,29 @@ only because browsers refuse ES modules and `fetch()` over `file://`. No
 dependencies are installed for either command — Node ≥ 18 is the only
 requirement, and the application itself needs nothing but a browser.
 
-## The examples, audited
+## The examples
 
-**Twelve examples ship with this repository** — the ones the SoftwareX article
-discusses. The full corpus of twenty-eight converted files is in the
-[development repository](https://github.com/gcastellazzi/aLOTofImaginArches);
-the twelve here were chosen to cover every case the article names.
+Twelve worked examples ship with the application, chosen to span the cases the
+method has to handle: a semicircular ring, Heyman's arch and Coulomb's, a
+pointed arch, a flying buttress at its two limiting thrusts, a dome section, two
+natural rock arches, two bridges and a church section.
 
-Because the port was checked against the MATLAB original rather than
-reimplemented from a description, it produced a usable audit of them:
+Each is a traced arch with its voussoirs, weights and background image, and most
+carry a computed line of thrust as well. Four of them declare a size — a
+nominal one, since the figures they are traced from are dimensionless, and each
+says so on screen; the rest are shown in pixels, where the scale bar reads `px`
+and the drawing claims no dimension it cannot support. **An example that states
+a size must also state where that size came from**, or the application refuses
+it and leaves the arch in pixels.
 
-| | |
-|---|---|
-| **8** carry a complete solution | recomputed from their geometry alone, agreeing with what MATLAB saved to **machine precision** — worst relative error 8.5 × 10⁻¹⁶ on the force polygon and 3.9 × 10⁻¹⁵ on the thrust line |
-| **3** were saved before a solution was computed | Utah Arch, Nervi, Pippard–Ashby |
-| **1** is internally inconsistent | San Francesco: loads were applied but never written to the file, so the stored solution does not correspond to the stored geometry. Detected and reported rather than silently drawn |
-
-### The joints were never stored, and are recovered
-
-The `.mat` files hold the voussoirs but never held the **cuts between them**,
-and a joint is the one thing admissibility and the mechanism analysis are asked
-about. Without them the panel could only answer *"available for a traced arch,
-which has joints"*, and the whole of the Mechanism tab was reachable only by
-tracing a photograph from scratch.
-
-They are not lost, though: a joint is the face along which two voussoirs abut,
-and `core/joints.js` recovers it from the polygons — every vertex of either
-block that lies on the boundary of the other is a point of that face, and the
-joint is the segment between the two furthest apart. That is the same
-convention the profile cutter already uses, where a cut through a double shell
-runs from the first material entered to the last left.
-
-**Nine of the twelve open the whole analysis.** The other three are refused
-with a reason on screen rather than given invented cuts: the Poleni dome
-interleaves its two shells, having had its two-piece blocks flattened into one
-polygon each; San Francesco carries detached members; the Utah arch has a real
-gap between two blocks. All three remain analysable through **trace a whole
-profile**, which cuts the outline radially and builds proper joints,
-multi-piece ones included.
+Not every arch admits the whole analysis, and the application says which and
+why rather than inventing what it lacks. Admissibility and the mechanism need
+the **joints** — the cuts between the voussoirs — and where an example is not a
+single chain of abutting stones, no joints exist to be had: a dome whose two
+shells interleave, a section carrying detached members, an arch with a real gap
+between two blocks. Those are analysed instead through **trace a whole
+profile**, which cuts an outline radially and builds proper joints, multi-piece
+ones included. Nine of the twelve open the full analysis directly.
 
 ## Checking the published figures
 
@@ -170,69 +155,6 @@ reference ring in the *Circular ring* panel (inner radius 1, the thickness
 ratio you want, 16 blocks), switch on *Drive from the thrust*, and read the
 band off the Mechanism panel. See
 [`REPRODUCING.md`](tools/reproduce/REPRODUCING.md) for the comparison.
-
-## Latest developments
-
-- **The joints of a stored example are recovered from its voussoirs**, so
-  admissibility, the hinges and the collapse mechanism work on the shipped
-  examples and not only on a freshly traced arch. Where the blocks are not a
-  chain the recovery refuses and says which example and why.
-- **The six examples saved without a solution are analysable.** Nothing was
-  missing from them but a pole, which the mechanism search computes for itself;
-  the consistency check had been treating "no stored solution" like "a stored
-  solution that does not match its geometry".
-- **A narrow admissible band is no longer missed.** The collapse search seeded
-  on the first admissible sample of a grid, which is a boolean test on a grid:
-  `Ctesifonte_01` stands only between *H*/*W* = 0.041 and 0.061, the grid
-  sampled 0.0397 and 0.0593, and a real arch came back as standing at no thrust
-  at all. The seed now follows the maximum of the clearance.
-- **A three-tab panel** (Geometry, LoT, Mechanism), per-plot view tools, and a
-  3-D block view that turns under the mouse.
-- **Poleni's dome and a 3-D block view**, with the second pane tabbed between
-  the force polygon and the solids, as the MATLAB version had it.
-- **Mechanism analysis**: hinge formation from the thrust line, macro-blocks,
-  the degree-of-freedom count, and the collapse kinematics drawn by integrating
-  the velocity field so that the blocks stay rigid and the hinges stay shut.
-- **Both ends of the thrust line freed.** Pinning them at the joint mid-points
-  had discarded two of the three degrees of freedom: a semicircular ring needed
-  *t*/*r*ᵢ ≈ 0.198 before any line fitted, against Heyman's 0.108. With the ends
-  free the same ring manages 0.115, and the limit line comes out running through
-  the extrados at both springings.
-- **Bow's notation** on the force polygon and the thrust line together.
-- **Save and reopen**, with the file validated before it is trusted.
-- **Scale, units and applied loads** for traced arches.
-- A **SoftwareX manuscript** describing the software, kept separately
-  until it is published.
-
-## Where the rest of it is
-
-**This repository is the web application and nothing else** — the software the
-SoftwareX article describes, with the twelve examples it discusses. Deliberately
-absent, so that what is published is what is documented:
-
-| | |
-|---|---|
-| the MATLAB App Designer original, `aLOTofImaginArches.mlapp`, frozen since 2025 | development repository |
-| `external_functions/`, its MATLAB dependencies | development repository |
-| the full corpus of twenty-eight converted examples and the `.mat` originals | development repository |
-| `tools/mat2json.py`, the converter, and its `--check` mode | development repository |
-| the three click-by-click PDF tutorials for the MATLAB version | development repository |
-
-All of it is at
-[github.com/gcastellazzi/aLOTofImaginArches](https://github.com/gcastellazzi/aLOTofImaginArches),
-which remains where the work happens. Two differences from the MATLAB tutorials
-are worth knowing if you read them: the ends of the thrust line are free here,
-and the unit weight is entered as a **weight** density rather than a mass
-density.
-
-**pyLOT**, a cross-platform desktop port reading the same `.mat` files, is
-likewise frozen: [github.com/gcastellazzi/pyLOT](https://github.com/gcastellazzi/pyLOT).
-
-## Future developments
-
-- Arches on spreading supports
-- Sliding failure, which Heyman's third assumption sets aside
-- Fiber-reinforced enhancement
 
 ## Licence and citation
 
@@ -252,8 +174,8 @@ repository* button. Changes are recorded in [`CHANGELOG.md`](CHANGELOG.md), and
 | C3 | Permanent link to reproducible capsule | the application itself is the capsule: <https://gcastellazzi.github.io/aLoTiA/app/> runs in the browser with nothing installed |
 | C4 | Legal code license | MIT |
 | C5 | Code versioning system used | git |
-| C6 | Software code languages, tools and services used | JavaScript (ES2022 modules), HTML, CSS; Node.js for the tests; Python 3 for `tools/mat2json.py`; GitHub Pages, GitHub Actions |
-| C7 | Compilation requirements, operating environments, dependencies | **none**: no build step and no dependencies. Any modern browser runs the application; Node ≥ 18 runs the tests |
+| C6 | Software code languages, tools and services used | JavaScript (ES2022 modules), HTML, CSS; Node.js for the tests and the figure generators; GitHub Pages, GitHub Actions |
+| C7 | Compilation requirements, operating environments, dependencies | **none**: no build step and no dependencies. Any modern browser runs the application; Node ≥ 18 runs the tests and the figure generators |
 | C8 | Link to developer documentation | <https://gcastellazzi.github.io/aLoTiA/> and [`docs/app/js/core/README.md`](docs/app/js/core/README.md) |
 | C9 | Support email for questions | <giovanni.castellazzi@unibo.it> |
 
