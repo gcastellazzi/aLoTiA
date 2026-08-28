@@ -202,9 +202,7 @@
 
     .launch:hover { background: var(--accent-soft); }
 
-    .legacy { opacity: 0.95; }
 
-    .legacy h2 { color: var(--muted); border-bottom-color: var(--border); }
 
     .keyparam th:first-child { width: 34%; }
 
@@ -267,7 +265,6 @@
       <a href="#cable">Hooke's cable</a>
       <a href="#save">Save &amp; reopen</a>
       <a href="#tips">Troubleshooting</a>
-      <a href="#matlab">MATLAB version</a>
     </div>
   </nav>
 
@@ -318,7 +315,7 @@
       <h2>Main interface</h2>
       <p>
         The window has a control panel on the left and two plots: the <strong>arch and line of thrust</strong>,
-        and the <strong>force polygon</strong>. The graphics deliberately imitate the MATLAB original —
+        and the <strong>force polygon</strong>. The graphics keep the idiom of classical graphical statics —
         boxed axes with inward ticks, a pale grid, translucent force bands — so that the pictures in the
         course slides and the pictures on screen mean the same thing.
       </p>
@@ -402,8 +399,8 @@
     <section id="examples">
       <h2>Stored examples</h2>
       <p>
-        Twenty-eight examples come with the application, converted from the <code>.mat</code> files of the
-        MATLAB version. Pick one from the <strong>Example</strong> menu; the background image, the blocks,
+        Twelve worked examples come with the application. Pick one from the
+        <strong>Example</strong> menu; the background image, the blocks,
         the weights and the stored solution all come with it.
       </p>
       <p>They are not all alike, and the application tells you which kind you have opened:</p>
@@ -495,7 +492,7 @@
       </table>
       <h3>The examples' own sizes</h3>
       <p>
-        A stored example carries pixel coordinates and, in the MATLAB files, no statement at all of what
+        A stored example carries pixel coordinates and, as saved, no statement at all of what
         the picture measures &mdash; so most of them open labelled in pixels, and the scale bar honestly
         says <code>px</code>. An example may now declare its size in the JSON, as a
         <code>_scale</code> block giving how many units one pixel is worth <em>and where that dimension
@@ -505,7 +502,7 @@
         a round number for the sake of the drawing can be told apart.
       </p>
       <p>
-        <strong>The size is not the weight.</strong> Scaling carries the stored MATLAB solution with the
+        <strong>The size is not the weight.</strong> Scaling carries the stored solution with the
         geometry, so the example still reproduces exactly &mdash; but its weights remain the numbers the
         original file held, in whatever units those were. Type a <em>unit weight</em> and a
         <em>thickness</em> and the arch is weighed from its real geometry: the nominal 5&nbsp;m Heyman
@@ -712,7 +709,7 @@
         The right-hand pane carries two tabs. <strong>Force polygon</strong> is the construction;
         <strong>Blocks</strong> shows the voussoirs as solids in three dimensions &mdash; straight
         prisms of the thickness you set, or, with Poleni on, the revolved lune with the axis marked.
-        Drag to turn nothing: the viewpoint is fixed, as it was in the MATLAB version, but you can
+        Drag to turn nothing: the viewpoint is fixed, but you can
         pan and zoom as in the other plots.
       </p>
     </section>
@@ -755,12 +752,14 @@
       <p>
         Everything in this section needs the <strong>joints</strong>: the cuts between the
         voussoirs, which is where the software asks whether the line has left the masonry. An arch
-        you trace yourself has them by construction. A <em>stored example</em> does not &mdash; the
-        MATLAB files saved the blocks and never saved the cuts &mdash; so the software recovers them
-        from the blocks: two voussoirs abut along one face, and that face is the joint. Twelve of the
-        twenty-eight examples come back as a whole chain and open the whole analysis. Where the
-        blocks are not a chain the panel says so and names the reason rather than inventing cuts and
-        drawing a verdict on them.
+        you trace yourself has them by construction. A <em>stored example</em> holds its blocks and
+        not its cuts, so the software recovers them from the blocks: two voussoirs abut along one
+        face, and that face is the joint. Nine of the twelve examples come back as a whole chain and
+        open the whole analysis. Where the blocks are not a chain &mdash; a dome whose two shells
+        interleave, a section carrying detached members, an arch with a real gap between two blocks
+        &mdash; the panel says so and names the reason rather than inventing cuts and drawing a
+        verdict on them. Those are cut properly by
+        <a href="#profile">tracing the whole profile</a> instead.
       </p>
 
       <h3>Driving it</h3>
@@ -864,42 +863,18 @@
         <li><strong>&ldquo;No joints for this example&rdquo;.</strong> The stored files hold the
             voussoirs but never held the cuts between them, so the software recovers the joints from
             the blocks themselves &mdash; and refuses where the blocks are not a chain of abutting
-            voussoirs. Twelve of the twenty-eight examples open the whole analysis; the Poleni domes
-            interleave two shells, and the cathedral sections carry piers and detached members. The
-            message says which case you are in. Any of them can be cut properly with
-            <a href="#profile">trace a whole profile</a>.</li>
-        <li><strong>&ldquo;Stored solution not recomputable&rdquo;.</strong> The example is one of the six
-            inconsistent ones; the line shown is the one saved with the file.</li>
+            voussoirs. Nine of the twelve examples open the whole analysis; of the rest, a dome
+            interleaves its two shells, a section carries detached members, and one arch has a real
+            gap between two blocks. The message says which case you are in. Any of them can be cut
+            properly with <a href="#profile">trace a whole profile</a>.</li>
+        <li><strong>&ldquo;Stored solution not recomputable&rdquo;.</strong> The example carries a saved
+            solution that does not correspond to its saved geometry &mdash; loads were applied and never
+            written to the file &mdash; so the line shown is the one stored rather than a recomputed one.</li>
         <li><strong>The blocks came out inverted.</strong> The two traced curves cross somewhere. Clear
             the trace and redo it, watching the springings.</li>
       </ul>
     </section>
 
-    <section id="matlab" class="legacy">
-      <h2>The original MATLAB application</h2>
-      <p>
-        The browser application described above supersedes the MATLAB App Designer version, which has been
-        used in the course since 2018 and is no longer developed. It is not part of this repository: the
-        <code>.mlapp</code>, its <code>external_functions/</code>, the full corpus of twenty-eight
-        converted examples with their <code>.mat</code> originals, the converter, and the three
-        click-by-click PDF tutorials are all in the development repository,
-        <a href="https://github.com/gcastellazzi/aLOTofImaginArches">github.com/gcastellazzi/aLOTofImaginArches</a>.
-      </p>
-      <p>
-        Its workflow is close enough that those tutorials remain useful, but note that the browser version
-        differs in two ways that matter: the ends of the thrust line are <a href="#dof">free</a>, and the
-        unit weight is entered as a <em>weight</em> density rather than a mass density.
-      </p>
-      <p>
-        A cross-platform desktop port, <strong>pyLOT</strong>, reads the same <code>.mat</code> files and
-        is likewise no longer developed:
-        <a href="https://github.com/gcastellazzi/pyLOT">github.com/gcastellazzi/pyLOT</a>.
-      </p>
-      <figure>
-        <img src="images/app_screenshot.png" alt="The MATLAB application">
-        <figcaption>The MATLAB App Designer version, whose graphical idiom the browser version keeps.</figcaption>
-      </figure>
-    </section>
   </main>
 
   <footer>
