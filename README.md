@@ -24,9 +24,9 @@ There is **nothing to install and no licence to buy**: it is a static web page,
 plain ES modules with no build step and no dependencies, so the source a student
 reads is exactly the source that runs.
 
-|![The dome of St Peter's, analysed as Poleni analysed it](docs/images/poleni_dome.png "Poleni's plate of 1748, with the line of thrust and the voussoirs revolved as lunes")|
+|![The application analysing the dome of St Peter's as Poleni analysed it](docs/images/poleni_dome.png "aLOTofImaginArches running: Poleni's plate of 1748, the line of thrust, two applied loads, and the voussoirs revolved as lunes")|
 |---|
-|*Poleni's plate of 1748 for the dome of St Peter's, traced into 56 voussoirs, with the line of thrust drawn over it. On the right the same voussoirs turned about the axis: **a lune is broad at the springing and closes to nothing at the crown**, which is what Poleni saw and what makes a dome not an arch. Both panes are the application's own output.*|
+|*The application, running. Poleni's plate of 1748 for the dome of St Peter's, traced into 56 voussoirs, with two loads on the haunches and Hooke's cable hanging below. Both ends of the line of thrust are pinned at A and B and the construction **closes to machine precision** — the panel on the left is where the three degrees of freedom are moved. On the right the same voussoirs turned about the axis: **a lune is broad at the springing and closes to nothing at the crown**, which is what Poleni saw in 1748 and what makes a dome not an arch.*|
 
 ## What it does
 
