@@ -24,8 +24,9 @@ There is **nothing to install and no licence to buy**: it is a static web page,
 plain ES modules with no build step and no dependencies, so the source a student
 reads is exactly the source that runs.
 
-|![Poleni's study of the dome of St Peter's](docs/images/example_funicular_poleni.png "Poleni's study of the dome of St Peter's")|
+|![The dome of St Peter's, analysed as Poleni analysed it](docs/images/poleni_dome.png "Poleni's plate of 1748, with the line of thrust and the voussoirs revolved as lunes")|
 |---|
+|*Poleni's plate of 1748 for the dome of St Peter's, traced into 56 voussoirs, with the line of thrust drawn over it. On the right the same voussoirs turned about the axis: **a lune is broad at the springing and closes to nothing at the crown**, which is what Poleni saw and what makes a dome not an arch. Both panes are the application's own output.*|
 
 ## What it does
 
