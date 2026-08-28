@@ -24,6 +24,35 @@ and the project uses [semantic versioning](https://semver.org/).
 - `tools/reproduce/`, the generators behind every computed figure and table of
   the paper, with `REPRODUCING.md` stating the expected values.
 
+### Changed
+
+- **The unit menu now converts instead of relabelling.** It used to change the
+  labels alone, so an arch of 2 m became "2 mm" — a different arch, with
+  nothing on screen to say so, because every readout agreed with every other
+  about a number whose meaning had silently changed. `convertLength` and
+  `convertForce` had been written for this and were never called by anything.
+
+  Lengths, areas, weights, the force polygon, the pole, the traced curves, the
+  profiles, the picked ends and reference points, and the typed fields — unit
+  weight, thickness, ring radius, reference length, load magnitude — are all
+  carried across. **Three different factors are involved and they are not
+  interchangeable**: a length goes as *k*<sub>L</sub>, an area as
+  *k*<sub>L</sub>², a force as *k*<sub>F</sub> — which is a separate factor,
+  because the systems choose their force unit independently of their length
+  unit — and a weight density as *k*<sub>F</sub>/*k*<sub>L</sub>³, a factor of
+  a millionth between SI and N–mm.
+
+  The property the tests pin down is not the arithmetic but that **the
+  mechanics does not move**: the line of thrust crosses every joint at the same
+  fraction and the collapse band is the same fraction of the total weight, in
+  every system. An independent check falls out of the tables themselves — each
+  system declares a typical masonry density in its own units, and converting
+  one into another must land on the value already tabulated, which fixes
+  *k*<sub>F</sub>/*k*<sub>L</sub>³ without trusting the code that computes it.
+
+  Unit weight is now converted rather than reset to the typical value, which
+  used to throw away whatever the student had entered.
+
 ### Fixed
 
 - The subscript in *Thickness ratio t/rᵢ* was pushed to the far side of the

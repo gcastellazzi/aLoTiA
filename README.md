@@ -32,7 +32,8 @@ reads is exactly the source that runs.
 - **Trace** any image into voussoirs, with the trace checked before it is used —
   too few points, coincident curves, and crossing curves are all reported.
 - **Scale and units** — one measured distance turns pixels into metres; SI,
-  N–mm and kgf–cm.
+  N–mm and kgf–cm, and **switching between them converts** rather than
+  relabelling: 2 m becomes 2000 mm and the arch stands exactly as it stood.
 - **Loads** placed by clicking, merged into the same sequence as the weights.
 - **Three degrees of freedom**: the horizontal thrust, where the line leaves its
   springing joint, and how the total weight divides between the reactions. Both

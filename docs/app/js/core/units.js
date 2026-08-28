@@ -124,6 +124,83 @@ export function convertForce(value, from, to) {
 }
 
 /**
+ * The factors that carry every quantity from one system to another.
+ *
+ * A length goes as kL, an area as kL squared, a volume as kL cubed, and a
+ * force as kF -- which is NOT kL: the three systems differ in their force unit
+ * independently of their length unit, kN to N to kgf. A WEIGHT DENSITY, being
+ * a force over a volume, therefore goes as kF / kL^3, and getting that one
+ * wrong is a silent factor of a billion between SI and N-mm.
+ */
+export function conversionFactors(from, to) {
+  const kL = SYSTEMS[from].length.toBase / SYSTEMS[to].length.toBase;
+  const kF = SYSTEMS[from].force.toBase / SYSTEMS[to].force.toBase;
+  return { kL, kF, area: kL * kL, density: kF / (kL * kL * kL) };
+}
+
+/**
+ * The same arch, expressed in another system of units.
+ *
+ * WHY THIS EXISTS, AND WHY IT DID NOT. The unit menu used to change only the
+ * LABELS: an arch of 2 m became "2 mm", which is a different arch. Every
+ * readout in the application was internally consistent, so nothing looked
+ * wrong -- the axis ticks, the panels and the scale bar all agreed with each
+ * other about a number that had silently changed meaning. `convertLength` and
+ * `convertForce` had been written for this and never called.
+ *
+ * ONLY A SCALED ARCH IS CONVERTED. While the frame is still `pixels` the
+ * numbers belong to no system at all, so there is nothing to carry between
+ * two, and the model is returned untouched. The unit menu then does what it
+ * always did -- names the system the numbers will be in once a scale is set.
+ *
+ * @param {object} model
+ * @param {string} from  a key of SYSTEMS
+ * @param {string} to    a key of SYSTEMS
+ * @returns {object} a new model, or the same one when there is nothing to do
+ */
+export function convertModel(model, from, to) {
+  if (!model || from === to || !SYSTEMS[from] || !SYSTEMS[to]) return model;
+  if (model.frame?.coordinates !== 'physical') return model;
+  const { kL, kF, area } = conversionFactors(from, to);
+
+  const pt = (p) => (p ? [p[0] * kL, p[1] * kL] : p);
+  return {
+    ...model,
+    blocks: (model.blocks ?? []).map((p) => scalePolygon(p, kL)),
+    centroids: (model.centroids ?? []).map(pt),
+    areas: (model.areas ?? []).map((a) => a * area),
+    // A weight is a FORCE. It does not follow the geometry between systems --
+    // the same stone weighs 20 kN or 20000 N, and its area changes by 10^6.
+    weights: (model.weights ?? []).map((w) => w * kF),
+    thickness: (model.thickness ?? []).map((t) => t * kL),
+    joints: (model.joints ?? []).map((j) => ({ ...j, a: pt(j.a), b: pt(j.b) })),
+    pointA: pt(model.pointA),
+    pointB: pt(model.pointB),
+    centre: pt(model.centre),
+    thrustLine: model.thrustLine ? model.thrustLine.map(pt) : null,
+    thrustForce: Array.isArray(model.thrustForce)
+      ? model.thrustForce.map((v) => v * kF) : model.thrustForce,
+    horizontalThrust: typeof model.horizontalThrust === 'number'
+      ? model.horizontalThrust * kF : model.horizontalThrust,
+    // The force polygon is three columns of forces.
+    forcePolygon: model.forcePolygon
+      ? model.forcePolygon.map((row) => row.map((v) => v * kF)) : null,
+    // The pole's coordinates are forces, both of them: the abscissa is the
+    // horizontal thrust and the ordinate divides the total weight.
+    poleTrial: Array.isArray(model.poleTrial)
+      ? model.poleTrial.map((r) => (Array.isArray(r) ? r.map((v) => v * kF) : r * kF))
+      : model.poleTrial,
+    poleFinal: Array.isArray(model.poleFinal)
+      ? model.poleFinal.map((v) => v * kF) : model.poleFinal,
+    units: to,
+    frame: {
+      ...model.frame,
+      units_per_pixel: (model.frame.units_per_pixel ?? 1) * kL,
+    },
+  };
+}
+
+/**
  * A number with its unit, at a sensible number of digits.
  *
  * @param {number} value

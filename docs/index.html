@@ -477,7 +477,14 @@
       <table class="keyparam">
         <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
         <tbody>
-          <tr><td><strong>Unit system</strong></td><td>SI (m, kN), N–mm, or kgf–cm.</td></tr>
+          <tr><td><strong>Unit system</strong></td>
+              <td>SI (m, kN), N&ndash;mm, or kgf&ndash;cm. <strong>Changing it converts</strong>: an arch
+                  of 2&nbsp;m becomes 2000&nbsp;mm, a weight of 20&nbsp;kN becomes 20&nbsp;000&nbsp;N,
+                  and a unit weight of 20&nbsp;kN/m³ becomes 2&times;10<sup>&minus;5</sup>&nbsp;N/mm³.
+                  Nothing about the arch changes but the units it is expressed in: the line of thrust
+                  crosses every joint at exactly the same fraction, and the collapse thrusts stay the same
+                  fraction of the total weight. While the arch is still unscaled there is nothing to
+                  convert, and the menu simply names the system it will be scaled into.</td></tr>
           <tr><td><strong>Unit weight</strong></td>
               <td>A <em>weight</em> density, so that <em>W</em> = area &times; thickness &times; &gamma;
                   with no hidden <em>g</em>. About 20 kN/m³ for masonry.</td></tr>

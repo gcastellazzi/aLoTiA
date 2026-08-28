@@ -25,6 +25,7 @@ import {
 import { blocksLike, circularRing } from './core/blocks.js';
 import {
   SYSTEMS, unitsPerPixel, scaleModel, format, archDimensions,
+  convertModel, conversionFactors,
 } from './core/units.js';
 
 import { serialise, deserialise, suggestedName } from './core/persist.js';
@@ -1691,11 +1692,91 @@ ui.clearForces.addEventListener('click', () => {
 ui.pickRef.addEventListener('click', armReference);
 ui.applyScale.addEventListener('click', applyScale);
 ui.refLength.addEventListener('input', () => { reportScale(); draw(); });
+/**
+ * Change the system of units, and CARRY EVERY QUANTITY WITH IT.
+ *
+ * The menu used to change only the labels, so an arch of 2 m became "2 mm" --
+ * a different arch, with nothing on screen to say so, because every readout
+ * agreed with every other about a number whose meaning had silently changed.
+ *
+ * Three kinds of quantity live in the state and they do not scale alike. A
+ * length goes as kL and an area as kL squared; a FORCE goes as kF, which is a
+ * different factor, because the three systems choose their force unit
+ * independently of their length unit. The unit weight is a force over a
+ * volume and goes as kF/kL^3 -- a factor of a millionth between SI and N-mm,
+ * and the one that would be silently wrong if it followed the lengths.
+ *
+ * Nothing is converted while the arch is still in pixels: those numbers belong
+ * to no system, and the menu then does what it always did, naming the system
+ * the arch will be scaled into.
+ */
 ui.system.addEventListener('change', () => {
-  state.system = ui.system.value;
-  ui.gamma.value = String(SYSTEMS[state.system].typicalDensity);
+  const from = state.system;
+  const to = ui.system.value;
+  state.system = to;
+
+  const scaled = state.model?.frame?.coordinates === 'physical';
+  if (scaled && from !== to) {
+    const { kL, kF, density } = conversionFactors(from, to);
+    const pt = (p) => (p ? [p[0] * kL, p[1] * kL] : p);
+    const poly = (q) => (q ?? []).map(pt);
+
+    state.model = convertModel(state.model, from, to);
+    state.forces = {
+      ...state.forces,
+      points: poly(state.forces.points),
+      magnitudes: state.forces.magnitudes.map((v) => v * kF),
+    };
+    // BOTH coordinates of the pole are forces: the abscissa is the horizontal
+    // thrust and the ordinate divides the total weight between the reactions.
+    state.basePole = state.basePole
+      ? [state.basePole[0] * kF, state.basePole[1] * kF] : null;
+    state.ends = {
+      ...state.ends, A: pt(state.ends.A), B: pt(state.ends.B),
+      construction: null,
+    };
+    state.trace = {
+      ...state.trace, inner: poly(state.trace.inner),
+      outer: poly(state.trace.outer), cursor: null,
+    };
+    state.profiles = {
+      ...state.profiles,
+      list: (state.profiles.list ?? []).map(poly),
+      current: state.profiles.current ? poly(state.profiles.current) : null,
+      centre: pt(state.profiles.centre),
+    };
+    state.ref = { ...state.ref, points: poly(state.ref.points) };
+    state.newBlock = state.newBlock ? poly(state.newBlock) : null;
+    // The band is a FRACTION of the total load and so is dimensionless, but
+    // its key is keyed on the load, which has just changed.
+    state.band = null;
+    state.bandKey = null;
+    state.mech = null;
+    state.crossings = null;
+
+    // The typed fields carry units too. Converting the unit weight beats
+    // resetting it to the typical value, which threw away whatever the student
+    // had entered.
+    const field = (elm, k) => {
+      const v = Number(elm.value);
+      if (isFinite(v)) elm.value = String(Number((v * k).toPrecision(6)));
+    };
+    field(ui.gamma, density);
+    field(ui.thick, kL);
+    field(ui.ringRi, kL);
+    field(ui.refLength, kL);
+    field(ui.domeAxis, kL);
+    field(ui.forceMag, kF);
+  } else if (!scaled) {
+    // Nothing to carry: offer the density that suits the system instead.
+    ui.gamma.value = String(SYSTEMS[to].typicalDensity);
+  }
+
   reportScale();
+  reportDome();
   listForces();
+  recompute();
+  fitViews();
   draw();
 });
 
