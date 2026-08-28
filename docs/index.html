@@ -3,32 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>aLOTofImaginArches — User Guide</title>
-  <meta name="description" content="User guide for aLOTofImaginArches: interactive funicular analysis and line of thrust for masonry arches, in the browser.">
+  <title>aLOTofImaginArches — the line of thrust, in the browser</title>
+  <meta name="description" content="How to use aLOTofImaginArches: graphical statics of masonry arches — the force polygon, the line of thrust and its three degrees of freedom, admissibility, hinges and collapse — with the theory each tool rests on.">
   <style>
     :root {
-      --bg: #f6f7f9;
+      --bg: #f5f6f8;
       --surface: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
+      --text: #1b2129;
+      --muted: #667081;
       --accent: #1e4d8c;
       --accent-soft: #e8f0fa;
-      --border: #e5e7eb;
-      --code-bg: #f3f4f6;
-      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      /* The application's own inks, so the guide and the drawing agree. */
+      --lot: #a32b22;          /* the line of thrust, and the load line */
+      --lot-soft: #f8ebe9;
+      --cable: #3d6b4a;        /* Hooke's cable */
+      --cable-soft: #e9f1eb;
+      --stone: #8a6a3f;        /* the voussoirs */
+      --stone-soft: #f6f0e6;
+      --border: #e3e6ea;
+      --code-bg: #f2f4f6;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
       --radius: 12px;
       --max: 980px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14181d;
+        --surface: #1b2027;
+        --text: #e6e9ed;
+        --muted: #9aa4b1;
+        --accent: #8fb5e4;
+        --accent-soft: #1d2a3b;
+        --lot: #e08a80;
+        --lot-soft: #2b1d1b;
+        --cable: #94c4a2;
+        --cable-soft: #1a251d;
+        --stone: #d2ae7c;
+        --stone-soft: #262019;
+        --border: #2e353f;
+        --code-bg: #232931;
+        --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
     }
 
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-      line-height: 1.65;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 17px;
+      line-height: 1.68;
       color: var(--text);
       background: var(--bg);
+      -webkit-font-smoothing: antialiased;
     }
+
+    /* Anything that carries a quantity is set in a face where the digits line
+       up: a table of thrusts is unreadable in a proportional font. */
+    .num, table td, code, kbd { font-variant-numeric: tabular-nums; }
 
     header {
       background: linear-gradient(135deg, #163a6b 0%, #1e4d8c 55%, #2b6cb0 100%);
@@ -49,7 +82,7 @@
       width: 110px;
       height: auto;
       border-radius: 10px;
-      background: #fff;
+      background: #ffffff;
       padding: 0.35rem;
     }
 
@@ -67,11 +100,17 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
     }
 
+    header p + p {
+      margin-top: 0.7rem;
+      font-size: 0.95rem;
+      opacity: 0.92;
+    }
+
     nav.toc {
       position: sticky;
       top: 0;
       z-index: 10;
-      background: rgba(255, 255, 255, 0.96);
+      background: var(--surface);
       backdrop-filter: blur(8px);
       border-bottom: 1px solid var(--border);
     }
@@ -120,10 +159,13 @@
     h3 {
       margin-top: 1.5rem;
       font-size: 1.08rem;
-      color: #111827;
+      color: var(--text);
     }
 
-    p, li { color: #374151; }
+    main a { color: var(--accent); }
+    main a:visited { color: var(--accent); }
+
+    p, li { color: var(--text); }
 
     ul, ol { padding-left: 1.25rem; }
 
@@ -182,8 +224,8 @@
     }
 
     th {
-      background: #f9fafb;
-      color: #111827;
+      background: var(--code-bg);
+      color: var(--text);
     }
 
     .steps li { margin-bottom: 0.5rem; }
@@ -192,7 +234,7 @@
       display: inline-block;
       margin-top: 0.9rem;
       padding: 0.6rem 1.15rem;
-      background: #fff;
+      background: var(--surface);
       color: var(--accent);
       font-weight: 600;
       text-decoration: none;
@@ -226,6 +268,99 @@
       header .wrap { grid-template-columns: 1fr; text-align: center; }
       header img { margin: 0 auto; }
     }
+
+    /* ---------------------------------------------------- new components -- */
+
+    /* A displayed equation. Set apart, because in this subject the equation is
+       usually the shortest and clearest thing on the page. */
+    .eq {
+      margin: 1rem 0;
+      padding: 0.9rem 1.1rem;
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 6px 6px 0;
+      font-size: 1.05rem;
+      overflow-x: auto;
+    }
+    .eq .where {
+      display: block;
+      margin-top: 0.45rem;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+
+    /* The one sentence a student should carry away from a section. */
+    .keyidea {
+      margin: 1.1rem 0;
+      padding: 0.9rem 1.1rem;
+      background: var(--lot-soft);
+      border-left: 3px solid var(--lot);
+      border-radius: 0 6px 6px 0;
+    }
+    .keyidea strong { color: var(--lot); }
+
+    /* What each colour on the drawing means, matching the application. */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.25rem;
+      margin: 1rem 0;
+      padding: 0.75rem 1rem;
+      background: var(--code-bg);
+      border-radius: 8px;
+      font-size: 0.92rem;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 0.45rem; }
+    .legend i {
+      width: 1.6rem; height: 0.22rem; border-radius: 2px; flex: none;
+    }
+    .legend .i-lot { background: var(--lot); }
+    .legend .i-cable { background: var(--cable); }
+    .legend .i-stone { background: var(--stone); height: 0.7rem; border-radius: 2px; }
+    .legend .i-load { background: var(--lot); height: 0.7rem; width: 0.22rem; }
+
+    /* Further reading. */
+    ol.biblio { padding-left: 1.4rem; }
+    ol.biblio li { margin-bottom: 0.55rem; font-size: 0.95rem; }
+    ol.biblio .t { font-style: italic; }
+    ol.biblio .me { border-left: 2px solid var(--accent); padding-left: 0.55rem; }
+
+    .colophon {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+      gap: 0.9rem;
+      margin-top: 1rem;
+    }
+    .colophon div {
+      background: var(--code-bg);
+      border-radius: 8px;
+      padding: 0.8rem 0.95rem;
+      font-size: 0.92rem;
+    }
+    .colophon h4 {
+      margin: 0 0 0.3rem;
+      font-size: 0.78rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* A quiet pointer to where a thing is proved or derived at length. */
+    .seebook {
+      margin: 0.9rem 0;
+      padding: 0.7rem 0.95rem;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      font-size: 0.93rem;
+      color: var(--muted);
+    }
+    .seebook b { color: var(--text); font-weight: 600; }
+
+    @media (prefers-reduced-motion: no-preference) {
+      html { scroll-behavior: smooth; }
+    }
+    section { scroll-margin-top: 4rem; }
+
   </style>
 </head>
 <body>
@@ -233,12 +368,18 @@
     <div class="wrap">
       <img src="images/logo.png" alt="aLOTofImaginArches logo">
       <div>
-        <h1>aLOTofImaginArches — User Guide</h1>
+        <h1>aLOTofImaginArches</h1>
         <p>
-          Interactive graphical statics of masonry arches: trace an arch over a photograph, build the
-          force polygon, and move the line of thrust (LOT) through its three degrees of freedom while
-          the software checks whether it stays inside the masonry.
-          For graduate courses in masonry and historical structures (MHMS, HMWS).
+          <strong>The line of thrust, in the browser.</strong> Trace an arch over a photograph, build
+          its force polygon, and move the line of thrust through its three degrees of freedom while
+          the software checks, joint by joint, whether it stays inside the masonry — then push it
+          until hinges form and the arch becomes a mechanism.
+        </p>
+        <p>
+          This guide is both a manual and a short course: every tool is explained beside the
+          equilibrium or kinematic argument it rests on. Written for the master's courses
+          <em>Mechanics of Historical Masonry Structures</em> and <em>Historical Masonry and Wooden
+          Structures</em> at the University of Bologna, and free for anyone to use.
         </p>
         <a class="launch" href="app/">Open the application &rarr;</a>
       </div>
@@ -249,6 +390,7 @@
     <div class="wrap">
       <a href="#start">Start here</a>
       <a href="#idea">The idea</a>
+      <a href="#theory">The theory</a>
       <a href="#interface">Interface</a>
       <a href="#workflow">Workflow</a>
       <a href="#examples">Examples</a>
@@ -265,6 +407,8 @@
       <a href="#cable">Hooke's cable</a>
       <a href="#save">Save &amp; reopen</a>
       <a href="#tips">Troubleshooting</a>
+      <a href="#reading">Further reading</a>
+      <a href="#colophon">How it is built</a>
     </div>
   </nav>
 
@@ -311,8 +455,137 @@
       </p>
     </section>
 
+    <section id="theory">
+      <h2>The theory the tools rest on</h2>
+      <p>
+        Nothing here is needed to press the buttons, and everything here is needed to know what the
+        answer means. The whole method stands on three assumptions, two theorems and one construction.
+      </p>
+
+      <h3>Heyman's three assumptions</h3>
+      <p>
+        Masonry is idealised as a material that
+        <strong>carries no tension</strong>, has <strong>unlimited compressive strength</strong>, and
+        <strong>cannot slide</strong> at a joint. The first is the honest one — mortar joints open
+        under the least tension. The second is a convenience that is usually safe, since stresses in
+        a masonry arch are a small fraction of the crushing strength. The third is set aside rather
+        than justified, and remains the assumption to remember when a real arch fails in a way this
+        software will not predict.
+      </p>
+      <div class="keyidea">
+        <strong>The consequence is geometric.</strong> With no tension and no crushing, whether an
+        arch stands stops being a question about stresses and becomes a question about <em>shape</em>:
+        can a line of thrust be drawn that stays inside the masonry? Scale the whole arch by any
+        factor and the answer does not change.
+      </div>
+
+      <h3>The line of thrust, and eccentricity</h3>
+      <p>
+        Cut the arch at a joint. The stresses the two halves exchange are statically equivalent to a
+        single force. Where that force crosses the joint is a point; the locus of those points, joint
+        after joint, is the <strong>line of thrust</strong>. If the resultant on a joint has normal
+        component <em>N</em> and moment <em>M</em> about the joint's mid-point, it crosses at an
+        eccentricity
+      </p>
+      <div class="eq">
+        <em>e</em> = <em>M</em> / <em>N</em>
+        <span class="where">so the no-tension condition |<em>e</em>| &le; <em>t</em>/2 is exactly the
+        statement that the line has not left a joint of thickness <em>t</em>.</span>
+      </div>
+      <p>
+        The application reports the crossing as a fraction <em>s</em> of the joint, 0 at the intrados
+        and 1 at the extrados; <em>s</em> outside [0,&nbsp;1] is the line outside the masonry.
+      </p>
+
+      <h3>The two theorems of limit analysis</h3>
+      <p>
+        Everything the software says falls under one of two theorems, and it is worth knowing which.
+      </p>
+      <table class="keyparam">
+        <thead><tr><th>Theorem</th><th>What it needs</th><th>What it proves</th><th>Where in the app</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Safe</strong> (static, lower bound)</td>
+            <td>one admissible line of thrust in equilibrium with the loads</td>
+            <td>the arch <em>will not</em> collapse under those loads</td>
+            <td><a href="#admissibility">Admissibility</a></td>
+          </tr>
+          <tr>
+            <td><strong>Uniqueness</strong> (kinematic, upper bound)</td>
+            <td>a mechanism of hinges whose joints can all open</td>
+            <td>the arch <em>is</em> at collapse for that load multiplier</td>
+            <td><a href="#mechanism">Mechanism</a></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="keyidea">
+        <strong>One line is enough.</strong> You do not have to find the true line of thrust — there
+        is no such thing to find. Any single admissible line proves the arch safe, which is why the
+        three sliders are a proof technique and not a search for one right answer.
+      </div>
+
+      <h3>Virtual work, and why the mechanism is solved rather than drawn</h3>
+      <p>
+        Once the line has been driven against the faces and hinges have formed, the arch is a chain of
+        rigid macro-blocks. At collapse the principle of virtual work says that in the mechanism's own
+        motion the work of the loads equals the work dissipated — and with rigid blocks and hinges
+        that dissipate nothing,
+      </p>
+      <div class="eq">
+        &sum;<sub><em>i</em></sub> <em>W<sub>i</sub></em> &delta;<em>v<sub>i</sub></em> = 0
+        <span class="where">the collapse multiplier being the value of the load for which a mechanism
+        exists with zero net virtual work.</span>
+      </div>
+      <p>
+        Rather than apply Kennedy's theorem case by case, the software assembles the velocity field
+        directly: three unknowns per body (<em>v<sub>x</sub></em>, <em>v<sub>y</sub></em>,
+        &omega;), two equations per hinge equating the velocity of the point the two bodies share, and
+        a hinge to the ground setting that velocity to zero. The mechanism is the <strong>null space</strong>
+        of that system, of whatever dimension, and the instantaneous centres fall out of it. A
+        five-hinge state with two degrees of freedom needs no second code path.
+      </p>
+      <p>
+        <strong>Masonry cannot pass through itself</strong>, and this is a real condition, not a
+        detail. A hinge sits at one face of its joint and the joint must open at the <em>other</em>;
+        the software measures that opening rate and takes the sense of the motion from it. Where no
+        sense opens every joint, the hinge pattern is not a collapse mode at all, and the panel says
+        so instead of animating something impossible.
+      </p>
+
+      <h3>Pappus, for a dome</h3>
+      <p>
+        A barrel vault cut into voussoirs gives blocks of constant width. A dome cut into lunes does
+        not: each lune lies between two meridian planes, so its width is proportional to the distance
+        from the axis. The volume of a lune voussoir is exact by Pappus' theorem,
+      </p>
+      <div class="eq">
+        <em>V</em> = <em>A</em> &theta; <em>r&#772;</em>
+        <span class="where">with <em>A</em> the area of the block, &theta; the slice angle, and
+        <em>r&#772;</em> the distance of the block's <em>centroid</em> from the axis.</span>
+      </div>
+      <p>
+        Note what this implies: &theta; multiplies every voussoir alike, so the slice angle changes
+        the magnitude of the forces and <strong>not the shape of the line of thrust</strong>. What
+        moves the line is <em>r&#772;</em> — see <a href="#dome">Poleni's dome</a>.
+      </p>
+
+      <div class="seebook">
+        <b>Where this is set out at length.</b> The equilibrium approach, the funicular construction
+        and the limit theorems for masonry are developed in
+        G. Castellazzi and A. Taliercio, <em>Principles and Analysis of Historical Masonry
+        Structures</em> (Cambridge Scholars, 2025), the text these courses follow. See
+        <a href="#reading">Further reading</a>.
+      </div>
+    </section>
+
     <section id="interface">
       <h2>Main interface</h2>
+      <div class="legend">
+        <span><i class="i-stone"></i> the voussoirs</span>
+        <span><i class="i-lot"></i> the line of thrust, and the load line</span>
+        <span><i class="i-cable"></i> Hooke's cable</span>
+        <span><i class="i-load"></i> applied loads and reactions</span>
+      </div>
       <p>
         The window has a control panel on the left and two plots: the <strong>arch and line of thrust</strong>,
         and the <strong>force polygon</strong>. The graphics keep the idiom of classical graphical statics —
@@ -534,6 +807,11 @@
 
     <section id="dof">
       <h2>The three degrees of freedom</h2>
+      <div class="seebook">
+        <b>Why there are three.</b> The arch is three times statically indeterminate, and the
+        &infin;<sup>3</sup> family of thrust lines is the mechanical expression of that. The count,
+        and what each parameter means in equilibrium terms, are set out in G. Castellazzi and A. Taliercio, <em>Principles and Analysis of Historical Masonry Structures</em> (Cambridge Scholars, 2025).
+      </div>
       <p>
         This is the heart of the tool. Three sliders, three parameters, and every combination is an
         equilibrium state — though only some of them are <em>admissible</em>.
@@ -600,6 +878,12 @@
 
     <section id="bow">
       <h2>Reading the two drawings together</h2>
+      <div class="seebook">
+        <b>The construction, in full.</b> The reciprocal relation between the force polygon and the
+        funicular polygon — why a ray in one is parallel to a segment in the other, and why the pole's
+        abscissa is the horizontal thrust — is derived in G. Castellazzi and A. Taliercio, <em>Principles and Analysis of Historical Masonry Structures</em> (Cambridge Scholars, 2025), together with Bow's
+        notation and the classical constructions that precede it.
+      </div>
       <p>
         In the force polygon the <strong>rays</strong> are drawn dashed, because they are construction
         lines rather than forces: the only full lines there are the load line itself and the polygon.
@@ -719,6 +1003,11 @@
 
     <section id="mechanism">
       <h2>Mechanism and collapse</h2>
+      <div class="seebook">
+        <b>The kinematic route.</b> This panel is the upper-bound theorem at work; the virtual-work
+        statement behind it is in <a href="#theory">The theory</a>, and its treatment for masonry
+        arches in G. Castellazzi and A. Taliercio, <em>Principles and Analysis of Historical Masonry Structures</em> (Cambridge Scholars, 2025).
+      </div>
       <p>
         The line of thrust cannot leave the thickness of the arch. Where it would, it stays
         <strong>hooked</strong> at the point &mdash; intrados or extrados &mdash; between two
@@ -876,6 +1165,118 @@
         <li><strong>The blocks came out inverted.</strong> The two traced curves cross somewhere. Clear
             the trace and redo it, watching the springings.</li>
       </ul>
+    </section>
+
+    <section id="reading">
+      <h2>Further reading</h2>
+      <p>
+        The short list a student needs, in the order it is worth meeting. The first is the text these
+        courses follow and the one to reach for when a construction here is stated rather than
+        derived.
+      </p>
+      <ol class="biblio">
+        <li class="me">
+          G. Castellazzi and A. Taliercio, <span class="t">Principles and Analysis of Historical
+          Masonry Structures</span>. Cambridge Scholars Publishing, Newcastle upon Tyne, 2025.
+          <em>The equilibrium approach, the funicular polygon and the line of thrust, and the limit
+          theorems, developed for masonry.</em>
+        </li>
+        <li>
+          J. Heyman, <span class="t">The stone skeleton</span>. International Journal of Solids and
+          Structures <strong>2</strong> (1966) 249–279. <em>The paper that put masonry inside limit
+          analysis, and stated the three assumptions.</em>
+        </li>
+        <li>
+          J. Heyman, <span class="t">The Masonry Arch</span>. Ellis Horwood, Chichester, 1982; and
+          <span class="t">The Stone Skeleton</span>, Cambridge University Press, 1995.
+        </li>
+        <li>
+          A. Kooharian, <span class="t">Limit analysis of voussoir (segmental) and concrete
+          arches</span>. Journal of the American Concrete Institute <strong>24</strong> (1952)
+          317–328. <em>The limit theorems applied to voussoir arches, before Heyman.</em>
+        </li>
+        <li>
+          S. Huerta, <span class="t">Mechanics of masonry vaults: the equilibrium approach</span>, in
+          Historical Constructions 2001, Guimarães, 47–69; and
+          <span class="t">Galileo was wrong: the geometrical design of masonry arches</span>, Nexus
+          Network Journal <strong>8</strong> (2006) 25–52. <em>Why the answer is a matter of shape,
+          historically and mechanically.</em>
+        </li>
+        <li>
+          É. Méry, <span class="t">Sur l'équilibre des voûtes en berceau</span>. Annales des Ponts et
+          Chaussées <strong>19</strong> (1840) 50–70. <em>The graphical construction this application
+          performs, as it was first set out.</em>
+        </li>
+        <li>
+          D. O'Dwyer, <span class="t">Funicular analysis of masonry vaults</span>. Computers &amp;
+          Structures <strong>73</strong> (1999) 187–197; P. Block, T. Ciblac and J. Ochsendorf,
+          <span class="t">Real-time limit analysis of vaulted masonry buildings</span>, Computers
+          &amp; Structures <strong>84</strong> (2006) 1841–1852; P. Block and J. Ochsendorf,
+          <span class="t">Thrust network analysis</span>, Journal of the IASS <strong>48</strong>
+          (2007) 167–173. <em>Where the method goes in three dimensions.</em>
+        </li>
+      </ol>
+      <h3>The two sources this software draws on directly</h3>
+      <ol class="biblio" start="8">
+        <li>
+          R. Hooke, <span class="t">A Description of Helioscopes, and Some Other Instruments</span>.
+          John Martyn, London, 1676. — <em>Ut pendet continuum flexile, sic stabit contiguum rigidum
+          inversum:</em> as hangs the flexible line, so but inverted stands the rigid arch. See
+          <a href="#cable">Hooke's cable</a>.
+        </li>
+        <li>
+          G. Poleni, <span class="t">Memorie istoriche della gran cupola del Tempio Vaticano</span>.
+          Stamperia del Seminario, Padova, 1748. <em>The hanging chain put to a real structure, and
+          the plate this application traces.</em> See <a href="#dome">Poleni's dome</a>.
+        </li>
+      </ol>
+    </section>
+
+    <section id="colophon">
+      <h2>How it is built</h2>
+      <p>
+        Worth knowing, because it means you can read the source that produces every number on your
+        screen — and because a tool a student cannot open is a tool a student has to trust.
+      </p>
+      <div class="colophon">
+        <div>
+          <h4>The application</h4>
+          Plain JavaScript ES modules. <strong>No build step, no framework, no dependencies</strong>:
+          the browser loads the source files as they are written, so the code in the repository is
+          the code that runs.
+        </div>
+        <div>
+          <h4>The drawing</h4>
+          HTML5 canvas, drawn by hand — the axes, the ticks, the equal-scale transform and the
+          three-dimensional block view are all in <code>js/render/</code>. No plotting library.
+        </div>
+        <div>
+          <h4>The mechanics</h4>
+          <code>js/core/</code>, which knows nothing of the canvas. That separation is what lets the
+          mechanics be tested from the command line, without a browser.
+        </div>
+        <div>
+          <h4>The tests</h4>
+          180 tests on Node's built-in runner (<code>node --test</code>), no framework, run on three
+          operating systems and three versions of Node at every change.
+        </div>
+        <div>
+          <h4>Hosting</h4>
+          Static files on GitHub Pages. Nothing you do is uploaded anywhere; the page works offline
+          once loaded.
+        </div>
+        <div>
+          <h4>Licence</h4>
+          MIT. Read it, fork it, use it in your own teaching, take it apart to see how the funicular
+          construction is coded.
+        </div>
+      </div>
+      <p style="margin-top:1rem">
+        The mechanics lives in eleven small modules; <code>js/core/statics.js</code> is the one to
+        read first, where <code>forcePolygon</code> and <code>funicular</code> sit side by side with
+        the classical terms as their variable names. Each module's own README explains why it does
+        what it does, and usually what went wrong before it did.
+      </p>
     </section>
 
   </main>
