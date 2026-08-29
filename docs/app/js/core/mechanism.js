@@ -216,6 +216,48 @@ export function constrainedLine(seq, joints, band, thrust, opt = {}) {
   return best ? { ...best, thrust: held, beyond } : null;
 }
 
+/**
+ * The admissible band of the IMPOSED-ENDS family, and the line held inside it.
+ *
+ * With A and B fixed, the pole's ordinate is no longer free: it is whatever
+ * carries the line from one to the other. One parameter is left, the thrust,
+ * and it too has a band -- narrower than the free family's, because two of the
+ * three degrees of freedom have been spent on the two points.
+ *
+ * The line must not leave the masonry here either. Where it would, the thrust
+ * is held at the edge of this band, which is the state in which the line is
+ * tangent to a face and a hinge forms.
+ *
+ * @param {object} span      the blocks between the ends, from `betweenEnds`
+ * @param {object[]} joints
+ * @param {number[]} P @param {number[]} Q  the two imposed points, P to the right
+ * @param {function} solve   (thrust) => {fp, lot, crossings} | null
+ */
+export function imposedBand(solve, lo = 0.02, hi = 1.5, coarse = 48, refine = 16) {
+  const fits = (f) => {
+    const got = solve(f);
+    if (!got || !got.crossings) return false;
+    return got.crossings.every((c) => c && c.inside !== false
+      && c.s >= 0 && c.s <= 1);
+  };
+  let seed = null;
+  for (let i = 0; i <= coarse; i++) {
+    const f = lo + ((hi - lo) * i) / coarse;
+    if (fits(f)) { seed = f; break; }
+  }
+  if (seed === null) return null;
+  const edge = (from, towards) => {
+    let good = from;
+    let bad = towards;
+    for (let i = 0; i < refine; i++) {
+      const m = (good + bad) / 2;
+      if (fits(m)) good = m; else bad = m;
+    }
+    return good;
+  };
+  return { min: edge(seed, lo), max: edge(seed, hi), seed };
+}
+
 // -------------------------------------------------------------- the hinges --
 
 /**
@@ -233,7 +275,7 @@ export function constrainedLine(seq, joints, band, thrust, opt = {}) {
  * @returns {Array<{joint:number, s:number, point:number[], face:string,
  *                  support:boolean}>} in joint order
  */
-export function findHinges(crossings, joints, tol = TOUCH) {
+export function findHinges(crossings, joints, tol = TOUCH, supports = null) {
   if (!crossings || !joints || joints.length < 2) return [];
   const last = joints.length - 1;
   const clearance = (c) => (c ? Math.min(c.s, 1 - c.s) : -Infinity);
@@ -310,10 +352,21 @@ export function findHinges(crossings, joints, tol = TOUCH) {
     };
   };
 
+  // THE SUPPORTS ARE WHERE THE USER PUT THEM. With both ends imposed, A and B
+  // are fixed hinges whatever the line does at the end joints -- they are the
+  // points the arch is held at, and the chain has to be closed there or the
+  // kinematics has nothing to turn about. Without them the supports are read
+  // off the end joints, as for a line whose ends are free.
+  const imposed = (i, p) => ({
+    joint: i, s: 0.5, point: [p[0], p[1]], face: 'support', support: true,
+    opposite: null, along: null,
+  });
   const out = [];
-  if (crossings[0]) out.push(hinge(0, true));
+  if (supports && supports.B) out.push(imposed(0, supports.B));
+  else if (crossings[0]) out.push(hinge(0, true));
   for (const r of runs) for (const at of split(r)) out.push(hinge(at, false));
-  if (crossings[last]) out.push(hinge(last, true));
+  if (supports && supports.A) out.push(imposed(last, supports.A));
+  else if (crossings[last]) out.push(hinge(last, true));
   // Joint order, so the chain runs from one springing to the other.
   return out.sort((a, b) => a.joint - b.joint);
 }
@@ -669,8 +722,8 @@ export function displaced(polys, bodyOf, transforms) {
  * @param {object[]} joints
  * @param {number} nBlocks
  */
-export function analyse(crossings, joints, nBlocks, tol = TOUCH) {
-  const hinges = findHinges(crossings, joints, tol);
+export function analyse(crossings, joints, nBlocks, tol = TOUCH, supports = null) {
+  const hinges = findHinges(crossings, joints, tol, supports);
   const bodyList = bodies(hinges, nBlocks);
   const bodyOf = bodyOfBlock(bodyList, nBlocks);
   const count = degreesOfFreedom(hinges.length);

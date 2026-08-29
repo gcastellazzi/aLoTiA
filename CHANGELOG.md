@@ -90,6 +90,30 @@ and the project uses [semantic versioning](https://semver.org/).
   max** buttons read through the same mapping, so they land at the ends rather
   than beside them.
 
+- **Where A and B are put now decides which voussoirs carry the line.** They
+  are the user's to place anywhere, and a block whose centroid falls outside
+  them is not between the two points the line runs between: its weight belongs
+  to the abutment. Move an end inward past the nearest centroid and that block
+  drops out; **raise it above that centroid and the block drops out too** —
+  near a springing the ring is steep, so a point moved up the face passes
+  centroids without moving in *x* at all. The height is tested against the
+  nearer end only: against both, lifting B dropped the block at A as well,
+  because on a symmetric ring the two centroids sit at the same height.
+
+- **A and B are the support hinges, wherever they are.** The mechanism used to
+  read its supports off the end joints, so imposing the ends anywhere else left
+  the chain unclosed and the kinematics with nothing to turn about.
+
+- **The line stays inside the masonry with the ends imposed too.** Fixing A and
+  B spends two of the three degrees of freedom, leaving the thrust — which has
+  a band of its own, narrower than the free family's. With the mechanism on the
+  demanded thrust is held inside it.
+
+- **The mechanism is shown in the three-dimensional view.** While the amplitude
+  is up, the solids are built from the displaced voussoirs rather than the rest
+  position, so the collapse can be watched in three dimensions and, on a dome,
+  seen to open along the lunes.
+
 - **Imposing both ends broke the mechanism panel.** Ticking *Impose both ends*
   with nothing picked did nothing at all — the branch needs both points and
   fell through silently — and picking them a little off the springings left the

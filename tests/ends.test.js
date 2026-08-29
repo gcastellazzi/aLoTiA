@@ -171,3 +171,78 @@ test('a line imposed inside the arch never reaches the springing joints', () => 
   assert.ok(reached(c1[0]) && reached(c1[c1.length - 1]),
     'imposed at the springings, both ends must be genuinely crossed');
 });
+
+// ------------------------------- which blocks the imposed ends leave behind --
+
+import { betweenEnds, blocksLike } from '../docs/app/js/core/blocks.js';
+
+/** The reference ring, as a sorted sequence. */
+function ringSeq() {
+  const { blocks, joints } = circularRing({
+    centre: [0, 0], innerRadius: 4, outerRadius: 4.6,
+    startAngle: 0, endAngle: 180, count: 16,
+  });
+  const seq = blocksLike({
+    centroids: centroidsOf(blocks),
+    weights: weighBlocks(blocks, { specificWeight: 20, thickness: 1 }),
+    areas: blocks.map(() => 0),
+    thickness: blocks.map(() => 0),
+  });
+  return { blocks, joints, seq };
+}
+
+test('an end moved past a centroid drops that block, and only that block', () => {
+  const { joints, seq } = ringSeq();
+  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+  const A = mid(joints[joints.length - 1]);          // the left end
+  const B = mid(joints[0]);                          // the right end
+  const n = seq.centroids.length;
+  const right = seq.centroids.reduce((a, b) => (b[0] > a[0] ? b : a));
+  const left = seq.centroids.reduce((a, b) => (b[0] < a[0] ? b : a));
+
+  assert.equal(betweenEnds(seq, A, B).kept.length, n, 'on the springings, all');
+
+  // Moved INWARD past the nearest centroid: that block is no longer between
+  // the two points the line runs between.
+  assert.equal(betweenEnds(seq, A, [right[0] - 0.05, B[1]]).kept.length, n - 1);
+  assert.equal(betweenEnds(seq, [left[0] + 0.05, A[1]], B).kept.length, n - 1);
+
+  // RAISED above it does the same: near a springing the ring is steep, so a
+  // point moved up the face passes centroids without moving in x at all.
+  assert.equal(betweenEnds(seq, A, [B[0], right[1] + 0.05]).kept.length, n - 1);
+});
+
+test('raising one end does not touch the block at the other', () => {
+  // Tested against both ends' heights, lifting B dropped the block at A as
+  // well: on a symmetric ring the two centroids sit at the same height, so
+  // moving one point silently changed the far abutment.
+  const { joints, seq } = ringSeq();
+  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+  const A = mid(joints[joints.length - 1]);
+  const B = mid(joints[0]);
+  const right = seq.centroids.reduce((a, b) => (b[0] > a[0] ? b : a));
+  const kept = betweenEnds(seq, A, [B[0], right[1] + 0.05]).kept;
+  const n = seq.centroids.length;
+  assert.equal(kept.length, n - 1);
+  assert.equal(kept[kept.length - 1], n - 1, 'the block at A must survive');
+});
+
+test('imposed ends become the support hinges, wherever they are', () => {
+  // A and B are fixed hinges throughout, at the points the user placed, not at
+  // the end joints. Without this the chain is not closed and the kinematics
+  // has nothing to turn about.
+  const { blocks, joints, seq } = ringSeq();
+  const total = seq.weights.reduce((a, b) => a + b, 0);
+  const fp = forcePolygon(seq.weights, [total * 0.2, -total / 2]);
+  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+  const lot = funicular(fp, seq.centroids, mid(joints[0]), mid(joints[joints.length - 1]));
+  const crossings = jointCrossings(lot.points, joints);
+
+  const A = [-3.9, 0.6];
+  const B = [3.9, 0.6];
+  const hinges = findHinges(crossings, joints, undefined, { A, B });
+  const supports = hinges.filter((h) => h.support);
+  assert.equal(supports.length, 2, 'both supports must be present');
+  assert.deepEqual(supports[0].point, B);
+  assert.deepEqual(supports[1].point, A);
+});

@@ -22,7 +22,7 @@ import { fromExample, poleOf, consistency } from './core/model.js';
 import {
   blocksBetween, checkTrace, weighBlocks, centroidsOf, springings,
 } from './core/trace.js';
-import { blocksLike, circularRing } from './core/blocks.js';
+import { blocksLike, circularRing, betweenEnds } from './core/blocks.js';
 import {
   SYSTEMS, unitsPerPixel, scaleModel, format, archDimensions,
   convertModel, conversionFactors,
@@ -30,7 +30,7 @@ import {
 
 import { serialise, deserialise, suggestedName } from './core/persist.js';
 import {
-  bestLineForThrust, constrainedLine, collapseRange, analyse, displacedConfiguration, displaced,
+  bestLineForThrust, constrainedLine, collapseRange, analyse, imposedBand, displacedConfiguration, displaced,
 } from './core/mechanism.js';
 import {
   defaultAxis, luneWeights, solids, widthRange,
@@ -118,6 +118,9 @@ const state = {
   solidBounds: null,             // its projected extent, for the fit buttons
   bandKey: null,    // what the band was computed for
   beyondBand: 0,    // +1 held at H max, -1 at H min, 0 inside the band
+  spanKept: null,   // which blocks the imposed ends leave carrying the line
+  imposedRange: null,  // the thrust band of the imposed-ends family
+  imposedKey: null,
   pole: null,
   fp: null,
   lot: null,
@@ -362,7 +365,16 @@ function reportMechanism(thrustFraction) {
     return;
   }
 
-  const a = analyse(state.crossings, m.joints, m.blocks.length);
+  // With both ends imposed, A and B ARE the supports: the arch is held where
+  // the user put them, not at the end joints, and the chain must be closed
+  // there or the kinematics has nothing to turn about.
+  const imposedSupports = (ui.imposeEnds.checked && state.ends.A && state.ends.B)
+    ? (state.ends.A[0] >= state.ends.B[0]
+      ? { B: state.ends.A, A: state.ends.B }
+      : { B: state.ends.B, A: state.ends.A })
+    : null;
+  const a = analyse(state.crossings, m.joints, m.blocks.length,
+    undefined, imposedSupports);
   state.mech = a;
 
   ui.mechVerdict.className = `verdict ${a.dof > 0 ? 'bad' : a.dof === 0 ? 'ok' : ''}`;
@@ -469,36 +481,6 @@ function sliderForThrust(f) {
   // touching, so the panel answered "once hyperstatic" to a press of "H min".
   // The slider's step is 0.01, so the position it is given survives.
   return Math.max(0, Math.min(100, (100 * (f - lo)) / (hi - lo)));
-}
-
-/**
- * A picked end, pulled onto the springing joint it was aimed at.
- *
- * WHY THIS IS NOT A CONVENIENCE. Imposing the ends anywhere is allowed, but
- * the springing joints are short and often nearly horizontal, and a click a
- * little high lands beside one rather than on it. The line then starts inside
- * the arch, never reaches the end joint at all, and the mechanism analysis
- * loses the support hinge it needs -- on the circular arch, picking two
- * interior joints leaves joints 0, 1, 19 and 20 uncrossed and the panel
- * reporting that it cannot locate the supports. The user asked for the
- * springing; this gives them the springing.
- *
- * Only within half a joint's length, so a deliberate interior point is still
- * a deliberate interior point.
- */
-function snapToSpringing(p) {
-  const m = state.model;
-  const J = m && m.joints;
-  if (!J || J.length < 2 || !p) return p;
-  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
-  let best = null;
-  for (const j of [J[0], J[J.length - 1]]) {
-    const c = mid(j);
-    const reach = Math.hypot(j.b[0] - j.a[0], j.b[1] - j.a[1]) / 2;
-    const d = Math.hypot(p[0] - c[0], p[1] - c[1]);
-    if (d <= reach && (!best || d < best.d)) best = { d, c };
-  }
-  return best ? best.c : p;
 }
 
 /** Rebuild the force polygon and the thrust line for the current pole. */
@@ -625,15 +607,56 @@ function recompute() {
   if (state.ends.A && state.ends.B && ui.imposeEnds.checked) {
     const [P, Q] = state.ends.A[0] >= state.ends.B[0]
       ? [state.ends.A, state.ends.B] : [state.ends.B, state.ends.A];
+    // WHICH VOUSSOIRS THE LINE IS CARRYING follows from where the ends were
+    // put. A block whose centroid falls outside A and B is not between the two
+    // points the line runs between, and its weight belongs to the abutment.
+    const span = betweenEnds(seq, P, Q);
+    state.spanKept = span.kept;
     // The TRIAL is the pole the sliders are currently asking for. That makes
     // the construction responsive: moving the reaction slider moves O' and
     // stretches the correction, while O stays exactly where it was -- which is
     // the property worth seeing, and the one the tests assert.
-    const got = poleForEnds(seq.weights, seq.centroids, P, Q, pole[0], pole[1]);
+    // With the mechanism on, the line must stay inside the masonry here too.
+    // Only the thrust is free once the ends are fixed, so the family has a
+    // band of its own -- narrower than the free one, two of the three degrees
+    // of freedom having been spent on the two points -- and the demanded
+    // thrust is held inside it.
+    const solveAt = (f) => {
+      const total = span.weights.reduce((a, b) => a + b, 0);
+      const g = poleForEnds(span.weights, span.centroids, P, Q,
+        total * f, pole[1]);
+      if (!g) return null;
+      const fpTry = forcePolygon(span.weights, g.pole);
+      const lotTry = funicular(fpTry, span.centroids, P, Q);
+      return { g, fp: fpTry, lot: lotTry,
+        crossings: jointCrossings(lotTry.points, m.joints) };
+    };
+    let got = span.weights.length
+      ? poleForEnds(span.weights, span.centroids, P, Q, pole[0], pole[1])
+      : null;
+    if (got && ui.mechOn.checked && span.weights.length) {
+      const total = span.weights.reduce((a, b) => a + b, 0);
+      const key = `imposed:${span.kept.length}:${total.toPrecision(12)}:`
+        + `${P.map((v) => v.toFixed(4))}:${Q.map((v) => v.toFixed(4))}`;
+      if (state.imposedKey !== key) {
+        state.imposedRange = imposedBand(solveAt);
+        state.imposedKey = key;
+      }
+      const range = state.imposedRange;
+      if (range) {
+        const asked = Math.abs(got.pole[0]) / total;
+        const held = Math.min(Math.max(asked, range.min), range.max);
+        state.beyondBand = asked > range.max ? 1 : asked < range.min ? -1 : 0;
+        if (state.beyondBand) {
+          const redone = solveAt(held);
+          if (redone) got = redone.g;
+        }
+      }
+    }
     if (got) {
       state.pole = got.pole;
-      state.fp = forcePolygon(seq.weights, got.pole);
-      state.lot = funicular(state.fp, seq.centroids, P, Q);
+      state.fp = forcePolygon(span.weights, got.pole);
+      state.lot = funicular(state.fp, span.centroids, P, Q);
       state.ends.construction = got;
       state.startFraction = null;
       state.endFraction = null;
@@ -1380,7 +1403,22 @@ function drawSolidView() {
   }
   const dome = domeOptions();
   const f = frame(state.camera.az, state.camera.el);
-  const list = solids(m.blocks, {
+
+  // THE MECHANISM IS SHOWN HERE TOO. The two views should not disagree about
+  // where the arch is: while the amplitude slider is up, the solids are built
+  // from the DISPLACED voussoirs, so the collapse can be watched in three
+  // dimensions and, on a dome, seen to open along the lunes. The colouring by
+  // macro-block below is kept either way.
+  let shown = m.blocks;
+  if (ui.showMech.checked && state.mech && state.mech.dof > 0) {
+    const amp = (Number(ui.mechAmp.value) / 100) * 0.25;
+    if (amp > 0) {
+      const T = displacedConfiguration(state.mech.hinges, state.mech.bodies, amp);
+      shown = displaced(m.blocks, state.mech.bodyOf, T);
+    }
+  }
+
+  const list = solids(shown, {
     poleni: dome.poleni,
     axisX: dome.axisX,
     angleDeg: dome.angleDeg,
@@ -1675,8 +1713,7 @@ function attachNavigation(ax) {
       return;
     }
     if (ax === mainAx && state.ends.picking) {
-      state.ends[state.ends.picking] =
-        snapToSpringing(mainAx.toData([e.offsetX, e.offsetY]));
+      state.ends[state.ends.picking] = mainAx.toData([e.offsetX, e.offsetY]);
       armEnd(state.ends.picking);          // disarms
       recompute();
       fitForceView();
@@ -2059,9 +2096,9 @@ mirror(ui.imposeEnds, ui.imposeEnds2, 'change');
 for (const b of [ui.pickA, ui.pickA2]) b.addEventListener('click', () => armEnd('A'));
 for (const b of [ui.pickB, ui.pickB2]) b.addEventListener('click', () => armEnd('B'));
 ui.imposeEnds.addEventListener('change', () => {
-  // Ticking the box with nothing picked used to do nothing at all: the branch
-  // needs both ends and silently fell through to the free construction. The
-  // springings are what the option is for, so they are the default.
+  // Ticking the box with nothing picked has nothing to impose: A and B are the
+  // user's to place, anywhere they like, and the springings are only the most
+  // common choice. The panel says which are still to be picked.
   if (ui.imposeEnds.checked && !(state.ends.A && state.ends.B)) {
     const m = state.model;
     if (m && m.joints && m.joints.length >= 2) {

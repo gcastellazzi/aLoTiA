@@ -105,6 +105,59 @@ export function blocksLike(blocks, forces = { points: [], magnitudes: [] }) {
 }
 
 /**
+ * The blocks that lie between two imposed ends, and so carry the line.
+ *
+ * A and B are the user's to place, anywhere on the drawing. Where they are
+ * placed decides WHICH VOUSSOIRS THE LINE IS CARRYING: a block whose centroid
+ * falls outside them is not between the two points the line runs between, and
+ * its weight belongs to the abutment rather than to the arch. Put A to the
+ * right of the first block's centroid and that block drops out; raise A above
+ * it and it drops out too. Both tests are needed, and the second is the one
+ * that is easy to forget: near a springing the ring is steep, so a point moved
+ * a little up the face passes several centroids without moving in x at all.
+ *
+ * The end that lies to the left bounds from the left, the other from the
+ * right, whichever way round the caller happens to pass them.
+ *
+ * @param {object} seq  as `blocksLike` returns it, sorted
+ * @param {number[]} A @param {number[]} B  the two imposed points
+ * @returns {object} the same shape, with `kept` giving the indices that stayed
+ */
+export function betweenEnds(seq, A, B) {
+  if (!A || !B || !seq || !seq.centroids.length) {
+    return { ...seq, kept: seq ? seq.centroids.map((_, i) => i) : [] };
+  }
+  const left = A[0] <= B[0] ? A : B;
+  const right = A[0] <= B[0] ? B : A;
+
+  const kept = [];
+  seq.centroids.forEach((g, i) => {
+    // Outside in x: beyond either end along the span.
+    if (g[0] < left[0] || g[0] > right[0]) return;
+    // Below an end in y: the end has been raised past this block, so the block
+    // sits outside the stretch the line spans. TESTED AGAINST THE NEARER END
+    // ONLY. Against both, raising one end cut the block at the other end too:
+    // on a symmetric ring, lifting B above the first centroid dropped the last
+    // block as well, and moving one point silently changed the far abutment.
+    const near = Math.abs(g[0] - left[0]) <= Math.abs(g[0] - right[0])
+      ? left : right;
+    if (g[1] < near[1]) return;
+    kept.push(i);
+  });
+
+  const pick = (arr) => kept.map((i) => arr[i]);
+  return {
+    centroids: pick(seq.centroids),
+    weights: pick(seq.weights),
+    areas: pick(seq.areas),
+    thickness: pick(seq.thickness),
+    kind: seq.kind ? pick(seq.kind) : undefined,
+    order: seq.order,
+    kept,
+  };
+}
+
+/**
  * Voussoirs of a circular arch, as CalculateArchButtonPushed builds them.
  *
  * Angles in degrees, measured as MATLAB's pol2cart does: counter-clockwise
