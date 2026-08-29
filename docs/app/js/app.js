@@ -366,7 +366,22 @@ function reportMechanism(thrustFraction) {
   state.mech = a;
 
   ui.mechVerdict.className = `verdict ${a.dof > 0 ? 'bad' : a.dof === 0 ? 'ok' : ''}`;
-  ui.mechVerdict.textContent = a.verdict;
+  // "no support hinges located" states the symptom. When the ends have been
+  // imposed inside the arch the line never reaches the springing joints, and
+  // saying which of the two is unreachable is the difference between a message
+  // that puzzles and one that can be acted on.
+  const cr = state.crossings;
+  // Out of reach is not only "never crossed": a line that stops short still
+  // meets the joint's INFINITE line, and jointCrossings hands that back with
+  // `inside` false and an s far outside [0,1]. Counting it as a support would
+  // put a hinge at s = -2.3.
+  const reached = (c) => !!c && c.inside !== false;
+  const lost = cr
+    ? (reached(cr[0]) ? 0 : 1) + (reached(cr[cr.length - 1]) ? 0 : 1) : 0;
+  ui.mechVerdict.textContent = (a.hingeCount < 2 && lost)
+    ? `the line of thrust does not reach ${lost === 2 ? 'either springing' : 'one springing'}`
+      + ' — imposed ends inside the arch leave nothing to hinge about'
+    : a.verdict;
 
   const faces = a.hinges
     .map((h, i) => `${String.fromCharCode(65 + i)} ${h.support ? 'support' : h.face}`)
@@ -454,6 +469,36 @@ function sliderForThrust(f) {
   // touching, so the panel answered "once hyperstatic" to a press of "H min".
   // The slider's step is 0.01, so the position it is given survives.
   return Math.max(0, Math.min(100, (100 * (f - lo)) / (hi - lo)));
+}
+
+/**
+ * A picked end, pulled onto the springing joint it was aimed at.
+ *
+ * WHY THIS IS NOT A CONVENIENCE. Imposing the ends anywhere is allowed, but
+ * the springing joints are short and often nearly horizontal, and a click a
+ * little high lands beside one rather than on it. The line then starts inside
+ * the arch, never reaches the end joint at all, and the mechanism analysis
+ * loses the support hinge it needs -- on the circular arch, picking two
+ * interior joints leaves joints 0, 1, 19 and 20 uncrossed and the panel
+ * reporting that it cannot locate the supports. The user asked for the
+ * springing; this gives them the springing.
+ *
+ * Only within half a joint's length, so a deliberate interior point is still
+ * a deliberate interior point.
+ */
+function snapToSpringing(p) {
+  const m = state.model;
+  const J = m && m.joints;
+  if (!J || J.length < 2 || !p) return p;
+  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+  let best = null;
+  for (const j of [J[0], J[J.length - 1]]) {
+    const c = mid(j);
+    const reach = Math.hypot(j.b[0] - j.a[0], j.b[1] - j.a[1]) / 2;
+    const d = Math.hypot(p[0] - c[0], p[1] - c[1]);
+    if (d <= reach && (!best || d < best.d)) best = { d, c };
+  }
+  return best ? best.c : p;
 }
 
 /** Rebuild the force polygon and the thrust line for the current pole. */
@@ -1630,7 +1675,8 @@ function attachNavigation(ax) {
       return;
     }
     if (ax === mainAx && state.ends.picking) {
-      state.ends[state.ends.picking] = mainAx.toData([e.offsetX, e.offsetY]);
+      state.ends[state.ends.picking] =
+        snapToSpringing(mainAx.toData([e.offsetX, e.offsetY]));
       armEnd(state.ends.picking);          // disarms
       recompute();
       fitForceView();
@@ -2013,6 +2059,17 @@ mirror(ui.imposeEnds, ui.imposeEnds2, 'change');
 for (const b of [ui.pickA, ui.pickA2]) b.addEventListener('click', () => armEnd('A'));
 for (const b of [ui.pickB, ui.pickB2]) b.addEventListener('click', () => armEnd('B'));
 ui.imposeEnds.addEventListener('change', () => {
+  // Ticking the box with nothing picked used to do nothing at all: the branch
+  // needs both ends and silently fell through to the free construction. The
+  // springings are what the option is for, so they are the default.
+  if (ui.imposeEnds.checked && !(state.ends.A && state.ends.B)) {
+    const m = state.model;
+    if (m && m.joints && m.joints.length >= 2) {
+      const { pointA, pointB } = springings(m.joints);
+      state.ends.A = state.ends.A ?? pointA;
+      state.ends.B = state.ends.B ?? pointB;
+    }
+  }
   recompute();
   fitForceView();
   draw();

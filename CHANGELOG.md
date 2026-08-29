@@ -90,6 +90,23 @@ and the project uses [semantic versioning](https://semver.org/).
   max** buttons read through the same mapping, so they land at the ends rather
   than beside them.
 
+- **Imposing both ends broke the mechanism panel.** Ticking *Impose both ends*
+  with nothing picked did nothing at all — the branch needs both points and
+  fell through silently — and picking them a little off the springings left the
+  line starting inside the arch, never reaching the end joints. The mechanism
+  analysis then had no support to hinge about and answered *"no support hinges
+  located"*, a true statement that explains nothing, with no macro-blocks
+  drawn.
+
+  Three changes. The box now defaults to the springings, which is what the
+  option is for. A pick within half a joint's length of an end joint snaps onto
+  it, since the springings are short and often nearly horizontal and a click a
+  little high lands beside one. And when the ends really are imposed inside the
+  arch, the panel says *the line of thrust does not reach either springing*
+  instead of stating the symptom. Out of reach counts a joint met only on its
+  infinite line, far outside the masonry, which would otherwise have been taken
+  for a support hinge at *s* = −2.3.
+
 - **A narrow admissible band could be missed entirely.** The collapse search
   stopped at the first sample of a sixty-step grid that happened to be
   admissible, which tests a boolean on a grid: a band narrower than the grid

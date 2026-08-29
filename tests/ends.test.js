@@ -11,9 +11,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { centroid } from '../docs/app/js/core/geometry.js';
-import { blocksBetween, weighBlocks } from '../docs/app/js/core/trace.js';
+import { blocksBetween, weighBlocks, centroidsOf } from '../docs/app/js/core/trace.js';
+import { circularRing } from '../docs/app/js/core/blocks.js';
+import { findHinges } from '../docs/app/js/core/mechanism.js';
 import {
-  forcePolygon, funicular, poleForEnds,
+  forcePolygon, funicular, poleForEnds, jointCrossings,
 } from '../docs/app/js/core/statics.js';
 
 function arc(r, n = 200) {
@@ -128,4 +130,44 @@ test('raising B raises the far end of the line by the same amount', () => {
     const end = lot.points[lot.points.length - 1];
     assert.ok(Math.abs(end[1] - (B[1] + dy)) < 1e-9);
   }
+});
+
+// ------------------------------------- an imposed end that misses the joint --
+
+test('a line imposed inside the arch never reaches the springing joints', () => {
+  // THE REPORT. Imposing both ends on interior joints of the circular arch left
+  // the first and last joints uncrossed, so the mechanism analysis had no
+  // support to hinge about and answered "no support hinges located" -- a true
+  // statement that explains nothing. The cause is geometric and belongs here:
+  // `funicular` starts AT the imposed point, so a point inside the arch leaves
+  // the springing joint on the far side of where the line begins.
+  const { blocks, joints } = circularRing({
+    centre: [0, 0], innerRadius: 4, outerRadius: 4.6,
+    startAngle: 0, endAngle: 180, count: 16,
+  });
+  const weights = weighBlocks(blocks, { specificWeight: 20, thickness: 1 });
+  const centroids = centroidsOf(blocks);
+  const total = weights.reduce((a, b) => a + b, 0);
+  const fp = forcePolygon(weights, [total * 0.2, -total / 2]);
+  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+
+  // Imposed at the springings: both end joints are crossed.
+  const onEnds = funicular(fp, centroids, mid(joints[joints.length - 1]), mid(joints[0]));
+  const c1 = jointCrossings(onEnds.points, joints);
+  assert.ok(c1[0], 'the first joint is not crossed with the ends on the springings');
+  assert.ok(c1[c1.length - 1], 'the last joint is not crossed either');
+
+  // Imposed three joints in: the springings are out of reach, and the software
+  // must say so rather than report a mechanism it cannot see.
+  const inside = funicular(fp, centroids, mid(joints[joints.length - 4]), mid(joints[3]));
+  const c2 = jointCrossings(inside.points, joints);
+  // Not reached means: either never crossed at all, or crossed only where the
+  // joint's infinite line runs, far outside the masonry. Both occur -- the
+  // first on the arch that was reported, the second here -- and both must
+  // count as "no support located" rather than as a hinge at s = -2.3.
+  const reached = (c) => !!c && c.inside;
+  assert.equal(reached(c2[0]), false, 'the first joint should be out of reach');
+  assert.equal(reached(c2[c2.length - 1]), false, 'so should the last');
+  assert.ok(reached(c1[0]) && reached(c1[c1.length - 1]),
+    'imposed at the springings, both ends must be genuinely crossed');
 });
