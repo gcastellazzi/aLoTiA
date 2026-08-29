@@ -298,3 +298,39 @@ ul.forces button:hover { background: #f0e2e3; }
   opacity: 0.85;
   margin-top: 2px;
 }
+
+/* The horizontal thrust, repeated under the arch.
+   The slider that matters most is in the panel, and the panel scrolls -- so on
+   a short window the one control a student moves continuously can be off
+   screen while the drawing it changes is in full view. This copy sits under
+   the plot, where the eye already is. It is the same value, mirrored both
+   ways, not a second parameter. */
+.plotthrust {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.plotthrust label { white-space: nowrap; }
+.plotthrust input[type="range"] { flex: 1 1 auto; min-width: 80px; }
+.plotthrust .reading {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  text-align: right;
+  /* The panel carries the reading in full; this one gives it up to the slider
+     rather than clipping mid-word, because the control is what the row is for. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.plotthrust input:disabled { opacity: 0.4; }
+
+/* Narrow enough and the label is the first thing to go: "Horizontal thrust" is
+   already written above the slider in the panel, and the slider is not. */
+@media (max-width: 620px) {
+  .plotthrust label { display: none; }
+}

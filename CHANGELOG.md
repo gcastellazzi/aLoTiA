@@ -7,6 +7,13 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ### Added
 
+- **The horizontal thrust slider is repeated under the arch**, mirrored both
+  ways with the one in the panel and sharing its enabled state. The panel
+  scrolls; the parameter a student moves continuously should not be able to
+  leave the screen while the drawing it changes is in full view. It matters
+  most with *Drive from the thrust* on, where that slider alone commands the
+  line and the panel's copy sits below the verdict text.
+
 - **A scale bar on both plots**, chequered like a map's, in the bottom-right
   corner, hidden or shown with *Scale bar* in the toolbar. The value is always
   round — 1, 2 or 5 times a power of ten, off the same ladder the axis ticks

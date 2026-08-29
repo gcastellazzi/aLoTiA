@@ -66,6 +66,7 @@ const ui = {
   tabGeom: el('tabGeom'), tabLot: el('tabLot'), tabMech: el('tabMech'),
   paneGeom: el('paneGeom'), paneLot: el('paneLot'), paneMech: el('paneMech'),
   thrustM: el('thrustM'), thrustValueM: el('thrustValueM'),
+  thrustP: el('thrustP'), thrustValueP: el('thrustValueP'),
   showCable2: el('showCable2'), cableWeights: el('cableWeights'),
   imposeEnds: el('imposeEnds'), pickA: el('pickA'), pickB: el('pickB'),
   endsStatus: el('endsStatus'),
@@ -463,14 +464,14 @@ function recompute() {
     state.lot = m.thrustLine
       ? { points: m.thrustLine, closed: true, closureError: 0 }
       : null;
-    ui.thrust.disabled = true;
+    setThrustEnabled(false);
     ui.thrustValue.textContent = 'not available for this example';
     reportEnds(null);
     assessAdmissibility();
     reportMechanism();
     return;
   }
-  ui.thrust.disabled = false;
+  setThrustEnabled(true);
 
   // The slider scales the pole's distance from the load line between a fifth
   // and five times what the example was saved with, on a log scale so the
@@ -612,6 +613,7 @@ function recompute() {
     ui.thrustValue.textContent = 'H = '
       + `${state.fp.thrust.toPrecision(4)} (unscaled)`;
     ui.thrustValueM.textContent = ui.thrustValue.textContent;
+    ui.thrustValueP.textContent = ui.thrustValue.textContent;
     return;
   }
   state.segForces = state.fp.magnitudes.map((r) => r[2]);
@@ -629,6 +631,7 @@ function recompute() {
     + `  ·  ×${factor.toFixed(2)} of the reference pole`;
   ui.thrustValue.textContent = reading;
   ui.thrustValueM.textContent = reading;
+  ui.thrustValueP.textContent = reading;
 }
 
 /**
@@ -1831,6 +1834,8 @@ ui.imageFile.addEventListener('change', (e) => {
       `${file.name} · ${img.naturalWidth}×${img.naturalHeight} px`;
     ui.warn.hidden = true;
     ui.thrustValue.textContent = 'trace the arch first';
+    ui.thrustValueM.textContent = ui.thrustValue.textContent;
+    ui.thrustValueP.textContent = ui.thrustValue.textContent;
     mainAx.syncSize();
     mainAx.fit({ xmin: 0, xmax: img.naturalWidth,
       ymin: 0, ymax: img.naturalHeight });
@@ -1951,6 +1956,17 @@ ui.tabMech.addEventListener('click', () => showPanel('mech'));
  * application has to know the clone exists. The guard stops the echo: without
  * it each element would answer the other for ever.
  */
+/**
+ * Whether the thrust can be moved at all, said once for every copy of the
+ * slider. Three controls carrying one parameter must not disagree about
+ * being available: a live slider beside a dead one reads as a bug.
+ */
+function setThrustEnabled(on) {
+  for (const el of [ui.thrust, ui.thrustM, ui.thrustP]) {
+    if (el) el.disabled = !on;
+  }
+}
+
 function mirror(primary, clone, event = 'input') {
   if (!primary || !clone) return;
   let echoing = false;
@@ -1965,7 +1981,10 @@ function mirror(primary, clone, event = 'input') {
   clone.addEventListener(event, () => copy(clone, primary));
   primary.addEventListener(event, () => copy(primary, clone));
 }
+// A star, not a chain: each copy mirrors the panel's slider, and the panel's
+// own 'input' listener does the recomputation once, whichever was moved.
 mirror(ui.thrust, ui.thrustM, 'input');
+mirror(ui.thrust, ui.thrustP, 'input');
 mirror(ui.imposeEnds, ui.imposeEnds2, 'change');
 for (const b of [ui.pickA, ui.pickA2]) b.addEventListener('click', () => armEnd('A'));
 for (const b of [ui.pickB, ui.pickB2]) b.addEventListener('click', () => armEnd('B'));
