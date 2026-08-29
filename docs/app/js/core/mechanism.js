@@ -181,6 +181,41 @@ export function collapseRange(seq, joints, opt = {}) {
   return { min: edge(seed, lo), max: edge(seed, hi), seed };
 }
 
+/**
+ * The line at a demanded thrust, held inside the masonry.
+ *
+ * THE LINE OF THRUST CANNOT LEAVE THE RING. Outside the admissible band no
+ * line fits, and the free funicular computed there is not a solution of
+ * anything: on the reference ring at 1.25 times the maximum thrust it left the
+ * masonry by four fifths of a joint on one face and four fifths again on the
+ * other, and twelve joints of seventeen were crossed outside the thickness.
+ * Drawing that alongside a verdict invited the reading that such a state is
+ * merely inadmissible, when in truth it does not exist.
+ *
+ * So a thrust beyond either edge holds the line AT that edge -- the limit
+ * state, which is a real admissible line, tangent to the faces at the hinges
+ * it forms. What is reported alongside is that the line is being held there
+ * and that past it the arch is a mechanism, which is what the kinematic
+ * theorem says about a thrust outside the band.
+ *
+ * The two springings remain hinges to the ground throughout, so A and B carry
+ * $u_x = u_y = 0$ whatever the thrust; see `mechanismMotion`.
+ *
+ * @param {object} seq          centroids and weights, sorted
+ * @param {object[]} joints
+ * @param {{min:number,max:number}} band  from `collapseRange`
+ * @param {number} thrust       the demanded thrust, as a fraction of the load
+ * @returns {{lot, fp, crossings, clearance, s, split, thrust, beyond}|null}
+ *          `beyond` is +1 held at the maximum, -1 at the minimum, 0 inside
+ */
+export function constrainedLine(seq, joints, band, thrust, opt = {}) {
+  if (!band) return null;
+  const held = Math.min(Math.max(thrust, band.min), band.max);
+  const beyond = thrust > band.max ? 1 : thrust < band.min ? -1 : 0;
+  const best = bestLineForThrust(seq, joints, held, opt);
+  return best ? { ...best, thrust: held, beyond } : null;
+}
+
 // -------------------------------------------------------------- the hinges --
 
 /**

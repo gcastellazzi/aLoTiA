@@ -73,6 +73,23 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ### Fixed
 
+- **The line of thrust could leave the masonry.** Driven from the thrust, the
+  slider ran fifteen per cent past both collapse thrusts, and out there the
+  free funicular is not a solution of anything: on the reference ring at 1.25
+  times the maximum thrust it left the ring by four fifths of a joint on one
+  face and four fifths on the other, with twelve joints of seventeen crossed
+  outside the thickness. Drawing that beside a verdict invited the reading that
+  such a state is merely inadmissible, when in truth it does not exist.
+
+  The line is now held at the limit state — a real admissible line, tangent to
+  the faces at the hinges it forms — and the panel says that is what it is. The
+  slider's travel maps onto the admissible band exactly, so every position is a
+  distinct equilibrium and the two ends are the two collapse states, where the
+  classical patterns appear on their own: five hinges and two degrees of
+  freedom at minimum thrust, four and one at maximum. The **H min** and **H
+  max** buttons read through the same mapping, so they land at the ends rather
+  than beside them.
+
 - **A narrow admissible band could be missed entirely.** The collapse search
   stopped at the first sample of a sixty-step grid that happened to be
   admissible, which tests a boolean on a grid: a band narrower than the grid

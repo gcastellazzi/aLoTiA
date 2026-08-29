@@ -30,7 +30,7 @@ import {
 
 import { serialise, deserialise, suggestedName } from './core/persist.js';
 import {
-  bestLineForThrust, collapseRange, analyse, displacedConfiguration, displaced,
+  bestLineForThrust, constrainedLine, collapseRange, analyse, displacedConfiguration, displaced,
 } from './core/mechanism.js';
 import {
   defaultAxis, luneWeights, solids, widthRange,
@@ -117,6 +117,7 @@ const state = {
   newBlock: null,
   solidBounds: null,             // its projected extent, for the fit buttons
   bandKey: null,    // what the band was computed for
+  beyondBand: 0,    // +1 held at H max, -1 at H min, 0 inside the band
   pole: null,
   fp: null,
   lot: null,
@@ -393,9 +394,13 @@ function reportMechanism(thrustFraction) {
     const show = (f) => (scaled
       ? format(f * totalLoad(), 'force', state.system)
       : `${(f * totalLoad()).toPrecision(4)} (unscaled)`);
+    const beyond = state.beyondBand;
     ui.mechBand.textContent =
       `stands between H = ${show(state.band.min)} and ${show(state.band.max)}`
-      + `  ·  now ${(thrustFraction / state.band.max).toFixed(2)} of H max`;
+      + (beyond
+        ? `  ·  held at H ${beyond > 0 ? 'max' : 'min'}: past it no line fits `
+          + 'inside the ring, and the arch is moving'
+        : `  ·  now ${(thrustFraction / state.band.max).toFixed(2)} of H max`);
   }
 }
 
@@ -437,8 +442,11 @@ function armEnd(which) {
 function sliderForThrust(f) {
   const band = state.band;
   if (!band) return 50;
-  const lo = band.min * 0.85;
-  const hi = band.max * 1.15;
+  // The same mapping the slider is read through, or the buttons land elsewhere
+  // than where they say: the travel spans the band and nothing more, so H min
+  // is 0 and H max is 100.
+  const lo = band.min;
+  const hi = band.max;
   // NOT ROUNDED TO A WHOLE PER CENT. H min and H max name a collapse state,
   // and rounding the slider to the nearest integer step lands beside it: on
   // Example_3_Heyman_arch the button asked for 4.24 % of the travel, got 4 %,
@@ -525,11 +533,26 @@ function recompute() {
     }
     const band = state.band;
     if (band) {
+      // THE SLIDER SPANS THE BAND AND NOTHING MORE. It used to run 15 per cent
+      // past both edges, so that the far end would show the arch as a
+      // mechanism; but with the line now held inside the masonry, that
+      // overshoot is travel that does nothing -- the state at 80 per cent and
+      // at 100 per cent are the same held limit state. Mapping the travel onto
+      // the band exactly makes every position of the slider a distinct
+      // equilibrium, and puts the two collapse states at the two ends, where
+      // the hinges appear and the verdict turns.
       const u = Number(ui.thrust.value) / 100;
-      const lo = band.min * 0.85;
-      const hi = band.max * 1.15;
-      const f = lo + (hi - lo) * u;
-      const best = bestLineForThrust(seq, m.joints, f);
+      const asked = band.min + (band.max - band.min) * u;
+      // THE LINE OF THRUST CANNOT LEAVE THE MASONRY. Outside the band no line
+      // fits, and the free funicular drawn there was not a solution of
+      // anything: at 1.25 H max it left the ring by four fifths of a joint on
+      // one face and by four fifths again on the other. Asking for a thrust
+      // beyond the band therefore holds the line at the limit state, which is
+      // a real admissible line, tangent to the faces at the hinges; the panel
+      // says that this is what it is and that beyond it the arch is moving.
+      const best = constrainedLine(seq, m.joints, band, asked);
+      const f = best ? best.thrust : asked;
+      state.beyondBand = best ? best.beyond : 0;
       if (best) {
         state.pole = best.fp.pole;
         state.fp = best.fp;
@@ -549,6 +572,7 @@ function recompute() {
     }
   }
   state.mech = null;
+  state.beyondBand = 0;
 
   // BOTH ENDS IMPOSED. The thrust stays the student's; the pole's ordinate is
   // whatever carries the line from A to B, found by one trial and one exact

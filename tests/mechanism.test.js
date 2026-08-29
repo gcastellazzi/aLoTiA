@@ -12,11 +12,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { centroid } from '../docs/app/js/core/geometry.js';
-import { blocksBetween, weighBlocks } from '../docs/app/js/core/trace.js';
+import { blocksBetween, weighBlocks, centroidsOf } from '../docs/app/js/core/trace.js';
+import { circularRing, blocksLike } from '../docs/app/js/core/blocks.js';
 import {
   TOUCH, bestLineForThrust, collapseRange, findHinges, bodies, bodyOfBlock,
   degreesOfFreedom, nullSpace, mechanismMotion, displaced, analyse,
   displacedConfiguration, transformPoint, separationSense, jointOpenings,
+  constrainedLine,
 } from '../docs/app/js/core/mechanism.js';
 
 function arc(r, n = 300) {
@@ -477,5 +479,105 @@ test('analyse ties the whole chain together on a real arch', () => {
   if (a.dof > 0) {
     assert.ok(a.motion, 'a mechanism must carry a motion');
     assert.equal(a.motion.motions.length, a.bodies.length);
+  }
+});
+
+// ------------------------------------------- the line cannot leave the ring --
+
+test('driven from the thrust, the line never leaves the masonry', () => {
+  // THE REGRESSION. The mechanism slider deliberately runs past both collapse
+  // thrusts, and outside the band the free funicular is not a solution of
+  // anything: on this ring at 1.25 H max it left the masonry by four fifths of
+  // a joint on one face and four fifths on the other, twelve joints of
+  // seventeen crossed outside the thickness. `constrainedLine` holds the line
+  // at the limit state instead, which is a real admissible line.
+  const { blocks, joints } = circularRing({
+    centre: [0, 0], innerRadius: 4, outerRadius: 4.6,
+    startAngle: 0, endAngle: 180, count: 16,
+  });
+  const seq = blocksLike({
+    centroids: centroidsOf(blocks),
+    weights: weighBlocks(blocks, { specificWeight: 20, thickness: 1 }),
+    areas: blocks.map(() => 0),
+    thickness: blocks.map(() => 0),
+  });
+  const band = collapseRange(seq, joints);
+  assert.ok(band, 'the reference ring has no admissible band');
+
+  // The whole travel of the slider, which runs to 15 per cent outside the band.
+  const lo = band.min * 0.85;
+  const hi = band.max * 1.15;
+  for (let i = 0; i <= 40; i++) {
+    const asked = lo + ((hi - lo) * i) / 40;
+    const got = constrainedLine(seq, joints, band, asked);
+    assert.ok(got, `no line at ${asked}`);
+
+    // Held inside the band, whatever was asked for.
+    assert.ok(got.thrust >= band.min - 1e-12 && got.thrust <= band.max + 1e-12,
+      `thrust ${got.thrust} outside [${band.min}, ${band.max}]`);
+    assert.equal(got.beyond, asked > band.max ? 1 : asked < band.min ? -1 : 0);
+
+    // And the line itself is inside the masonry at every joint.
+    for (const [j, c] of got.crossings.entries()) {
+      assert.ok(c, `joint ${j} never crossed at H/W = ${asked.toFixed(4)}`);
+      assert.ok(c.s >= -1e-9 && c.s <= 1 + 1e-9,
+        `at H/W = ${asked.toFixed(4)} the line leaves the ring at joint ${j}: `
+        + `s = ${c.s.toFixed(4)}`);
+    }
+    assert.ok(got.clearance >= -1e-9,
+      `negative clearance ${got.clearance} at H/W = ${asked.toFixed(4)}`);
+  }
+});
+
+test('beyond the band the line is the limit state, not a new one', () => {
+  const { blocks, joints } = circularRing({
+    centre: [0, 0], innerRadius: 4, outerRadius: 4.6,
+    startAngle: 0, endAngle: 180, count: 16,
+  });
+  const seq = blocksLike({
+    centroids: centroidsOf(blocks),
+    weights: weighBlocks(blocks, { specificWeight: 20, thickness: 1 }),
+    areas: blocks.map(() => 0),
+    thickness: blocks.map(() => 0),
+  });
+  const band = collapseRange(seq, joints);
+  const atMax = constrainedLine(seq, joints, band, band.max);
+  const beyond = constrainedLine(seq, joints, band, band.max * 1.15);
+  assert.equal(beyond.beyond, 1);
+  assert.ok(Math.abs(beyond.thrust - band.max) < 1e-12);
+  // Same thrust, so the same line: held, not recomputed into something else.
+  beyond.lot.points.forEach((q, i) => {
+    assert.ok(Math.abs(q[0] - atMax.lot.points[i][0]) < 1e-9);
+    assert.ok(Math.abs(q[1] - atMax.lot.points[i][1]) < 1e-9);
+  });
+});
+
+test('the springings stay fixed to the ground at every thrust', () => {
+  // A and B are hinges to the ground throughout: ux = uy = 0 there, whatever
+  // the thrust and however many interior hinges have formed.
+  const { blocks, joints } = circularRing({
+    centre: [0, 0], innerRadius: 4, outerRadius: 4.6,
+    startAngle: 0, endAngle: 180, count: 16,
+  });
+  const seq = blocksLike({
+    centroids: centroidsOf(blocks),
+    weights: weighBlocks(blocks, { specificWeight: 20, thickness: 1 }),
+    areas: blocks.map(() => 0),
+    thickness: blocks.map(() => 0),
+  });
+  const band = collapseRange(seq, joints);
+  const at = (mo, p) => [mo.vx - mo.omega * p[1], mo.vy + mo.omega * p[0]];
+
+  for (const f of [band.min, (band.min + band.max) / 2, band.max]) {
+    const got = constrainedLine(seq, joints, band, f);
+    const a = analyse(got.crossings, joints, blocks.length);
+    if (!a.motion) continue;                    // not a mechanism at this thrust
+    const first = a.hinges[0];
+    const last = a.hinges[a.hinges.length - 1];
+    const vA = at(a.motion.motions[0], first.point);
+    const vB = at(a.motion.motions[a.motion.motions.length - 1], last.point);
+    for (const v of [...vA, ...vB]) {
+      assert.ok(Math.abs(v) < 1e-9, `a springing moves: ${v}`);
+    }
   }
 });
