@@ -45,6 +45,7 @@ const DATA = 'data/examples/';
 const el = (id) => document.getElementById(id);
 const ui = {
   example: el('example'), meta: el('meta'), warn: el('warn'),
+  newWork: el('newWork'),
   scaleSource: el('scaleSource'),
   thrust: el('thrust'), thrustValue: el('thrustValue'), reset: el('reset'),
   startPos: el('startPos'), startValue: el('startValue'),
@@ -144,9 +145,61 @@ async function loadCatalogue() {
     o.textContent = `${e.name.replace(/_/g, ' ')}  (${e.blocks ?? '?'} blocks)`;
     ui.example.append(o);
   }
-  const preferred = cat.examples.find((e) => /Heyman/.test(e.name));
-  ui.example.value = (preferred ?? cat.examples[0]).file;
-  await loadExample(ui.example.value);
+  // AN EMPTY DESK TO BEGIN WITH. Opening straight into an example put an arch
+  // on screen that nobody had asked for, and a student tracing their own had
+  // to clear it first. The menu now starts on a blank entry: choosing one
+  // loads it, and "Start a new arch" comes back here.
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = '— choose an example, or trace your own —';
+  ui.example.prepend(blank);
+  ui.example.value = '';
+  newWork();
+}
+
+/**
+ * Clear the desk.
+ *
+ * Everything the session holds goes: the arch, the trace, the outlines, the
+ * loads, the imposed ends, the image. Not the unit system or the typed
+ * densities, which are settings rather than work.
+ */
+function newWork() {
+  state.model = null;
+  state.image = null;
+  state.exampleName = null;
+  state.trace = { inner: [], outer: [], armed: null, cursor: null };
+  state.profiles = { list: [], current: null, centre: null, picking: false };
+  state.forces = { points: [], magnitudes: [], placing: false };
+  state.ends = { A: null, B: null, picking: null, construction: null };
+  state.ref = { points: [], picking: false };
+  state.newBlock = null;
+  state.basePole = null;
+  state.pole = null;
+  state.fp = null;
+  state.lot = null;
+  state.mech = null;
+  state.crossings = null;
+  state.band = null;
+  state.bandKey = null;
+  state.imposedRange = null;
+  state.imposedKey = null;
+  state.spanKept = null;
+  state.consistent = { ok: true, reason: null, extraRows: 0 };
+  state.axisPicked = false;
+  ui.example.value = '';
+  ui.imposeEnds.checked = false;
+  ui.imposeEnds2.checked = false;
+  ui.meta.textContent = 'no arch yet — choose an example, or trace your own';
+  ui.scaleSource.hidden = true;
+  ui.warn.hidden = true;
+  reportScale();
+  listForces();
+  reportProfiles();
+  reportMechanism();
+  mainAx.begin(); mainAx.decorate();
+  forceAx.begin(); forceAx.decorate();
+  draw();
 }
 
 /**
@@ -355,6 +408,16 @@ function raysStride() {
  */
 function reportMechanism(thrustFraction) {
   const m = state.model;
+  // An empty desk is a legitimate state: the app opens on one.
+  if (!m) {
+    state.mech = null;
+    ui.mechVerdict.className = 'verdict';
+    ui.mechVerdict.textContent = '—';
+    ui.mechCount.textContent = '';
+    ui.mechBand.textContent = '';
+    ui.mechAmp.disabled = true;
+    return;
+  }
   if (!m.joints || !state.crossings) {
     state.mech = null;
     ui.mechVerdict.className = 'verdict';
@@ -634,7 +697,14 @@ function recompute() {
     let got = span.weights.length
       ? poleForEnds(span.weights, span.centroids, P, Q, pole[0], pole[1])
       : null;
-    if (got && ui.mechOn.checked && span.weights.length) {
+    // WHENEVER THE MECHANISM IS ACTIVE, not only when the thrust is driving it.
+    // Showing the mechanism is activating it: the hinges are being read off the
+    // line, so the line has to be one the masonry could carry. Gated on
+    // `mechOn` alone, a user who imposed the ends and simply switched the
+    // mechanism on saw the line stay fixed at A and B -- and leave the ring at
+    // the interior hinge, which is the case that was reported.
+    const mechActive = ui.mechOn.checked || ui.showMech.checked;
+    if (got && mechActive && span.weights.length) {
       const total = span.weights.reduce((a, b) => a + b, 0);
       const key = `imposed:${span.kept.length}:${total.toPrecision(12)}:`
         + `${P.map((v) => v.toFixed(4))}:${Q.map((v) => v.toFixed(4))}`;
@@ -1952,7 +2022,12 @@ ui.imageFile.addEventListener('change', (e) => {
   img.src = URL.createObjectURL(file);
 });
 
-ui.example.addEventListener('change', () => loadExample(ui.example.value));
+ui.example.addEventListener('change', () => {
+  // The blank entry is a real choice: it clears the desk.
+  if (ui.example.value) loadExample(ui.example.value);
+  else newWork();
+});
+ui.newWork.addEventListener('click', newWork);
 ui.thrust.addEventListener('input', () => {
   recompute();
   // Refit the force plane only: the pole travels a long way and would leave
@@ -2233,11 +2308,20 @@ ui.reset.addEventListener('click', () => { fitViews(); draw(); });
  */
 function saveWork() {
   try {
+    // ALWAYS A SAVE AS. A page cannot write back to a file it opened, so every
+    // save is a new file whatever it is called; asking for the name makes that
+    // plain and lets a student keep a series -- "ring 0.15", "ring 0.20" --
+    // instead of a directory of timestamps.
+    const suggested = suggestedName(state);
+    const chosen = window.prompt('Save the session as', suggested);
+    if (chosen === null) return;                 // cancelled
+    const name = chosen.trim() || suggested;
     state.dome = domeOptions();
     const data = serialise(state, {
       thrust: ui.thrust.value,
       startPos: ui.startPos.value,
       split: ui.split.value,
+      imposeEnds: ui.imposeEnds.checked,
     });
     const text = JSON.stringify(data, null, 1);
     const url = URL.createObjectURL(
@@ -2245,7 +2329,7 @@ function saveWork() {
     );
     const a = document.createElement('a');
     a.href = url;
-    a.download = suggestedName(state);
+    a.download = /\.json$/i.test(name) ? name : `${name}.json`;
     a.click();
     URL.revokeObjectURL(url);
     const kb = (text.length / 1024).toFixed(0);
@@ -2287,6 +2371,16 @@ function openWork(text) {
   ui.thrust.value = data.controls.thrust;
   ui.startPos.value = data.controls.startPos;
   ui.split.value = data.controls.split;
+  // The ends the student imposed, and whether they were imposed at all. A file
+  // saved with A and B set used to reopen holding at nothing.
+  state.ends = {
+    A: data.ends && data.ends.A ? [...data.ends.A] : null,
+    B: data.ends && data.ends.B ? [...data.ends.B] : null,
+    picking: null,
+    construction: null,
+  };
+  ui.imposeEnds.checked = !!(data.ends && data.ends.imposed);
+  ui.imposeEnds2.checked = ui.imposeEnds.checked;
 
   resetAxis();
   reportDome();
@@ -2316,10 +2410,17 @@ ui.stateFile.addEventListener('change', (e) => {
   e.target.value = '';
 });
 for (const k of ['showImage', 'showBlocks', 'showWeights', 'showThrust',
-  'showCable', 'showLabels', 'showJoints', 'showRays', 'showMech',
-  'showScale']) {
+  'showCable', 'showLabels', 'showJoints', 'showRays', 'showScale']) {
   ui[k].addEventListener('change', draw);
 }
+// SHOWING THE MECHANISM CHANGES THE LINE, not only what is drawn of it: with
+// the mechanism active the thrust is held inside the band so the line cannot
+// leave the masonry. Bound to `draw` alone, switching it on left the previous,
+// escaping line on screen until something else happened to recompute.
+ui.showMech.addEventListener('change', () => {
+  recompute();
+  draw();
+});
 ui.flipY.addEventListener('change', () => {
   mainAx.yUp = !ui.flipY.checked;
   fitViews();

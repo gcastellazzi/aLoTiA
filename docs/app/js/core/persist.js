@@ -73,6 +73,16 @@ export function serialise(state, controls = {}, imageName = null) {
           : { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
       }
       : null,
+    // THE IMPOSED ENDS ARE PART OF THE SESSION. A file saved with A and B set
+    // came back with them gone, so the arch reopened held at nothing and the
+    // line the student had constructed could not be recovered.
+    ends: state.ends && (state.ends.A || state.ends.B)
+      ? {
+        A: state.ends.A ? [...state.ends.A] : null,
+        B: state.ends.B ? [...state.ends.B] : null,
+        imposed: !!controls.imposeEnds,
+      }
+      : null,
     forces: state.forces
       ? {
         points: points(state.forces.points),
@@ -162,6 +172,10 @@ export function deserialise(text) {
       }
       : null,
     forces: f ?? { points: [], magnitudes: [] },
+    // Older files carry no ends at all, and must still open.
+    ends: data.ends
+      ? { A: data.ends.A ?? null, B: data.ends.B ?? null, imposed: !!data.ends.imposed }
+      : null,
     controls: {
       thrust: 50, startPos: 50, split: 50, ...(data.controls ?? {}),
     },

@@ -90,6 +90,24 @@ and the project uses [semantic versioning](https://semver.org/).
   max** buttons read through the same mapping, so they land at the ends rather
   than beside them.
 
+- **Start a new arch.** The application opened straight into a stored example,
+  so a student tracing their own had to clear someone else's arch first. It now
+  opens on an empty desk, with the example menu holding a blank first entry;
+  *Start a new arch* comes back to it, clearing the trace, the outlines, the
+  loads and the imposed ends, but not the unit system or the typed densities,
+  which are settings rather than work.
+
+- **Saving always asks for a name.** A page cannot write back to a file it
+  opened, so every save is a new file whatever it is called; asking makes that
+  plain, and lets a series be kept — *ring 0.15*, *ring 0.20* — instead of a
+  directory of timestamps. The timestamped name is still offered as the
+  suggestion.
+
+- **The imposed ends are saved with the session.** A file saved with A and B
+  set came back with them gone, so the arch reopened held at nothing and the
+  line the student had constructed could not be recovered. Files written before
+  this still open.
+
 - **Where A and B are put now decides which voussoirs carry the line.** They
   are the user's to place anywhere, and a block whose centroid falls outside
   them is not between the two points the line runs between: its weight belongs
@@ -106,8 +124,14 @@ and the project uses [semantic versioning](https://semver.org/).
 
 - **The line stays inside the masonry with the ends imposed too.** Fixing A and
   B spends two of the three degrees of freedom, leaving the thrust — which has
-  a band of its own, narrower than the free family's. With the mechanism on the
-  demanded thrust is held inside it.
+  a band of its own, narrower than the free family's. Whenever the mechanism is
+  **active** the demanded thrust is held inside it: showing the mechanism is
+  activating it, since the hinges are being read off the line. Gated on *Drive
+  from the thrust* alone, a session with the ends imposed and the mechanism
+  merely switched on kept a line fixed at A and B that left the ring at the
+  interior hinge. Switching the mechanism on now recomputes rather than only
+  redrawing, or the escaping line stayed on screen until something else
+  happened to trigger a recomputation.
 
 - **The mechanism is shown in the three-dimensional view.** While the amplitude
   is up, the solids are built from the displaced voussoirs rather than the rest
