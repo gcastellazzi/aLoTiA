@@ -238,3 +238,90 @@ export function circularArch({
   }
   return polys;
 }
+
+function circleThroughThree(a, b, c) {
+  const d = 2 * (a[0] * (b[1] - c[1])
+    + b[0] * (c[1] - a[1])
+    + c[0] * (a[1] - b[1]));
+  if (Math.abs(d) < 1e-12) return null;
+  const aa = a[0] * a[0] + a[1] * a[1];
+  const bb = b[0] * b[0] + b[1] * b[1];
+  const cc = c[0] * c[0] + c[1] * c[1];
+  const x = (aa * (b[1] - c[1]) + bb * (c[1] - a[1]) + cc * (a[1] - b[1])) / d;
+  const y = (aa * (c[0] - b[0]) + bb * (a[0] - c[0]) + cc * (b[0] - a[0])) / d;
+  return { centre: [x, y], radius: Math.hypot(a[0] - x, a[1] - y) };
+}
+
+function angleOf(circle, p) {
+  return Math.atan2(p[1] - circle.centre[1], p[0] - circle.centre[0]);
+}
+
+function positiveDelta(a, b) {
+  let d = b - a;
+  while (d < 0) d += 2 * Math.PI;
+  while (d >= 2 * Math.PI) d -= 2 * Math.PI;
+  return d;
+}
+
+function arcSpec(points) {
+  const circle = circleThroughThree(points[0], points[1], points[2]);
+  if (!circle) return null;
+  const a0 = angleOf(circle, points[0]);
+  const a1 = angleOf(circle, points[1]);
+  const a2 = angleOf(circle, points[2]);
+  const ccw = positiveDelta(a0, a2);
+  const mid = positiveDelta(a0, a1);
+  const sweep = mid <= ccw ? ccw : ccw - 2 * Math.PI;
+  return { ...circle, start: a0, sweep };
+}
+
+function arcPoint(spec, u) {
+  const a = spec.start + spec.sweep * u;
+  return [
+    spec.centre[0] + spec.radius * Math.cos(a),
+    spec.centre[1] + spec.radius * Math.sin(a),
+  ];
+}
+
+/**
+ * A circular arch whose intrados and extrados are each defined by three
+ * points: start, one point on the arc, end.
+ */
+export function circularRingThroughPoints({ inner, outer, count }) {
+  if (!inner || !outer || inner.length !== 3 || outer.length !== 3) {
+    throw new Error('need three intrados points and three extrados points');
+  }
+  if (![...inner, ...outer].every((p) => Array.isArray(p)
+    && p.length === 2 && p.every(Number.isFinite))) {
+    throw new Error('all six circular arch points must be finite');
+  }
+  const i = arcSpec(inner);
+  const o = arcSpec(outer);
+  if (!i || !o) throw new Error('three points must not be collinear');
+
+  const blocks = [];
+  const joints = [];
+  for (let k = 0; k <= count; k++) {
+    const u = k / count;
+    joints.push({ a: arcPoint(i, u), b: arcPoint(o, u) });
+  }
+  for (let k = 0; k < count; k++) {
+    const i0 = joints[k].a;
+    const o0 = joints[k].b;
+    const i1 = joints[k + 1].a;
+    const o1 = joints[k + 1].b;
+    blocks.push({
+      x: [i0[0], o0[0], o1[0], i1[0]],
+      y: [i0[1], o0[1], o1[1], i1[1]],
+    });
+  }
+
+  const first = blocks[0];
+  const last = blocks[blocks.length - 1];
+  const cx = (p) => p.x.reduce((a, b) => a + b, 0) / p.x.length;
+  if (blocks.length > 1 && cx(first) < cx(last)) {
+    blocks.reverse();
+    joints.reverse();
+  }
+  return { blocks, joints };
+}

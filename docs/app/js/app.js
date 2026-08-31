@@ -9,7 +9,7 @@ import { Axes } from './render/axes.js';
 import { drawScaleBar } from './render/scalebar.js';
 import {
   drawBlocks, drawThrustLine, drawCable, drawWeights, drawSupports,
-  drawForcePolygon, drawArrow, drawThrustLabels, labelStride,
+  drawForcePolygon, drawArrow, drawReactionLabel, drawThrustLabels, labelStride,
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary,
 } from './render/draw.js';
@@ -22,7 +22,9 @@ import { fromExample, poleOf, consistency } from './core/model.js';
 import {
   blocksBetween, checkTrace, weighBlocks, centroidsOf, springings,
 } from './core/trace.js';
-import { blocksLike, circularRing, betweenEnds } from './core/blocks.js';
+import {
+  blocksLike, circularRing, circularRingThroughPoints, betweenEnds,
+} from './core/blocks.js';
 import {
   SYSTEMS, unitsPerPixel, scaleModel, format, archDimensions,
   convertModel, conversionFactors,
@@ -30,14 +32,20 @@ import {
 
 import { serialise, deserialise, suggestedName } from './core/persist.js';
 import {
-  bestLineForThrust, constrainedLine, collapseRange, analyse, imposedBand, displacedConfiguration, displaced,
+  bestLineForThrust, constrainedLine, collapseRange, analyse, imposedBand,
+  displacedConfiguration, displaced, freezeBranch, lineWithFrozenBranch,
 } from './core/mechanism.js';
+import {
+  ringStudySamples, heymanPoint, heymanDomain, thirdMiddleBand,
+  heymanGeometricalSafety,
+} from './core/study.js';
 import {
   defaultAxis, luneWeights, solids, widthRange,
 } from './core/dome.js';
 import { cutRadially, blockCentroid, blockArea } from './core/profile.js';
 import {
-  frame, projectedBounds, drawSolids, drawAxis,
+  frame, projectedBounds, solidCentre, recenteredSolids,
+  drawSolids, drawAxis, drawReferenceFrame,
 } from './render/solid.js';
 
 const DATA = 'data/examples/';
@@ -55,7 +63,8 @@ const ui = {
   showImage: el('showImage'), showBlocks: el('showBlocks'),
   showWeights: el('showWeights'), showThrust: el('showThrust'),
   showCable: el('showCable'), showLabels: el('showLabels'),
-  showRays: el('showRays'), showMech: el('showMech'),
+  showRays: el('showRays'), showReactions: el('showReactions'),
+  showMech: el('showMech'),
   showScale: el('showScale'),
   mechOn: el('mechOn'), mechVerdict: el('mechVerdict'),
   mechCount: el('mechCount'), mechBand: el('mechBand'),
@@ -63,6 +72,12 @@ const ui = {
   poleni: el('poleni'), domeAngle: el('domeAngle'), domeAxis: el('domeAxis'),
   pickAxis: el('pickAxis'), domeStatus: el('domeStatus'),
   tabForce: el('tabForce'), tabSolid: el('tabSolid'),
+  tabHeyman: el('tabHeyman'), tabRadius: el('tabRadius'),
+  radiusMetric: el('radiusMetric'),
+  radiusByWeight: el('radiusByWeight'), radiusByThrust: el('radiusByThrust'),
+  radiusASteps: el('radiusASteps'), radiusBSteps: el('radiusBSteps'),
+  radiusNSteps: el('radiusNSteps'), radiusTriStep: el('radiusTriStep'),
+  plotStatus: el('plotStatus'),
   sideCaption: el('sideCaption'),
   tabGeom: el('tabGeom'), tabLot: el('tabLot'), tabMech: el('tabMech'),
   paneGeom: el('paneGeom'), paneLot: el('paneLot'), paneMech: el('paneMech'),
@@ -79,10 +94,19 @@ const ui = {
   showJoints: el('showJoints'), admissible: el('admissible'),
   flipY: el('flipY'),
   imageFile: el('imageFile'), traceInner: el('traceInner'),
+  imageRealWidth: el('imageRealWidth'), imageRealHeight: el('imageRealHeight'),
+  imageAspectLocked: el('imageAspectLocked'), imageLockIcon: el('imageLockIcon'),
+  applyImageSize: el('applyImageSize'), pickImageRef: el('pickImageRef'),
+  imageRefLength: el('imageRefLength'), applyImageRefScale: el('applyImageRefScale'),
   traceOuter: el('traceOuter'), traceHint: el('traceHint'),
   nBlocks: el('nBlocks'), gamma: el('gamma'), thick: el('thick'),
   ringRi: el('ringRi'), ringTri: el('ringTri'), ringN: el('ringN'),
   makeRing: el('makeRing'), ringStatus: el('ringStatus'),
+  pickInner1: el('pickInner1'), pickInner2: el('pickInner2'), pickInner3: el('pickInner3'),
+  pickOuter1: el('pickOuter1'), pickOuter2: el('pickOuter2'), pickOuter3: el('pickOuter3'),
+  makeThreePointRing: el('makeThreePointRing'),
+  clearThreePointRing: el('clearThreePointRing'),
+  threePointRingStatus: el('threePointRingStatus'),
   thickLabel: el('thickLabel'),
   makeBlocks: el('makeBlocks'), clearTrace: el('clearTrace'),
   traceStatus: el('traceStatus'), gammaLabel: el('gammaLabel'),
@@ -95,18 +119,21 @@ const ui = {
 
 const mainAx = new Axes(el('main'), { equal: true, yUp: true });
 const forceAx = new Axes(el('force'), { equal: true, yUp: true });
+const plotAx = new Axes(el('plot'), { equal: false, yUp: true });
 // The block view lives on its own canvas, sharing the pane with the force
 // polygon. Its "data" coordinates are the screen plane of the projection, so
 // equal scales there mean the solid is drawn without distortion.
-const solidAx = new Axes(el('solid'), { equal: true, yUp: true });
+const solidAx = new Axes(el('solid'), { equal: true, yUp: true, margin: [8, 8, 8, 8] });
 mainAx.xlabel = 'x';
 mainAx.ylabel = 'y';
 forceAx.title = 'Force polygon';
+plotAx.title = 'Plots';
 
 /** Everything the drawing depends on. */
 const state = {
   model: null,
   image: null,
+  imageData: null,
   basePole: null,   // the pole as saved: thrust slider is relative to it
   mech: null,       // the hinge analysis, when the mechanism tab is driving
   band: null,       // the two collapse thrusts, once computed
@@ -122,18 +149,125 @@ const state = {
   spanKept: null,   // which blocks the imposed ends leave carrying the line
   imposedRange: null,  // the thrust band of the imposed-ends family
   imposedKey: null,
+  selectedJoint: null,
+  thicknessStudy: null,
+  ringStudySource: null,
+  ringAuto: false,
+  visibleStudyTris: [],
+  radiusMetric: 'weight',
+  showSolidAxes: false,
+  frozenBranch: null,
   pole: null,
   fp: null,
   lot: null,
   consistent: null,
   // Tracing: the two curves the user is drawing, and which one is armed.
   trace: { inner: [], outer: [], armed: null, cursor: null },
+  threePointRing: { inner: [null, null, null], outer: [null, null, null], picking: null },
   // Scale: the two picked reference points, and the system in force.
   ref: { points: [], picking: false },
   system: 'SI',
   // Applied point loads: where they act, how big, and whether we are placing.
   forces: { points: [], magnitudes: [], placing: false },
 };
+
+function clearPlotState({ keepStudy = false } = {}) {
+  state.selectedJoint = null;
+  state.frozenBranch = null;
+  if (!keepStudy) {
+    state.thicknessStudy = null;
+    state.ringStudySource = null;
+    state.ringAuto = false;
+    state.visibleStudyTris = [];
+  }
+}
+
+function clearThreePointRing() {
+  state.threePointRing = { inner: [null, null, null], outer: [null, null, null], picking: null };
+  reportThreePointRing();
+}
+
+function traceArmed() {
+  return !!state.trace?.armed;
+}
+
+function currentRingStudySource(base = {}) {
+  const dome = domeOptions();
+  const steps = (elm, fallback, min = 2) => Math.max(min, Math.round(Number(elm.value) || fallback));
+  return {
+    ...base,
+    gamma: Number(ui.gamma.value) || 20,
+    thickness: Math.max(0, Number(ui.thick.value) || 1),
+    poleni: dome.poleni,
+    axisX: dome.axisX,
+    angleDeg: dome.angleDeg,
+    leftSteps: steps(ui.radiusASteps, 5, 3),
+    rightSteps: steps(ui.radiusBSteps, 5, 3),
+    thrustSteps: steps(ui.radiusNSteps, 7),
+  };
+}
+
+function radiusTriStepValue() {
+  const step = Math.max(0.0001, Number(ui.radiusTriStep.value) || 0.01);
+  return Number(step.toPrecision(8));
+}
+
+function applyRadiusTriStep({ commit = false } = {}) {
+  const step = radiusTriStepValue();
+  if (commit) ui.radiusTriStep.value = String(step);
+  ui.ringTri.step = String(step);
+}
+
+function nudgeRingTri(direction) {
+  applyRadiusTriStep();
+  const step = radiusTriStepValue();
+  const min = Number(ui.ringTri.min) || 0;
+  const value = Number(ui.ringTri.value) || 0;
+  const next = Math.max(min, value + direction * step);
+  ui.ringTri.value = String(Number(next.toPrecision(10)));
+  ui.ringTri.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function refreshRingStudy() {
+  if (!state.ringStudySource) return;
+  state.ringStudySource = currentRingStudySource(state.ringStudySource);
+  const seen = new Set();
+  const tris = (state.thicknessStudy?.points ?? [])
+    .map((p) => p.tri)
+    .filter((tri) => {
+      const key = tri.toPrecision(12);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  state.thicknessStudy = {
+    ...state.thicknessStudy,
+    points: tris.map((tri) => ringStudySamples({
+      ...state.ringStudySource,
+      tri,
+    }).points).flat(),
+  };
+  state.visibleStudyTris = state.visibleStudyTris.filter((tri) => (
+    tris.some((t) => Math.abs(t - tri) < 1e-9)
+  ));
+  state.plotFitKey = null;
+}
+
+function recordRingState(opt) {
+  const got = ringStudySamples(opt);
+  const current = state.thicknessStudy?.points ?? [];
+  const same = (p) => Math.abs(p.tri - opt.tri) < 1e-9;
+  state.thicknessStudy = {
+    ok: true,
+    points: [...current.filter((p) => !same(p)), ...got.points]
+      .sort((a, b) => (a.plotTri ?? a.tri) - (b.plotTri ?? b.tri)),
+  };
+  state.visibleStudyTris = [...state.visibleStudyTris.filter((tri) => (
+    Math.abs(tri - opt.tri) >= 1e-9
+  )), opt.tri].slice(-3);
+  state.plotFitKey = null;
+  return got;
+}
 
 async function loadCatalogue() {
   const res = await fetch(`${DATA}index.json`);
@@ -167,8 +301,10 @@ async function loadCatalogue() {
 function newWork() {
   state.model = null;
   state.image = null;
+  state.imageData = null;
   state.exampleName = null;
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
+  clearThreePointRing();
   state.profiles = { list: [], current: null, centre: null, picking: false };
   state.forces = { points: [], magnitudes: [], placing: false };
   state.ends = { A: null, B: null, picking: null, construction: null };
@@ -185,6 +321,11 @@ function newWork() {
   state.imposedRange = null;
   state.imposedKey = null;
   state.spanKept = null;
+  state.selectedJoint = null;
+  state.thicknessStudy = null;
+  state.ringStudySource = null;
+  state.ringAuto = false;
+  state.frozenBranch = null;
   state.consistent = { ok: true, reason: null, extraRows: 0 };
   state.axisPicked = false;
   ui.example.value = '';
@@ -193,6 +334,11 @@ function newWork() {
   ui.meta.textContent = 'no arch yet — choose an example, or trace your own';
   ui.scaleSource.hidden = true;
   ui.warn.hidden = true;
+  ui.imageRealWidth.value = '';
+  ui.imageRealHeight.value = '';
+  ui.imageRefLength.value = ui.refLength.value;
+  ui.imageAspectLocked.checked = true;
+  reportImageLock();
   reportScale();
   listForces();
   reportProfiles();
@@ -233,8 +379,15 @@ async function loadExample(file) {
     state.mech = null;
     state.band = null;
     state.bandKey = null;
+    state.selectedJoint = null;
+    state.thicknessStudy = null;
+    state.ringStudySource = null;
+    state.ringAuto = false;
+    state.frozenBranch = null;
     state.image = null;
+    state.imageData = null;
     state.trace = { inner: [], outer: [], armed: null, cursor: null };
+    clearThreePointRing();
     state.forces = { points: [], magnitudes: [], placing: false };
     assessAdmissibility();
     reportMechanism();
@@ -243,6 +396,7 @@ async function loadExample(file) {
   }
   state.model = model;
   state.consistent = consistency(model);
+  clearPlotState();
 
   // The pole the example was saved with; the slider moves around it.
   try {
@@ -270,6 +424,7 @@ async function loadExample(file) {
   mainAx.yUp = true;
 
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
+  clearThreePointRing();
   state.forces = { points: [], magnitudes: [], placing: false };
   // The collapse band belongs to the arch that was on screen, not to this one.
   // The signature guard recomputes it for another arch WITH joints, but an
@@ -277,9 +432,15 @@ async function loadExample(file) {
   // it saw.
   state.band = null;
   state.bandKey = null;
+  state.selectedJoint = null;
+  state.thicknessStudy = null;
+  state.ringStudySource = null;
+  state.ringAuto = false;
+  state.frozenBranch = null;
   state.mech = null;
   state.crossings = null;
   state.image = null;
+  state.imageData = null;
   if (model.image) {
     const img = new Image();
     img.onload = () => { state.image = img; draw(); };
@@ -515,8 +676,8 @@ function reportImposed(got) {
 function armEnd(which) {
   state.ends.picking = state.ends.picking === which ? null : which;
   if (state.ends.picking) {
-    if (state.trace.armed) finishTrace();
-    if (state.ref.picking) armReference();
+    if (traceArmed()) finishTrace();
+    if (state.ref.picking) disarmReference();
     if (state.pickingAxis) ui.pickAxis.click();
   }
   for (const [w, ...btns] of [['A', ui.pickA, ui.pickA2], ['B', ui.pickB, ui.pickB2]]) {
@@ -551,6 +712,19 @@ function recompute() {
   const m = state.model;
   state.fp = null;
   state.lot = null;
+  if (!m || !m.blocks || !m.blocks.length || !state.basePole) {
+    state.seq = null;
+    state.pole = null;
+    state.segForces = null;
+    state.crossings = null;
+    setThrustEnabled(false);
+    ui.thrustValue.textContent = 'trace the arch first';
+    ui.thrustValueM.textContent = ui.thrustValue.textContent;
+    ui.thrustValueP.textContent = ui.thrustValue.textContent;
+    reportEnds(null);
+    reportMechanism();
+    return;
+  }
 
   // ONLY WHEN THERE IS A STORED SOLUTION TO FALL BACK ON. `consistency` fails
   // for two quite different reasons: a stored solution that does not match its
@@ -644,12 +818,28 @@ function recompute() {
       const f = best ? best.thrust : asked;
       state.beyondBand = best ? best.beyond : 0;
       if (best) {
+        if (!state.frozenBranch) {
+          state.frozenBranch = freezeBranch(best.lot, best.crossings,
+            m.joints, m.blocks.length);
+        }
+        const frozen = state.frozenBranch
+          ? lineWithFrozenBranch(seq, m.joints, state.frozenBranch, asked)
+          : null;
+        if (frozen && frozen.crossings.every((c) => c && c.inside !== false)) {
+          best.lot = frozen.lot;
+          best.fp = frozen.fp;
+          best.crossings = frozen.crossings;
+          best.clearance = frozen.clearance;
+        }
         state.pole = best.fp.pole;
         state.fp = best.fp;
         state.lot = best.lot;
         state.startFraction = best.s;
         state.endFraction = best.lot.endFraction;
-        state.segForces = state.fp.magnitudes.map((r) => r[2]);
+        state.segForces = state.fp.magnitudes.length === best.lot.points.length - 1
+          ? state.fp.magnitudes.map((r) => r[2])
+          : Array.from({ length: best.lot.points.length - 1 },
+            () => state.fp.thrust);
         // The sliders are shown following the search rather than commanding
         // it, so what is on screen always describes the line being drawn.
         ui.startPos.value = Math.round(best.s * 100);
@@ -663,6 +853,7 @@ function recompute() {
   }
   state.mech = null;
   state.beyondBand = 0;
+  if (!ui.mechOn.checked) state.frozenBranch = null;
 
   // BOTH ENDS IMPOSED. The thrust stays the student's; the pole's ordinate is
   // whatever carries the line from A to B, found by one trial and one exact
@@ -694,9 +885,20 @@ function recompute() {
       return { g, fp: fpTry, lot: lotTry,
         crossings: jointCrossings(lotTry.points, m.joints) };
     };
-    let got = span.weights.length
+    const first = span.weights.length
       ? poleForEnds(span.weights, span.centroids, P, Q, pole[0], pole[1])
       : null;
+    let solved = null;
+    if (first) {
+      const fpTry = forcePolygon(span.weights, first.pole);
+      const lotTry = funicular(fpTry, span.centroids, P, Q);
+      solved = {
+        g: first,
+        fp: fpTry,
+        lot: lotTry,
+        crossings: jointCrossings(lotTry.points, m.joints),
+      };
+    }
     // WHENEVER THE MECHANISM IS ACTIVE, not only when the thrust is driving it.
     // Showing the mechanism is activating it: the hinges are being read off the
     // line, so the line has to be one the masonry could carry. Gated on
@@ -704,7 +906,7 @@ function recompute() {
     // mechanism on saw the line stay fixed at A and B -- and leave the ring at
     // the interior hinge, which is the case that was reported.
     const mechActive = ui.mechOn.checked || ui.showMech.checked;
-    if (got && mechActive && span.weights.length) {
+    if (solved && mechActive && span.weights.length) {
       const total = span.weights.reduce((a, b) => a + b, 0);
       const key = `imposed:${span.kept.length}:${total.toPrecision(12)}:`
         + `${P.map((v) => v.toFixed(4))}:${Q.map((v) => v.toFixed(4))}`;
@@ -714,20 +916,20 @@ function recompute() {
       }
       const range = state.imposedRange;
       if (range) {
-        const asked = Math.abs(got.pole[0]) / total;
+        const asked = Math.abs(solved.g.pole[0]) / total;
         const held = Math.min(Math.max(asked, range.min), range.max);
         state.beyondBand = asked > range.max ? 1 : asked < range.min ? -1 : 0;
         if (state.beyondBand) {
           const redone = solveAt(held);
-          if (redone) got = redone.g;
+          if (redone) solved = redone;
         }
       }
     }
-    if (got) {
-      state.pole = got.pole;
-      state.fp = forcePolygon(span.weights, got.pole);
-      state.lot = funicular(state.fp, span.centroids, P, Q);
-      state.ends.construction = got;
+    if (solved) {
+      state.pole = solved.g.pole;
+      state.fp = solved.fp;
+      state.lot = solved.lot;
+      state.ends.construction = solved.g;
       state.startFraction = null;
       state.endFraction = null;
       state.segForces = state.fp.magnitudes.map((r) => r[2]);
@@ -851,21 +1053,45 @@ function assessAdmissibility() {
     'By the safe theorem, the arch stands.';
 }
 
+function imageBounds(m) {
+  if (!m) return null;
+  if (m.imageDrawSize) {
+    return { xmin: 0, xmax: m.imageDrawSize[0], ymin: 0, ymax: m.imageDrawSize[1] };
+  }
+  if (m.imageSize) {
+    const upp = m.frame?.coordinates === 'physical'
+      ? m.frame.units_per_pixel : 1;
+    return { xmin: 0, xmax: m.imageSize[0] * upp, ymin: 0, ymax: m.imageSize[1] * upp };
+  }
+  return null;
+}
+
+function mergeBounds(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    xmin: Math.min(a.xmin, b.xmin),
+    xmax: Math.max(a.xmax, b.xmax),
+    ymin: Math.min(a.ymin, b.ymin),
+    ymax: Math.max(a.ymax, b.ymax),
+  };
+}
+
 function fitViews() {
   const m = state.model;
+  if (!m) return;
   mainAx.syncSize();
   forceAx.syncSize();
+  plotAx.syncSize();
 
-  let b = bounds(m.blocks);
-  if (m.frame.coordinates === 'pixels' && m.imageSize) {
-    b = {
-      xmin: Math.min(b.xmin, 0), xmax: Math.max(b.xmax, m.imageSize[0]),
-      ymin: Math.min(b.ymin, 0), ymax: Math.max(b.ymax, m.imageSize[1]),
-    };
-  }
+  const blockBounds = m.blocks && m.blocks.length ? bounds(m.blocks) : null;
+  const b = mergeBounds(blockBounds, imageBounds(m))
+    ?? { xmin: 0, xmax: 1, ymin: 0, ymax: 1 };
   mainAx.fit(b);
 
   fitForceView();
+  plotAx.fit(plotContentBounds(), 0.12);
+  state.plotFitKey = null;
 }
 
 function fitForceView() {
@@ -912,8 +1138,8 @@ function draw() {
       // ORIGINAL pixel size, so the image is stretched onto that frame.
       const upp = m.frame.coordinates === 'physical'
         ? m.frame.units_per_pixel : 1;
-      const W = m.imageSize[0] * upp;
-      const H = m.imageSize[1] * upp;
+      const W = m.imageDrawSize ? m.imageDrawSize[0] : m.imageSize[0] * upp;
+      const H = m.imageDrawSize ? m.imageDrawSize[1] : m.imageSize[1] * upp;
       const [xa, ya] = mainAx.toPx([0, 0]);
       const [xb, yb] = mainAx.toPx([W, H]);
       const x = Math.min(xa, xb);
@@ -946,11 +1172,15 @@ function draw() {
   if (ui.showWeights.checked && m.centroids && m.weights) {
     drawWeights(mainAx, m.centroids, m.weights);
   }
+  if (sideView() === 'radius' && state.ringAuto) drawRingStudyCurves();
   if (ui.showThrust.checked && state.lot) {
     drawThrustLine(mainAx, state.lot.points, state.segForces);
     if (ui.showRays.checked) {
       drawThrustLabels(mainAx, state.lot.points, { stride: raysStride() });
     }
+  }
+  if (ui.showReactions.checked && state.lot && state.fp) {
+    drawSupportReactions();
   }
   if (ui.showCable.checked && state.lot) {
     // Reflected about the CHORD through the two ends, so the cable is hung
@@ -978,8 +1208,9 @@ function draw() {
   }
   if (state.ends.A || state.ends.B) drawEnds(mainAx, state.ends.A, state.ends.B);
   drawSupports(mainAx, m.pointA, m.pointB);
-  if (ui.showJoints.checked) drawJoints();
+  if (ui.showJoints.checked || state.selectedJoint !== null) drawJoints();
   drawTrace();
+  drawThreePointRingPicks();
   drawProfiles();
   drawForces();
   drawReference();
@@ -990,17 +1221,468 @@ function draw() {
     drawSolidView();
     return;
   }
+  if (sideView() === 'heyman') {
+    drawHeymanView();
+    return;
+  }
+  if (sideView() === 'radius') {
+    drawRadiusView();
+    return;
+  }
   forceAx.begin();
   forceAx.reequalize();
   if (state.fp) {
     drawForcePolygon(forceAx, state.fp, {
       rayLabels: ui.showRays.checked,
       stride: raysStride(),
+      reactions: ui.showReactions.checked,
+      reactionLabels: reactionLabels(),
       construction: state.ends.construction,
     });
   }
   forceAx.decorate();
   if (ui.showScale.checked) drawScaleBar(forceAx, { unit: barUnits().force });
+}
+
+function segmentForceAt(segment) {
+  if (!state.segForces || !state.segForces.length) return NaN;
+  return state.segForces[Math.min(segment, state.segForces.length - 1)];
+}
+
+function selectedHeymanPoint() {
+  const i = state.selectedJoint;
+  const m = state.model;
+  if (i === null || !m?.joints || !state.crossings) return null;
+  const crossing = state.crossings[i];
+  if (!crossing) return null;
+  return heymanPoint(m.joints[i], crossing, segmentForceAt(crossing.segment ?? i));
+}
+
+function allHeymanPoints() {
+  const m = state.model;
+  if (!m?.joints || !state.crossings) return [];
+  return state.crossings
+    .map((c, i) => {
+      if (!c) return null;
+      const p = heymanPoint(m.joints[i], c, segmentForceAt(c.segment ?? i));
+      return p ? { ...p, joint: i } : null;
+    })
+    .filter(Boolean);
+}
+
+function heymanSafetyPoints(points) {
+  const last = (state.model?.joints?.length ?? 0) - 1;
+  const imposed = ui.imposeEnds.checked && state.ends.A && state.ends.B;
+  if (!imposed || last < 1) return points;
+  return points.filter((p) => p.joint !== 0 && p.joint !== last);
+}
+
+function heymanSafetyLabel(safety) {
+  if (!safety) return 'GSF = n/a';
+  if (!Number.isFinite(safety.factor)) return 'GSF = inf';
+  return `GSF = ${safety.factor.toPrecision(3)}`;
+}
+
+function heymanFrame() {
+  const pts = allHeymanPoints();
+  const joints = state.model?.joints ?? [];
+  const nMax = 1.1 * Math.max(1, ...pts.map((p) => Math.abs(p.N)));
+  const tMax = Math.max(1, ...joints.map((j) => Math.hypot(
+    j.b[0] - j.a[0], j.b[1] - j.a[1],
+  )));
+  return { nMax, tMax };
+}
+
+function radiusYValue(p) {
+  return state.radiusMetric === 'thrust'
+    ? (p.horizontalThrust ?? p.weight * p.thrust)
+    : p.weight;
+}
+
+function radiusYLabel() {
+  return state.radiusMetric === 'thrust' ? 'horizontal thrust' : 'total weight';
+}
+
+function formatRadiusY(value, scaled) {
+  return scaled ? format(value, 'force', state.system) : value.toPrecision(4);
+}
+
+function reactionForces() {
+  const fp = state.fp;
+  if (!fp || !fp.stations || !fp.stations.length) return null;
+  const top = fp.stations[0];
+  const bottom = fp.stations[fp.stations.length - 1];
+  return {
+    RB: Math.hypot(fp.pole[0], top - fp.pole[1]),
+    RA: Math.hypot(fp.pole[0], bottom - fp.pole[1]),
+    H: fp.thrust,
+  };
+}
+
+function drawSupportReactions() {
+  const pts = state.lot?.points;
+  const r = reactionForces();
+  if (!pts || pts.length < 2 || !r) return;
+  const scaled = state.model?.frame?.coordinates === 'physical';
+  const label = (value) => (scaled
+    ? format(value, 'force', state.system)
+    : value.toPrecision(4));
+  const span = Math.hypot(
+    mainAx.view.xmax - mainAx.view.xmin,
+    mainAx.view.ymax - mainAx.view.ymin,
+  );
+  const arrowLen = span * 0.07;
+  const drawOne = (at, toward, name, value, side) => {
+    const dx = toward[0] - at[0];
+    const dy = toward[1] - at[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const start = [at[0] - (dx / len) * arrowLen, at[1] - (dy / len) * arrowLen];
+    drawArrow(mainAx, start, at, '#0072BD', 12, 2.6);
+    mainAx.clipped((c) => {
+      const [X, Y] = mainAx.toPx(start);
+      drawReactionLabel(c, X + (side === 'left' ? -5 : 5), Y - 4, name, label(value), {
+        align: side,
+        baseline: 'bottom',
+      });
+    });
+  };
+  drawOne(pts[0], pts[1], 'R_B', r.RB, 'left');
+  drawOne(pts[pts.length - 1], pts[pts.length - 2], 'R_A', r.RA, 'right');
+}
+
+function reactionLabels() {
+  const r = reactionForces();
+  if (!r) return null;
+  const scaled = state.model?.frame?.coordinates === 'physical';
+  const f = (v) => (scaled ? format(v, 'force', state.system) : v.toPrecision(4));
+  return {
+    RA: f(r.RA),
+    RB: f(r.RB),
+    H: `H = ${f(r.H)}`,
+  };
+}
+
+function plotContentBounds() {
+  if (sideView() === 'heyman') {
+    const { nMax, tMax } = heymanFrame();
+    const domain = heymanDomain(tMax, nMax);
+    const pts = allHeymanPoints();
+    const xs = domain.map((q) => q.N).concat(pts.map((q) => q.N), 0);
+    const ys = domain.map((q) => q.M).concat(pts.map((q) => q.M), 0);
+    return {
+      xmin: Math.min(...xs), xmax: Math.max(...xs),
+      ymin: Math.min(...ys), ymax: Math.max(...ys),
+    };
+  }
+  const pts = state.thicknessStudy?.points ?? [];
+  if (!pts.length) return { xmin: 0, xmax: 1, ymin: 0, ymax: 1 };
+  return {
+    xmin: Math.min(...pts.map((q) => q.plotTri ?? q.tri)),
+    xmax: Math.max(...pts.map((q) => q.plotTri ?? q.tri)),
+    ymin: 0,
+    ymax: Math.max(...pts.map((q) => radiusYValue(q))),
+  };
+}
+
+function ensurePlotFit() {
+  const frame = heymanFrame();
+  const mode = sideView() === 'heyman'
+    ? `nm:${state.model?.joints?.length ?? 0}:${state.segForces?.join(',') ?? ''}:`
+      + `${frame.nMax}:${frame.tMax}`
+    : `study:${state.thicknessStudy?.points?.length ?? 0}:`
+      + `${state.thicknessStudy?.minTri ?? ''}:${state.thicknessStudy?.maxTri ?? ''}:`
+      + `${state.radiusMetric}`;
+  if (state.plotFitKey === mode) return;
+  plotAx.syncSize();
+  plotAx.fit(plotContentBounds(), 0.12);
+  state.plotFitKey = mode;
+}
+
+function drawPolyline(ax, pts, colour = '#0072BD', width = 2) {
+  if (!pts.length) return;
+  ax.clipped((c) => {
+    c.beginPath();
+    pts.forEach((p, i) => {
+      const [X, Y] = ax.toPx(p);
+      if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
+    });
+    c.strokeStyle = colour;
+    c.lineWidth = width;
+    c.stroke();
+  });
+}
+
+function drawMarker(ax, p, colour = '#A2142F', radius = 4, stroke = null) {
+  ax.clipped((c) => {
+    const [X, Y] = ax.toPx(p);
+    c.beginPath();
+    c.arc(X, Y, radius, 0, 2 * Math.PI);
+    c.fillStyle = colour;
+    c.fill();
+    if (stroke) {
+      c.strokeStyle = stroke;
+      c.lineWidth = 1.4;
+      c.stroke();
+    }
+  });
+}
+
+function radiusEnvelope(pts, admissible) {
+  return radiusHull(pts.filter((p) => !!p.admissible === admissible));
+}
+
+function radiusHull(pts) {
+  const entries = pts
+    .map((p) => ({ p, x: p.plotTri ?? p.tri, y: radiusYValue(p) }))
+    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
+    .sort((a, b) => (a.x - b.x) || (a.y - b.y));
+  if (entries.length <= 2) return entries;
+
+  const unique = [];
+  for (const item of entries) {
+    const last = unique[unique.length - 1];
+    if (!last || Math.abs(last.x - item.x) > 1e-12 || Math.abs(last.y - item.y) > 1e-12) {
+      unique.push(item);
+    }
+  }
+  if (unique.length <= 2) return unique;
+
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const p of unique) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+  const upper = [];
+  for (const p of unique.slice().reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+function drawRadiusEnvelope(pts, admissible) {
+  const env = radiusEnvelope(pts, admissible);
+  if (env.length < 2) return new Set(env.map((q) => q.p));
+  const fill = admissible ? 'rgba(46,125,50,0.13)' : 'rgba(162,20,47,0.10)';
+  const stroke = admissible ? 'rgba(46,125,50,0.45)' : 'rgba(162,20,47,0.38)';
+  plotAx.clipped((c) => {
+    c.beginPath();
+    env.forEach((p, i) => {
+      const [X, Y] = plotAx.toPx([p.x, p.y]);
+      if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
+    });
+    c.closePath();
+    c.fillStyle = fill;
+    c.fill();
+    c.strokeStyle = stroke;
+    c.lineWidth = 1.1;
+    c.stroke();
+  });
+  return new Set(env.map((q) => q.p));
+}
+
+function drawRingStudyCurves() {
+  const pts = state.thicknessStudy?.points ?? [];
+  const visible = new Set(state.visibleStudyTris.map((tri) => tri.toPrecision(12)));
+  mainAx.clipped((c) => {
+    for (const p of pts) {
+      if (!visible.has(p.tri.toPrecision(12))) continue;
+      if (!p.lot || p.lot.length < 2) continue;
+      c.beginPath();
+      p.lot.forEach((q, i) => {
+        const [X, Y] = mainAx.toPx(q);
+        if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
+      });
+      c.strokeStyle = p.admissible ? 'rgba(46,125,50,0.45)' : 'rgba(162,20,47,0.28)';
+      c.lineWidth = p.admissible ? 1.8 : 0.8;
+      c.stroke();
+    }
+  });
+}
+
+function drawAxisLetters(ax) {
+  ax.clipped((c) => {
+    const b = ax.box;
+    const [x0, y0] = ax.toPx([0, 0]);
+    c.save();
+    c.strokeStyle = '#000';
+    c.fillStyle = '#262626';
+    c.lineWidth = 1.2;
+    c.beginPath();
+    c.moveTo(b.x, y0); c.lineTo(b.x + b.w, y0);
+    c.moveTo(x0, b.y); c.lineTo(x0, b.y + b.h);
+    c.stroke();
+
+    c.beginPath();
+    c.moveTo(b.x + b.w, y0);
+    c.lineTo(b.x + b.w - 8, y0 - 4);
+    c.moveTo(b.x + b.w, y0);
+    c.lineTo(b.x + b.w - 8, y0 + 4);
+    c.moveTo(x0, b.y);
+    c.lineTo(x0 - 4, b.y + 8);
+    c.moveTo(x0, b.y);
+    c.lineTo(x0 + 4, b.y + 8);
+    c.stroke();
+
+    c.font = 'bold 13.2px Helvetica, Arial, sans-serif';
+    c.textAlign = 'right';
+    c.textBaseline = 'bottom';
+    c.fillText('N', b.x + b.w - 10, y0 - 5);
+    c.textAlign = 'left';
+    c.textBaseline = 'top';
+    c.fillText('M', x0 + 6, b.y + 9);
+    c.restore();
+  });
+}
+
+function drawHeymanView() {
+  ensurePlotFit();
+  plotAx.begin();
+  plotAx.title = state.selectedJoint !== null
+    ? `Heyman N-M, joint ${state.selectedJoint}` : 'Heyman N-M';
+  plotAx.xlabel = 'N';
+  plotAx.ylabel = 'M';
+  const nm = selectedHeymanPoint();
+  const allPts = allHeymanPoints();
+  const safety = heymanGeometricalSafety(heymanSafetyPoints(allPts));
+  if (!nm) {
+    drawAxisLetters(plotAx);
+    ui.plotStatus.textContent = state.selectedJoint !== null
+      ? `joint ${state.selectedJoint}: joint not crossed`
+      : `Click a joint to show its Heyman N-M diagram. ${heymanSafetyLabel(safety)}`;
+    plotAx.decorate();
+    return;
+  }
+
+  const { nMax } = heymanFrame();
+  const d = heymanDomain(nm.thickness, nMax);
+  const third = thirdMiddleBand(nm.thickness, nMax);
+  plotAx.clipped((c) => {
+    c.beginPath();
+    d.forEach((q, i) => {
+      const [X, Y] = plotAx.toPx([q.N, q.M]);
+      if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
+    });
+    c.closePath();
+    c.fillStyle = 'rgba(46,125,50,0.16)';
+    c.fill();
+    c.strokeStyle = '#000';
+    c.lineWidth = 1.4;
+    for (const end of d.slice(1)) {
+      c.beginPath();
+      let [X, Y] = plotAx.toPx([0, 0]);
+      c.moveTo(X, Y);
+      [X, Y] = plotAx.toPx([end.N, end.M]);
+      c.lineTo(X, Y);
+      c.stroke();
+    }
+
+    c.setLineDash([6, 4]);
+    c.strokeStyle = '#2e7d32';
+    c.lineWidth = 1;
+    for (const end of third.slice(1)) {
+      c.beginPath();
+      let [X, Y] = plotAx.toPx([0, 0]);
+      c.moveTo(X, Y);
+      [X, Y] = plotAx.toPx([end.N, end.M]);
+      c.lineTo(X, Y);
+      c.stroke();
+    }
+    c.setLineDash([]);
+
+    c.font = '10px Helvetica, Arial, sans-serif';
+    c.fillStyle = '#2e7d32';
+    c.textAlign = 'left';
+    let [lx, ly] = plotAx.toPx([d[1].N, d[1].M]);
+    c.textBaseline = 'bottom';
+    c.fillText('extrados', lx + 5, ly - 2);
+    [lx, ly] = plotAx.toPx([d[2].N, d[2].M]);
+    c.textBaseline = 'top';
+    c.fillText('intrados', lx + 5, ly + 2);
+    [lx, ly] = plotAx.toPx([third[1].N, third[1].M]);
+    c.textBaseline = 'bottom';
+    c.fillText('middle third', lx + 5, ly - 2);
+  });
+  drawAxisLetters(plotAx);
+  for (const p of allPts) {
+    drawMarker(plotAx, [p.N, p.M], 'rgba(110,110,110,0.45)', 2.8);
+  }
+  if (safety?.point) {
+    drawMarker(plotAx, [safety.point.N, safety.point.M], '#fff', 6.2,
+      safety.factor >= 1 ? '#2e7d32' : '#A2142F');
+  }
+  drawMarker(plotAx, [nm.N, nm.M], nm.inside ? '#2e7d32' : '#A2142F');
+  plotAx.clipped((c) => {
+    const [X, Y] = plotAx.toPx([nm.N, nm.M]);
+    c.font = 'bold 10px Helvetica, Arial, sans-serif';
+    c.fillStyle = nm.inside ? '#2e7d32' : '#A2142F';
+    c.textAlign = 'left';
+    c.textBaseline = 'bottom';
+    c.fillText('current', X + 6, Y - 5);
+
+    c.font = 'bold 12px Helvetica, Arial, sans-serif';
+    c.fillStyle = safety?.factor >= 1 ? '#2e7d32' : '#A2142F';
+    c.textAlign = 'left';
+    c.textBaseline = 'top';
+    c.fillText(heymanSafetyLabel(safety), plotAx.box.x + 10, plotAx.box.y + 10);
+    if (safety?.point?.joint !== undefined) {
+      c.font = '10px Helvetica, Arial, sans-serif';
+      c.fillText(`critical joint ${safety.point.joint}`,
+        plotAx.box.x + 10, plotAx.box.y + 27);
+    }
+  });
+  const scaled = state.model?.frame?.coordinates === 'physical';
+  ui.plotStatus.textContent = `joint ${state.selectedJoint}: N = `
+    + (scaled ? format(nm.N, 'force', state.system) : nm.N.toPrecision(4))
+    + `, M = ${nm.M.toPrecision(4)}, ecc = ${nm.ecc.toPrecision(4)}, `
+    + `${heymanSafetyLabel(safety)}`;
+  plotAx.decorate();
+}
+
+function drawRadiusView() {
+  ensurePlotFit();
+  plotAx.begin();
+  plotAx.title = 'Circular ring thickness study';
+  plotAx.xlabel = 't/ri';
+  plotAx.ylabel = radiusYLabel();
+  const pts = state.thicknessStudy?.points ?? [];
+  if (pts.length) {
+    const visible = new Set([
+      ...drawRadiusEnvelope(pts, false),
+      ...drawRadiusEnvelope(pts, true),
+    ]);
+    const shown = pts.filter((p) => visible.has(p));
+    for (const p of shown.filter((q) => !q.midBase)) {
+      drawMarker(plotAx, [p.plotTri ?? p.tri, radiusYValue(p)],
+        p.admissible ? '#2e7d32' : '#A2142F', p.admissible ? 5 : 2.8);
+    }
+    for (const p of shown.filter((q) => q.midBase)) {
+      drawMarker(plotAx, [p.plotTri ?? p.tri, radiusYValue(p)],
+        p.admissible ? '#2e7d32' : '#A2142F', p.admissible ? 5.6 : 3.4, '#000');
+    }
+    const scaled = state.model?.frame?.coordinates === 'physical';
+    const current = pts.find((p) => Math.abs(p.tri - state.ringStudySource?.tri) < 1e-9)
+      ?? pts[pts.length - 1];
+    const good = pts.filter((p) => p.admissible).length;
+    const bad = pts.length - good;
+    const mode = state.ringStudySource?.poleni ? 'Poleni dome lune' : 'constant thickness';
+    ui.plotStatus.textContent =
+      `${mode} · ${pts.length} states · ${good} admissible · ${bad} not admissible · `
+      + `${shown.length} hull points shown · `
+      + `${pts.filter((p) => p.midBase).length} mid-base · `
+      + `t/ri step ${ui.ringTri.step} · `
+      + `current t/ri = ${current.tri.toPrecision(4)}, ${radiusYLabel()} `
+      + formatRadiusY(radiusYValue(current), scaled);
+  } else {
+    ui.plotStatus.textContent =
+      state.thicknessStudy?.reason ?? 'Generate a circular ring to plot t/ri.';
+  }
+  plotAx.decorate();
 }
 
 /* ---------------------------------------------------------------- tracing -- */
@@ -1009,6 +1691,7 @@ const TRACE_COLOUR = { inner: '#0072BD', outer: '#7E2F8E' };
 
 function drawTrace() {
   const t = state.trace;
+  if (!t) return;
   mainAx.clipped((c) => {
     for (const which of ['inner', 'outer']) {
       const pts = t[which];
@@ -1044,13 +1727,15 @@ function drawJoints() {
     m.joints.forEach((j, i) => {
       const hit = cr && cr[i];
       const bad = hit && !hit.inside;
+      const selected = i === state.selectedJoint;
       const [x0, y0] = mainAx.toPx(j.a);
       const [x1, y1] = mainAx.toPx(j.b);
       c.beginPath();
       c.moveTo(x0, y0);
       c.lineTo(x1, y1);
-      c.strokeStyle = bad ? '#A2142F' : 'rgba(60,60,60,0.55)';
-      c.lineWidth = bad ? 2.2 : 0.9;
+      c.strokeStyle = selected ? '#D95319'
+        : bad ? '#A2142F' : 'rgba(60,60,60,0.55)';
+      c.lineWidth = selected ? 3 : bad ? 2.2 : 0.9;
       c.stroke();
       if (hit) {
         const [X, Y] = mainAx.toPx(hit.point);
@@ -1061,6 +1746,30 @@ function drawJoints() {
       }
     });
   });
+}
+
+function distPointToSegmentPx(p, a, b) {
+  const vx = b[0] - a[0];
+  const vy = b[1] - a[1];
+  const len2 = vx * vx + vy * vy;
+  const t = len2 === 0 ? 0
+    : Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / len2));
+  const x = a[0] + t * vx;
+  const y = a[1] + t * vy;
+  return Math.hypot(p[0] - x, p[1] - y);
+}
+
+function pickJointAt(px) {
+  const joints = state.model?.joints;
+  if (!joints || !joints.length) return null;
+  let best = { i: null, d: Infinity };
+  joints.forEach((j, i) => {
+    const a = mainAx.toPx(j.a);
+    const b = mainAx.toPx(j.b);
+    const d = distPointToSegmentPx(px, a, b);
+    if (d < best.d) best = { i, d };
+  });
+  return best.d <= 9 ? best.i : null;
 }
 
 function drawForces() {
@@ -1086,8 +1795,8 @@ function drawForces() {
 function armForce() {
   state.forces.placing = !state.forces.placing;
   if (state.forces.placing) {
-    if (state.trace.armed) finishTrace();
-    if (state.ref.picking) armReference();
+    if (state.trace?.armed) finishTrace();
+    if (state.ref.picking) disarmReference();
   }
   ui.addForce.classList.toggle('armed', state.forces.placing);
   ui.addForce.textContent = state.forces.placing
@@ -1096,7 +1805,8 @@ function armForce() {
 }
 
 function listForces() {
-  const f = state.forces;
+  const f = state.forces ?? { points: [], magnitudes: [] };
+  state.forces = { placing: false, ...f };
   const scaled = state.model?.frame?.coordinates === 'physical';
   ui.forceList.innerHTML = '';
   f.points.forEach((p, i) => {
@@ -1152,22 +1862,39 @@ function drawReference() {
   });
 }
 
-function armReference() {
-  state.ref.picking = !state.ref.picking;
-  if (state.ref.picking) {
-    state.ref.points = [];
-    // Picking a reference and tracing a curve would fight over the clicks.
-    if (state.trace.armed) finishTrace();
-  }
+function updateReferencePickerUi() {
   ui.pickRef.classList.toggle('armed', state.ref.picking);
+  ui.pickImageRef.classList.toggle('armed', state.ref.picking);
   ui.pickRef.textContent = state.ref.picking
     ? 'Click the two ends…' : 'Pick a reference length';
+  ui.pickImageRef.textContent = state.ref.picking
+    ? 'Click the two ends…' : 'Pick known distance';
   reportScale();
   draw();
 }
 
+function disarmReference() {
+  state.ref.picking = false;
+  updateReferencePickerUi();
+}
+
+function armReference() {
+  if (!state.trace) state.trace = { inner: [], outer: [], armed: null, cursor: null };
+  state.ref.picking = !state.ref.picking;
+  if (state.ref.picking) {
+    state.ref.points = [];
+    // Picking a reference and tracing a curve would fight over the clicks.
+    if (state.trace?.armed) finishTrace();
+  }
+  updateReferencePickerUi();
+}
+
 function reportBlocks(n, flipped) {
   const m = state.model;
+  if (!m) {
+    ui.traceStatus.textContent = 'no blocks';
+    return;
+  }
   const total = (m.weights ?? []).reduce((s, v) => s + v, 0);
   const scaled = m.frame && m.frame.coordinates === 'physical';
   ui.traceStatus.textContent =
@@ -1179,7 +1906,10 @@ function reportBlocks(n, flipped) {
 function reportScale() {
   const m = state.model;
   const sys = SYSTEMS[state.system];
-  ui.applyScale.disabled = state.ref.points.length !== 2;
+  const refCount = state.ref?.points?.length ?? 0;
+  ui.applyScale.disabled = refCount !== 2;
+  ui.applyImageRefScale.disabled = refCount !== 2;
+  ui.applyImageSize.disabled = !(m && m.imageSize);
   ui.gammaLabel.textContent = `Unit weight ${sys.density.label}`;
   ui.thickLabel.textContent = `Thickness ${sys.length.label}`;
 
@@ -1193,13 +1923,99 @@ function reportScale() {
       return;
     }
   }
-  ui.scaleStatus.textContent = state.ref.points.length === 2
+  ui.scaleStatus.textContent = refCount === 2
     ? 'reference picked — set the length, then apply'
     : 'not scaled — lengths are pixels';
 }
 
+function reportImageLock() {
+  ui.imageLockIcon.textContent = ui.imageAspectLocked.checked
+    ? 'locked proportions' : 'unlocked stretch';
+}
+
+function syncImageSizeField(changed) {
+  if (!ui.imageAspectLocked.checked) return;
+  const m = state.model;
+  if (!m?.imageSize) return;
+  const [pixW, pixH] = m.imageSize;
+  if (!(pixW > 0) || !(pixH > 0)) return;
+  if (changed === 'width') {
+    const w = Number(ui.imageRealWidth.value);
+    if (w > 0) ui.imageRealHeight.value = (w * pixH / pixW).toPrecision(6);
+  } else {
+    const h = Number(ui.imageRealHeight.value);
+    if (h > 0) ui.imageRealWidth.value = (h * pixW / pixH).toPrecision(6);
+  }
+}
+
+function ensureTraceModel() {
+  if (!state.trace) state.trace = { inner: [], outer: [], armed: null, cursor: null };
+  if (state.model) return;
+  state.model = {
+    name: 'untitled trace',
+    blocks: [], centroids: [], weights: [], areas: [], thickness: [],
+    joints: null,
+    pointA: null, pointB: null, forcePolygon: null, thrustLine: null,
+    units: null, lengthScaling: 1, massToWeight: 1,
+    image: null, imageSize: null,
+    frame: { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
+  };
+  state.consistent = { ok: true, reason: null, extraRows: 0 };
+  mainAx.syncSize();
+  mainAx.fit({ xmin: 0, xmax: 10, ymin: 0, ymax: 10 });
+}
+
+function scalePoints(pts, k) {
+  return (pts ?? []).map(([x, y]) => [x * k, y * k]);
+}
+
+function scaleMaybePoint(p, k) {
+  return p ? [p[0] * k, p[1] * k] : null;
+}
+
+function scalePixelWorkspace(k, source) {
+  if (!state.model) return;
+  const imageDrawSize = state.model.imageDrawSize
+    ? state.model.imageDrawSize.map((v) => v * k) : null;
+  state.model = scaleModel(state.model, k, { thicknessInPixels: false });
+  if (imageDrawSize) state.model.imageDrawSize = imageDrawSize;
+  state.model.units = state.system;
+  state.model.scaleSource = source;
+  if (state.trace) {
+    state.trace.inner = scalePoints(state.trace.inner, k);
+    state.trace.outer = scalePoints(state.trace.outer, k);
+  }
+  state.ref = state.ref ?? { points: [], picking: false };
+  state.ref.points = scalePoints(state.ref.points, k);
+  state.forces = state.forces ?? { points: [], magnitudes: [], placing: false };
+  state.forces.points = scalePoints(state.forces.points, k);
+  state.ends = state.ends ?? { A: null, B: null, picking: null, construction: null };
+  state.ends.A = scaleMaybePoint(state.ends.A, k);
+  state.ends.B = scaleMaybePoint(state.ends.B, k);
+  state.profiles = state.profiles ?? { list: [], current: null, centre: null, picking: false };
+  state.profiles.list = (state.profiles.list ?? []).map((p) => scalePoints(p, k));
+  state.profiles.current = state.profiles.current ? scalePoints(state.profiles.current, k) : null;
+  state.profiles.centre = scaleMaybePoint(state.profiles.centre, k);
+  state.threePointRing = state.threePointRing
+    ?? { inner: [null, null, null], outer: [null, null, null], picking: null };
+  state.threePointRing.inner = state.threePointRing.inner.map((p) => scaleMaybePoint(p, k));
+  state.threePointRing.outer = state.threePointRing.outer.map((p) => scaleMaybePoint(p, k));
+  ui.domeAxis.value = (Number(ui.domeAxis.value) * k).toPrecision(6);
+  reweigh();
+  state.band = null; state.bandKey = null;
+  state.solidFit = null;
+
+  const total = (state.model.weights ?? []).reduce((s, v) => s + v, 0);
+  state.basePole = [total / 4, -total / 2];
+}
+
 /** Turn pixels into physical units, once and for all. */
 function applyScale() {
+  if (!state.model) {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'draw or load an arch before applying a scale';
+    return;
+  }
   const [p1, p2] = state.ref.points;
   const real = Number(ui.refLength.value);
   let k;
@@ -1215,30 +2031,12 @@ function applyScale() {
   // pixel count, so it does not scale with the picture and the weights go as
   // k^2. Treating it as pixels once gave an arch 25 mm thick and a thrust of
   // 1.8 kN, which is arithmetically right and physically absurd.
-  state.model = scaleModel(state.model, k, { thicknessInPixels: false });
-  state.trace.inner = state.trace.inner.map(([x, y]) => [x * k, y * k]);
-  state.trace.outer = state.trace.outer.map(([x, y]) => [x * k, y * k]);
-  state.ref.points = state.ref.points.map(([x, y]) => [x * k, y * k]);
-  // The forces move with the drawing; their MAGNITUDES are already in the
-  // system's force unit and must not be scaled by a length factor.
-  state.forces.points = state.forces.points.map(([x, y]) => [x * k, y * k]);
+  scalePixelWorkspace(k, `reference length ${real} ${SYSTEMS[state.system].length.label}`);
   ui.refLength.value = String(real);
-
-  // The axis of revolution is a coordinate on the drawing, so it scales with
-  // it; and a lune's width is a LENGTH, so its weights go as k^3 where a
-  // constant-thickness arch goes as k^2. Re-weighing from the scaled geometry
-  // gets both right without a second rule to keep in step.
-  ui.domeAxis.value = (Number(ui.domeAxis.value) * k).toPrecision(6);
-  reweigh();
-  state.band = null; state.bandKey = null;
-  state.solidFit = null;
-
-  const total = (state.model.weights ?? []).reduce((s, v) => s + v, 0);
-  state.basePole = [total / 4, -total / 2];
+  ui.imageRefLength.value = String(real);
   ui.thrust.value = 50;
-  state.model.units = state.system;
 
-  armReference();          // disarm
+  disarmReference();
   reportScale();
   reportBlocks();
   listForces();
@@ -1249,7 +2047,140 @@ function applyScale() {
   ui.warn.hidden = true;
 }
 
+function applyImageSize() {
+  const m = state.model;
+  if (!m?.imageSize) {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'load an image before applying its size';
+    return;
+  }
+  const realW = Number(ui.imageRealWidth.value);
+  const realH = Number(ui.imageRealHeight.value);
+  if (!(realW > 0) && !(realH > 0)) {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'enter the real image width, height, or both';
+    return;
+  }
+  const [pixW, pixH] = m.imageSize;
+  const kW = realW > 0 ? realW / pixW : null;
+  const kH = realH > 0 ? realH / pixH : null;
+  const locked = ui.imageAspectLocked.checked;
+  if (locked && m.frame?.coordinates === 'physical') {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'the structure is already scaled; unlock stretch to resize only the background image';
+    return;
+  }
+  if (locked && kW && kH && Math.abs(kW - kH) / Math.max(kW, kH) > 0.01) {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'width and height do not match the image proportions';
+    return;
+  }
+  if (!locked && (!(realW > 0) || !(realH > 0))) {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'unlocked stretch needs both width and height';
+    return;
+  }
+  if (!locked) {
+    if (m.frame?.coordinates !== 'physical' && m.blocks?.length) {
+      ui.warn.hidden = false;
+      ui.warn.textContent =
+        'unlocked stretch is only for a new image or an already scaled structure';
+      return;
+    }
+    state.model = {
+      ...m,
+      imageDrawSize: [realW, realH],
+      frame: m.frame?.coordinates === 'physical'
+        ? m.frame
+        : { coordinates: 'physical', units_per_pixel: kW ?? 1, inferred: false },
+      units: state.system,
+      scaleSource: `image stretch ${realW.toPrecision(6)} × `
+        + `${realH.toPrecision(6)} ${SYSTEMS[state.system].length.label}`,
+    };
+    ui.thrust.value = 50;
+    reportScale();
+    reportBlocks();
+    reportTrace();
+    listForces();
+    describe();
+    if (state.basePole) recompute();
+    fitViews();
+    draw();
+    ui.warn.hidden = true;
+    return;
+  }
+  const k = kW ?? kH;
+  const sys = SYSTEMS[state.system];
+  scalePixelWorkspace(k, `image size ${((pixW * k)).toPrecision(6)} × `
+    + `${((pixH * k)).toPrecision(6)} ${sys.length.label}`);
+  state.model.imageDrawSize = null;
+  ui.imageRealWidth.value = (pixW * k).toPrecision(6);
+  ui.imageRealHeight.value = (pixH * k).toPrecision(6);
+  ui.thrust.value = 50;
+  reportScale();
+  reportBlocks();
+  reportTrace();
+  listForces();
+  describe();
+  recompute();
+  fitViews();
+  draw();
+  ui.warn.hidden = true;
+}
+
+function replaceBackgroundImage(dataUrl, meta = {}, onload = null) {
+  const img = new Image();
+  img.onload = () => {
+    state.image = img;
+    const name = meta.name ?? state.imageData?.name ?? state.model?.image ?? 'background image';
+    state.imageData = {
+      name,
+      type: meta.type ?? state.imageData?.type ?? 'image/png',
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+      dataUrl,
+    };
+    if (state.model) {
+      state.model.image = name;
+      state.model.imageSize = [img.naturalWidth, img.naturalHeight];
+    }
+    if (onload) onload(img);
+    draw();
+  };
+  img.onerror = () => {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'could not decode the background image';
+  };
+  img.src = dataUrl;
+}
+
+function flipBackgroundImage() {
+  if (!state.image) {
+    ui.flipY.checked = false;
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'load an image before flipping it';
+    return;
+  }
+  const w = state.image.naturalWidth || state.image.width;
+  const h = state.image.naturalHeight || state.image.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const c = canvas.getContext('2d');
+  c.translate(0, h);
+  c.scale(1, -1);
+  c.drawImage(state.image, 0, 0, w, h);
+  const dataUrl = canvas.toDataURL(state.imageData?.type || 'image/png');
+  replaceBackgroundImage(dataUrl, {
+    name: state.imageData?.name ?? state.model?.image,
+    type: state.imageData?.type ?? 'image/png',
+  });
+  ui.flipY.checked = false;
+  ui.warn.hidden = true;
+}
+
 function arm(which) {
+  ensureTraceModel();
   const t = state.trace;
   t.armed = t.armed === which ? null : which;
   if (t.armed) t[t.armed] = [];
@@ -1266,7 +2197,7 @@ function arm(which) {
 }
 
 function finishTrace() {
-  if (!state.trace.armed) return;
+  if (!traceArmed()) return;
   state.trace.armed = null;
   state.trace.cursor = null;
   ui.traceInner.classList.remove('armed');
@@ -1296,6 +2227,61 @@ function reportTrace() {
   }
 }
 
+function reportThreePointRing() {
+  const p = state.threePointRing;
+  const nIn = p.inner.filter(Boolean).length;
+  const nOut = p.outer.filter(Boolean).length;
+  const ready = nIn === 3 && nOut === 3;
+  ui.makeThreePointRing.disabled = !ready;
+  ui.threePointRingStatus.textContent = ready
+    ? 'ready to generate'
+    : `${nIn}/3 intrados · ${nOut}/3 extrados`;
+  for (const [key, btn] of [
+    ['inner:0', ui.pickInner1], ['inner:1', ui.pickInner2], ['inner:2', ui.pickInner3],
+    ['outer:0', ui.pickOuter1], ['outer:1', ui.pickOuter2], ['outer:2', ui.pickOuter3],
+  ]) {
+    btn.classList.toggle('armed', p.picking === key);
+  }
+}
+
+function armThreePointRing(which, index) {
+  const key = `${which}:${index}`;
+  state.threePointRing.picking = state.threePointRing.picking === key ? null : key;
+  if (state.threePointRing.picking) {
+    if (traceArmed()) finishTrace();
+    if (state.ref.picking) disarmReference();
+    if (state.pickingAxis) ui.pickAxis.click();
+  }
+  reportThreePointRing();
+  draw();
+}
+
+function drawThreePointRingPicks() {
+  const p = state.threePointRing;
+  const items = [
+    ...p.inner.map((q, i) => ({ p: q, label: `I${i + 1}`, colour: '#0072BD' })),
+    ...p.outer.map((q, i) => ({ p: q, label: `E${i + 1}`, colour: '#7E2F8E' })),
+  ].filter((q) => q.p);
+  if (!items.length) return;
+  mainAx.clipped((c) => {
+    c.font = 'bold 11px Helvetica, Arial, sans-serif';
+    for (const item of items) {
+      const [X, Y] = mainAx.toPx(item.p);
+      c.beginPath();
+      c.arc(X, Y, 4, 0, 2 * Math.PI);
+      c.fillStyle = item.colour;
+      c.fill();
+      c.strokeStyle = '#fff';
+      c.lineWidth = 1.4;
+      c.stroke();
+      c.fillStyle = item.colour;
+      c.textAlign = 'left';
+      c.textBaseline = 'bottom';
+      c.fillText(item.label, X + 6, Y - 4);
+    }
+  });
+}
+
 // ------------------------------------------------- whole profiles --
 
 function reportProfiles() {
@@ -1318,7 +2304,7 @@ function armProfile() {
     if (p.current.length >= 3) p.list.push(p.current);
     p.current = null;
   } else {
-    if (state.trace.armed) finishTrace();
+    if (traceArmed()) finishTrace();
     p.current = [];
   }
   ui.traceProfile.classList.toggle('armed', !!p.current);
@@ -1357,6 +2343,7 @@ function cutProfiles() {
     units: null,
     frame: { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
   };
+  clearPlotState();
   state.consistent = { ok: true, reason: null, extraRows: 0 };
   if (!state.axisPicked) resetAxis();
   reweigh();
@@ -1452,7 +2439,10 @@ function drawProfiles() {
 
 /** Which of the two views the right-hand pane is showing. */
 function sideView() {
-  return ui.tabSolid.classList.contains('active') ? 'solid' : 'force';
+  if (ui.tabSolid.classList.contains('active')) return 'solid';
+  if (ui.tabHeyman.classList.contains('active')) return 'heyman';
+  if (ui.tabRadius.classList.contains('active')) return 'radius';
+  return 'force';
 }
 
 /**
@@ -1488,13 +2478,15 @@ function drawSolidView() {
     }
   }
 
-  const list = solids(shown, {
+  const rawList = solids(shown, {
     poleni: dome.poleni,
     axisX: dome.axisX,
     angleDeg: dome.angleDeg,
     thickness: m.thickness ?? m.blocks.map(() => 1),
     steps: dome.poleni ? Math.max(2, Math.round(dome.angleDeg / 4)) : 1,
   });
+  const centre3 = solidCentre(rawList);
+  const list = recenteredSolids(rawList, centre3);
 
   // The projected extent moves with the camera, so it is recomputed every
   // frame and kept for the fit buttons; the view is only re-framed when the
@@ -1519,9 +2511,11 @@ function drawSolidView() {
   drawSolids(solidAx, list, { f, highlight });
   if (dome.poleni) {
     const ys = m.blocks.flatMap((p) => p.y);
-    drawAxis(solidAx, dome.axisX, [Math.min(...ys), Math.max(...ys)], f);
+    drawAxis(solidAx, dome.axisX - centre3[0],
+      [Math.min(...ys) - centre3[2], Math.max(...ys) - centre3[2]], f,
+      { depth: -centre3[1] });
   }
-  solidAx.decorate();
+  if (state.showSolidAxes) drawReferenceFrame(solidAx, state.solidBounds, f);
 }
 
 /** What the solid view is a picture of; a change means refit. */
@@ -1529,8 +2523,8 @@ function sideKey() {
   const m = state.model;
   const d = domeOptions();
   return `${m && m.blocks ? m.blocks.length : 0}:${d.poleni}:`
-    + `${d.angleDeg}:${d.axisX}:${m && m.frame ? m.frame.units_per_pixel : 1}`;
-  // NOTE: deliberately NOT the camera. Turning the solid must not re-frame it.
+    + `${d.angleDeg}:${d.axisX}:${state.camera.az}:${state.camera.el}:`
+    + `${m && m.frame ? m.frame.units_per_pixel : 1}`;
 }
 
 /** The macro-block colours, as triples, to tint the solids with. */
@@ -1633,7 +2627,9 @@ function reportDome() {
  * ring built here, switching on "Drive from the thrust" reports the band
  * directly, and it is the same quantity the figures plot.
  */
-function generateRing() {
+function generateRing(opt = {}) {
+  applyRadiusTriStep();
+  const resetStudy = opt && opt.resetStudy !== false;
   const ri = Math.max(1e-6, Number(ui.ringRi.value) || 4);
   const tri = Math.max(1e-6, Number(ui.ringTri.value) || 0.15);
   const n = Math.max(1, Math.round(Number(ui.ringN.value) || 16));
@@ -1647,12 +2643,12 @@ function generateRing() {
   const weights = weighBlocks(blocks, { specificWeight: gamma, thickness });
   const centroids = centroidsOf(blocks);
   const { pointA, pointB } = springings(joints);
-  const total = weights.reduce((a, b) => a + b, 0);
 
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   state.profiles = { list: [], current: null, centre: null, picking: false };
   state.forces = { points: [], magnitudes: [], placing: false };
   state.image = null;
+  state.imageData = null;
   state.ends = { A: null, B: null, picking: null, construction: null };
   state.model = {
     blocks, centroids, weights, joints,
@@ -1666,11 +2662,19 @@ function generateRing() {
     // the radius is a length and the weights follow from it.
     frame: { coordinates: 'physical', units_per_pixel: 1, inferred: false },
   };
-  state.consistent = { ok: true, reason: null, extraRows: 0 };
   if (!state.axisPicked) {
     ui.domeAxis.value = defaultAxis(pointA, pointB, blocks).toPrecision(6);
   }
   reweigh();
+  const total = state.model.weights.reduce((a, b) => a + b, 0);
+  state.ringStudySource = currentRingStudySource({ ri, tri, n });
+  state.ringAuto = true;
+  if (resetStudy) state.thicknessStudy = { ok: true, points: [] };
+  const plotted = recordRingState(state.ringStudySource);
+  state.selectedJoint = null;
+  state.frozenBranch = null;
+  state.plotFitKey = null;
+  state.consistent = { ok: true, reason: null, extraRows: 0 };
   state.band = null; state.bandKey = null;
   state.mech = null; state.crossings = null;
   state.basePole = [total / 4, -total / 2];
@@ -1678,9 +2682,67 @@ function generateRing() {
 
   ui.ringStatus.textContent =
     `${n} blocks, ri = ${ri}, ro = ${(ri * (1 + tri)).toPrecision(6)}, `
-    + `t/ri = ${tri}`;
+    + `t/ri = ${tri} · ${state.ringStudySource.poleni ? 'Poleni' : 'barrel'} · `
+    + `${plotted.points.filter((p) => p.admissible).length}/`
+    + `${plotted.points.length} admissible states`;
   ui.warn.hidden = true;
   ui.meta.textContent = `${n} blocks · circular ring · t/ri = ${tri}`;
+
+  recompute();
+  fitViews();
+  draw();
+}
+
+function generateThreePointRing() {
+  const picked = state.threePointRing;
+  const inner = picked.inner.map((p) => p && p.slice());
+  const outer = picked.outer.map((p) => p && p.slice());
+  const n = Math.max(1, Math.round(Number(ui.ringN.value) || Number(ui.nBlocks.value) || 16));
+  const gamma = Number(ui.gamma.value) || 20;
+  const thickness = Math.max(0, Number(ui.thick.value) || 1);
+  let built;
+  try {
+    built = circularRingThroughPoints({ inner, outer, count: n });
+  } catch (err) {
+    ui.warn.hidden = false;
+    ui.warn.textContent = err.message;
+    return;
+  }
+  const { blocks, joints } = built;
+  const weights = weighBlocks(blocks, { specificWeight: gamma, thickness });
+  const centroids = centroidsOf(blocks);
+  const { pointA, pointB } = springings(joints);
+
+  state.trace = { inner: [], outer: [], armed: null, cursor: null };
+  state.profiles = { list: [], current: null, centre: null, picking: false };
+  state.forces = { points: [], magnitudes: [], placing: false };
+  state.ends = { A: null, B: null, picking: null, construction: null };
+  state.model = {
+    ...(state.model ?? {}),
+    blocks, centroids, weights, joints,
+    areas: blocks.map((p) => Math.abs(signedAreaOf(p))),
+    thickness: blocks.map(() => thickness),
+    pointA, pointB,
+    forcePolygon: null, thrustLine: null,
+    name: '3-point circular arch',
+    units: null,
+    frame: state.model?.frame ?? { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
+  };
+  clearPlotState();
+  if (!state.axisPicked) {
+    ui.domeAxis.value = defaultAxis(pointA, pointB, blocks).toPrecision(6);
+  }
+  reweigh();
+  const total = state.model.weights.reduce((a, b) => a + b, 0);
+  state.consistent = { ok: true, reason: null, extraRows: 0 };
+  state.band = null; state.bandKey = null;
+  state.mech = null; state.crossings = null;
+  state.basePole = [total / 4, -total / 2];
+  ui.thrust.value = 50;
+
+  ui.threePointRingStatus.textContent = `${n} blocks · generated from 3+3 points`;
+  ui.warn.hidden = true;
+  ui.meta.textContent = `${n} blocks · 3-point circular arch`;
 
   recompute();
   fitViews();
@@ -1694,25 +2756,29 @@ function generateBlocks() {
   const gamma = Number(ui.gamma.value) || 20;
 
   const thickness = Math.max(0, Number(ui.thick.value) || 1);
-  const { blocks, joints, flipped } = blocksBetween(t.inner, t.outer, n);
+  const built = blocksBetween(t.inner, t.outer, n);
+  const previous = state.model ?? null;
+  const existing = previous?.blocks?.length ? previous : null;
+  const blocks = existing ? [...existing.blocks, ...built.blocks] : built.blocks;
+  const joints = existing?.joints ? [...existing.joints, ...built.joints] : built.joints;
   const weights = weighBlocks(blocks, { specificWeight: gamma, thickness });
   const centroids = centroidsOf(blocks);
   const { pointA, pointB } = springings(joints);
+  const frame = previous?.frame
+    ?? { coordinates: 'pixels', units_per_pixel: 1, inferred: false };
 
-  const total = weights.reduce((s, v) => s + v, 0);
   state.model = {
-    ...state.model,
+    ...(previous ?? {}),
     blocks, centroids, weights, joints,
     areas: blocks.map((p) => Math.abs(signedAreaOf(p))),
     thickness: blocks.map(() => thickness),
     pointA, pointB,
     forcePolygon: null, thrustLine: null,
-    // A FRESH TRACE IS IN VIEW COORDINATES, whatever the previous model was.
-    // Inheriting a "physical" frame from an arch that has already been scaled
-    // would label the new one in metres while its numbers are still pixels.
-    units: null,
-    frame: { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
+    units: previous?.units ?? null,
+    frame,
   };
+  clearPlotState();
+  state.trace = { inner: [], outer: [], armed: null, cursor: null };
   // A traced arch has no stored solution to be inconsistent with.
   state.consistent = { ok: true, reason: null, extraRows: 0 };
   // The axis of revolution defaults to the mid-point of the springings, which
@@ -1721,13 +2787,14 @@ function generateBlocks() {
     ui.domeAxis.value = defaultAxis(pointA, pointB, blocks).toPrecision(6);
   }
   reweigh();
+  const total = state.model.weights.reduce((s, v) => s + v, 0);
   state.band = null; state.bandKey = null;
   // Start from a pole giving a thrust of about a quarter of the total weight,
   // which for a normal arch puts the line roughly inside the ring.
   state.basePole = [total / 4, -total / 2];
   ui.thrust.value = 50;
 
-  reportBlocks(n, flipped);
+  reportBlocks(blocks.length, built.flipped);
   ui.warn.hidden = true;
 
   recompute();
@@ -1756,6 +2823,14 @@ function attachNavigation(ax) {
         fitForceView();
       }
       armForce();
+      return;
+    }
+    if (ax === mainAx && state.threePointRing.picking) {
+      const [which, raw] = state.threePointRing.picking.split(':');
+      state.threePointRing[which][Number(raw)] = mainAx.toData([e.offsetX, e.offsetY]);
+      state.threePointRing.picking = null;
+      reportThreePointRing();
+      draw();
       return;
     }
     if (ax === mainAx && state.profiles.current) {
@@ -1809,24 +2884,34 @@ function attachNavigation(ax) {
       state.ref.points.push(mainAx.toData([e.offsetX, e.offsetY]));
       if (state.ref.points.length >= 2) {
         state.ref.points = state.ref.points.slice(0, 2);
-        armReference();
+        disarmReference();
       }
       reportScale();
       draw();
       return;
     }
-    if (ax === mainAx && state.trace.armed) {
+    if (ax === mainAx && traceArmed()) {
       state.trace[state.trace.armed].push(mainAx.toData([e.offsetX, e.offsetY]));
       reportTrace();
       draw();
       return;
+    }
+    if (ax === mainAx) {
+      const picked = pickJointAt([e.offsetX, e.offsetY]);
+      if (picked !== null) {
+        state.selectedJoint = picked;
+        state.plotFitKey = null;
+        showSide('heyman');
+        draw();
+        return;
+      }
     }
     dragging = true;
     last = [e.offsetX, e.offsetY];
     ax.canvas.setPointerCapture(e.pointerId);
   });
   ax.canvas.addEventListener('pointermove', (e) => {
-    if (ax === mainAx && state.trace.armed) {
+    if (ax === mainAx && traceArmed()) {
       state.trace.cursor = mainAx.toData([e.offsetX, e.offsetY]);
       draw();
       return;
@@ -1859,11 +2944,12 @@ function attachNavigation(ax) {
 attachNavigation(mainAx);
 attachNavigation(forceAx);
 attachNavigation(solidAx);
+attachNavigation(plotAx);
 
 el('main').addEventListener('dblclick', (e) => { e.preventDefault(); finishTrace(); });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') finishTrace();
-  if (e.key === 'Escape' && state.trace.armed) {
+  if (e.key === 'Escape' && traceArmed()) {
     state.trace[state.trace.armed] = [];
     finishTrace();
   }
@@ -1880,8 +2966,26 @@ ui.clearForces.addEventListener('click', () => {
 });
 
 ui.pickRef.addEventListener('click', armReference);
+ui.pickImageRef.addEventListener('click', armReference);
 ui.applyScale.addEventListener('click', applyScale);
-ui.refLength.addEventListener('input', () => { reportScale(); draw(); });
+ui.applyImageRefScale.addEventListener('click', applyScale);
+ui.refLength.addEventListener('input', () => {
+  ui.imageRefLength.value = ui.refLength.value;
+  reportScale();
+  draw();
+});
+ui.imageRefLength.addEventListener('input', () => {
+  ui.refLength.value = ui.imageRefLength.value;
+  reportScale();
+  draw();
+});
+ui.imageAspectLocked.addEventListener('change', () => {
+  reportImageLock();
+  syncImageSizeField('width');
+  reportScale();
+});
+ui.imageRealWidth.addEventListener('input', () => syncImageSizeField('width'));
+ui.imageRealHeight.addEventListener('input', () => syncImageSizeField('height'));
 /**
  * Change the system of units, and CARRY EVERY QUANTITY WITH IT.
  *
@@ -1912,10 +3016,11 @@ ui.system.addEventListener('change', () => {
     const poly = (q) => (q ?? []).map(pt);
 
     state.model = convertModel(state.model, from, to);
+    const forces = state.forces ?? { points: [], magnitudes: [] };
     state.forces = {
-      ...state.forces,
-      points: poly(state.forces.points),
-      magnitudes: state.forces.magnitudes.map((v) => v * kF),
+      ...forces,
+      points: poly(forces.points),
+      magnitudes: (forces.magnitudes ?? []).map((v) => v * kF),
     };
     // BOTH coordinates of the pole are forces: the abscissa is the horizontal
     // thrust and the ordinate divides the total weight between the reactions.
@@ -1925,15 +3030,17 @@ ui.system.addEventListener('change', () => {
       ...state.ends, A: pt(state.ends.A), B: pt(state.ends.B),
       construction: null,
     };
+    const trace = state.trace ?? { inner: [], outer: [], armed: null, cursor: null };
     state.trace = {
-      ...state.trace, inner: poly(state.trace.inner),
-      outer: poly(state.trace.outer), cursor: null,
+      ...trace, inner: poly(trace.inner),
+      outer: poly(trace.outer), cursor: null,
     };
+    const profiles = state.profiles ?? { list: [], current: null, centre: null, picking: false };
     state.profiles = {
-      ...state.profiles,
-      list: (state.profiles.list ?? []).map(poly),
-      current: state.profiles.current ? poly(state.profiles.current) : null,
-      centre: pt(state.profiles.centre),
+      ...profiles,
+      list: (profiles.list ?? []).map(poly),
+      current: profiles.current ? poly(profiles.current) : null,
+      centre: pt(profiles.centre),
     };
     state.ref = { ...state.ref, points: poly(state.ref.points) };
     state.newBlock = state.newBlock ? poly(state.newBlock) : null;
@@ -1978,7 +3085,9 @@ for (const f of [ui.gamma, ui.thick]) {
   f.addEventListener('input', () => {
     if (!state.model || !state.model.blocks || !state.model.blocks.length) return;
     reweigh();
+    refreshRingStudy();
     state.band = null; state.bandKey = null;
+    state.frozenBranch = null;
     recompute();
     fitForceView();
     draw();
@@ -1986,40 +3095,111 @@ for (const f of [ui.gamma, ui.thick]) {
 }
 ui.clearTrace.addEventListener('click', () => {
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
+  state.model = {
+    ...(state.model ?? {}),
+    blocks: [],
+    centroids: [],
+    weights: [],
+    joints: null,
+    areas: [],
+    thickness: [],
+    pointA: null,
+    pointB: null,
+    forcePolygon: null,
+    thrustLine: null,
+  };
+  clearPlotState();
+  state.consistent = { ok: true, reason: null, extraRows: 0 };
+  state.fp = null; state.lot = null; state.basePole = null;
+  state.band = null; state.bandKey = null;
+  state.mech = null; state.crossings = null;
   finishTrace();
+  reportTrace();
+  reportBlocks();
+  recompute();
+  fitViews();
+  draw();
 });
 
 ui.imageFile.addEventListener('change', (e) => {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
-  const img = new Image();
-  img.onload = () => {
-    // A fresh image resets the model to an empty arch in ITS pixel frame, so
-    // a trace on top of it lands in the right coordinates.
-    state.image = img;
-    state.model = {
-      name: file.name, blocks: [], centroids: [], weights: [],
-      pointA: null, pointB: null, forcePolygon: null, thrustLine: null,
-      units: null, lengthScaling: 1, massToWeight: 1,
-      image: file.name, imageSize: [img.naturalWidth, img.naturalHeight],
-      frame: { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = String(reader.result);
+    const img = new Image();
+    img.onload = () => {
+      const hasWork = !!(
+        state.model?.blocks?.length
+        || state.trace?.inner?.length
+        || state.trace?.outer?.length
+        || state.forces?.points?.length
+      );
+      state.image = img;
+      state.imageData = {
+        name: file.name,
+        type: file.type || 'image/*',
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        dataUrl,
+      };
+      if (hasWork && state.model) {
+        state.model = {
+          ...state.model,
+          image: file.name,
+          imageSize: [img.naturalWidth, img.naturalHeight],
+        };
+      } else {
+        // A first image creates an empty arch in ITS pixel frame, so a trace on
+        // top of it lands in the right coordinates.
+        state.model = {
+          name: file.name, blocks: [], centroids: [], weights: [],
+          pointA: null, pointB: null, forcePolygon: null, thrustLine: null,
+          units: null, lengthScaling: 1, massToWeight: 1,
+          image: file.name, imageSize: [img.naturalWidth, img.naturalHeight],
+          frame: { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
+        };
+        clearPlotState();
+        state.consistent = { ok: true, reason: null, extraRows: 0 };
+        state.fp = null; state.lot = null; state.basePole = null;
+        state.trace = { inner: [], outer: [], armed: null, cursor: null };
+        ui.thrustValue.textContent = 'trace the arch first';
+        ui.thrustValueM.textContent = ui.thrustValue.textContent;
+        ui.thrustValueP.textContent = ui.thrustValue.textContent;
+      }
+      const upp = state.model.frame?.coordinates === 'physical'
+        ? state.model.frame.units_per_pixel : 1;
+      ui.imageRealWidth.value = (img.naturalWidth * upp).toPrecision(6);
+      ui.imageRealHeight.value = (img.naturalHeight * upp).toPrecision(6);
+      ui.meta.textContent =
+        `${file.name} · ${img.naturalWidth}×${img.naturalHeight} px`;
+      ui.warn.hidden = true;
+      if (hasWork) {
+        if (state.basePole) {
+          recompute();
+          fitForceView();
+        }
+      } else {
+        mainAx.syncSize();
+        mainAx.fit({ xmin: 0, xmax: img.naturalWidth,
+          ymin: 0, ymax: img.naturalHeight });
+      }
+      reportScale();
+      reportTrace();
+      reportBlocks();
+      draw();
     };
-    state.consistent = { ok: true, reason: null, extraRows: 0 };
-    state.fp = null; state.lot = null; state.basePole = null;
-    state.trace = { inner: [], outer: [], armed: null, cursor: null };
-    ui.meta.textContent =
-      `${file.name} · ${img.naturalWidth}×${img.naturalHeight} px`;
-    ui.warn.hidden = true;
-    ui.thrustValue.textContent = 'trace the arch first';
-    ui.thrustValueM.textContent = ui.thrustValue.textContent;
-    ui.thrustValueP.textContent = ui.thrustValue.textContent;
-    mainAx.syncSize();
-    mainAx.fit({ xmin: 0, xmax: img.naturalWidth,
-      ymin: 0, ymax: img.naturalHeight });
-    reportTrace();
-    draw();
+    img.onerror = () => {
+      ui.warn.hidden = false;
+      ui.warn.textContent = 'could not decode that image';
+    };
+    img.src = dataUrl;
   };
-  img.src = URL.createObjectURL(file);
+  reader.onerror = () => {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'could not read that image';
+  };
+  reader.readAsDataURL(file);
 });
 
 ui.example.addEventListener('change', () => {
@@ -2051,15 +3231,8 @@ for (const k of ['startPos', 'split']) {
 function contentBounds(ax) {
   const m = state.model;
   if (ax === mainAx) {
-    let b = bounds(m && m.blocks && m.blocks.length ? m.blocks : []);
-    if (!isFinite(b.xmin)) return null;
-    if (m.frame && m.frame.coordinates === 'pixels' && m.imageSize) {
-      b = {
-        xmin: Math.min(b.xmin, 0), xmax: Math.max(b.xmax, m.imageSize[0]),
-        ymin: Math.min(b.ymin, 0), ymax: Math.max(b.ymax, m.imageSize[1]),
-      };
-    }
-    return b;
+    const blockBounds = m && m.blocks && m.blocks.length ? bounds(m.blocks) : null;
+    return mergeBounds(blockBounds, imageBounds(m));
   }
   if (ax === forceAx) {
     if (!state.fp) return null;
@@ -2070,6 +3243,7 @@ function contentBounds(ax) {
       ymin: Math.min(...ys), ymax: Math.max(...ys),
     };
   }
+  if (ax === plotAx) return plotContentBounds();
   // The solid view: the bounds of the projection, which move with the camera.
   return state.solidBounds ?? null;
 }
@@ -2096,13 +3270,20 @@ for (const row of document.querySelectorAll('.viewtools[data-ax]')) {
     if (!act) return;
     const which = row.dataset.ax;
     viewAction(which === 'main' ? mainAx
-      : sideView() === 'solid' ? solidAx : forceAx, act);
+      : sideView() === 'solid' ? solidAx
+        : (sideView() === 'heyman' || sideView() === 'radius') ? plotAx : forceAx, act);
   });
 }
 
 el('solidTools').addEventListener('click', (e) => {
   const which = e.target.dataset.view3d;
   if (!which) return;
+  if (which === 'axes') {
+    state.showSolidAxes = !state.showSolidAxes;
+    el('showSolidAxes').classList.toggle('active', state.showSolidAxes);
+    draw();
+    return;
+  }
   state.camera = which === 'front'
     ? { az: -90, el: 0 }              // straight at the meridian plane
     : { az: -45, el: 30 };            // the three-quarter view MATLAB used
@@ -2188,34 +3369,73 @@ ui.imposeEnds.addEventListener('change', () => {
 });
 mirror(ui.showCable, ui.showCable2, 'change');
 
-// ------------------------------------------------- the two side views --
+// ------------------------------------------------ the side views --
 
 function showSide(which) {
   const solid = which === 'solid';
+  const heyman = which === 'heyman';
+  const radius = which === 'radius';
   ui.tabSolid.classList.toggle('active', solid);
-  ui.tabForce.classList.toggle('active', !solid);
+  ui.tabHeyman.classList.toggle('active', heyman);
+  ui.tabRadius.classList.toggle('active', radius);
+  ui.tabForce.classList.toggle('active', !solid && !heyman && !radius);
   el('solid').hidden = !solid;
-  el('force').hidden = solid;
+  el('plot').hidden = !heyman && !radius;
+  el('force').hidden = solid || heyman || radius;
   el('solidTools').hidden = !solid;
+  ui.radiusMetric.hidden = !radius;
+  ui.plotStatus.hidden = !heyman && !radius;
   ui.sideCaption.textContent = solid
     ? (ui.poleni.checked ? 'Blocks — dome lune' : 'Blocks — constant thickness')
+    : heyman ? 'Heyman N-M diagram'
+      : radius ? 'Thickness study'
     : 'Force polygon';
   // The canvas that was hidden has no size to speak of, so it must be
   // re-measured the moment it is shown or the first draw lands on a stale box.
   solidAx.syncSize();
   forceAx.syncSize();
+  plotAx.syncSize();
   if (solid) state.solidFit = null;
+  if (heyman || radius) state.plotFitKey = null;
   draw();
 }
 ui.tabForce.addEventListener('click', () => showSide('force'));
 ui.tabSolid.addEventListener('click', () => showSide('solid'));
+ui.tabHeyman.addEventListener('click', () => showSide('heyman'));
+ui.tabRadius.addEventListener('click', () => showSide('radius'));
+function setRadiusMetric(metric) {
+  state.radiusMetric = metric;
+  ui.radiusByWeight.classList.toggle('active', metric === 'weight');
+  ui.radiusByThrust.classList.toggle('active', metric === 'thrust');
+  state.plotFitKey = null;
+  draw();
+}
+ui.radiusByWeight.addEventListener('click', () => setRadiusMetric('weight'));
+ui.radiusByThrust.addEventListener('click', () => setRadiusMetric('thrust'));
+for (const f of [ui.radiusASteps, ui.radiusBSteps, ui.radiusNSteps]) {
+  f.addEventListener('change', () => {
+    refreshRingStudy();
+    draw();
+  });
+}
+ui.radiusTriStep.addEventListener('input', () => {
+  applyRadiusTriStep();
+  draw();
+});
+ui.radiusTriStep.addEventListener('change', () => {
+  applyRadiusTriStep({ commit: true });
+  draw();
+});
 
 ui.poleni.addEventListener('change', () => {
   reweigh();
+  refreshRingStudy();
   state.band = null; state.bandKey = null;
   state.solidFit = null;
   ui.sideCaption.textContent = sideView() === 'solid'
     ? (ui.poleni.checked ? 'Blocks — dome lune' : 'Blocks — constant thickness')
+    : sideView() === 'heyman' ? 'Heyman N-M diagram'
+      : sideView() === 'radius' ? 'Thickness study'
     : 'Force polygon';
   recompute();
   fitForceView();
@@ -2226,6 +3446,7 @@ for (const f of [ui.domeAngle, ui.domeAxis]) {
     if (!ui.poleni.checked) return;
     if (f === ui.domeAxis) state.axisPicked = true;
     reweigh();
+    refreshRingStudy();
     state.band = null; state.bandKey = null;
     state.solidFit = null;
     recompute();
@@ -2236,8 +3457,8 @@ for (const f of [ui.domeAngle, ui.domeAxis]) {
 ui.pickAxis.addEventListener('click', () => {
   state.pickingAxis = !state.pickingAxis;
   if (state.pickingAxis) {
-    if (state.trace.armed) finishTrace();
-    if (state.ref.picking) armReference();
+    if (traceArmed()) finishTrace();
+    if (state.ref.picking) disarmReference();
   }
   ui.pickAxis.classList.toggle('armed', state.pickingAxis);
   ui.pickAxis.textContent = state.pickingAxis
@@ -2283,7 +3504,43 @@ ui.pickCutCentre.addEventListener('click', () => {
   draw();
 });
 ui.cutProfile.addEventListener('click', cutProfiles);
-ui.makeRing.addEventListener('click', generateRing);
+ui.makeRing.addEventListener('click', () => {
+  generateRing();
+  showSide('radius');
+});
+ui.pickInner1.addEventListener('click', () => armThreePointRing('inner', 0));
+ui.pickInner2.addEventListener('click', () => armThreePointRing('inner', 1));
+ui.pickInner3.addEventListener('click', () => armThreePointRing('inner', 2));
+ui.pickOuter1.addEventListener('click', () => armThreePointRing('outer', 0));
+ui.pickOuter2.addEventListener('click', () => armThreePointRing('outer', 1));
+ui.pickOuter3.addEventListener('click', () => armThreePointRing('outer', 2));
+ui.makeThreePointRing.addEventListener('click', generateThreePointRing);
+ui.clearThreePointRing.addEventListener('click', () => {
+  clearThreePointRing();
+  reportThreePointRing();
+  draw();
+});
+ui.ringTri.addEventListener('input', () => {
+  applyRadiusTriStep();
+  if (!state.ringAuto) return;
+  generateRing({ resetStudy: false });
+});
+ui.ringTri.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  e.preventDefault();
+  nudgeRingTri(e.key === 'ArrowUp' ? 1 : -1);
+});
+ui.ringTri.addEventListener('wheel', (e) => {
+  if (document.activeElement !== ui.ringTri) return;
+  e.preventDefault();
+  nudgeRingTri(e.deltaY < 0 ? 1 : -1);
+}, { passive: false });
+for (const f of [ui.ringRi, ui.ringN]) {
+  f.addEventListener('change', () => {
+    if (!state.ringAuto) return;
+    generateRing();
+  });
+}
 ui.addBlock.addEventListener('click', armBlock);
 ui.cableWeights.addEventListener('input', draw);
 for (const [b, pick] of [[ui.goHmin, (x) => x.min], [ui.goHmax, (x) => x.max]]) {
@@ -2296,6 +3553,7 @@ for (const [b, pick] of [[ui.goHmin, (x) => x.min], [ui.goHmax, (x) => x.max]]) 
   });
 }
 ui.reset.addEventListener('click', () => { fitViews(); draw(); });
+ui.applyImageSize.addEventListener('click', applyImageSize);
 
 // -------------------------------------------------------- save and reopen --
 
@@ -2350,6 +3608,7 @@ function openWork(text) {
   }
 
   state.model = data.model;
+  clearPlotState();
   state.trace = data.trace
     ? { inner: data.trace.inner, outer: data.trace.outer,
       armed: null, cursor: null }
@@ -2359,7 +3618,8 @@ function openWork(text) {
     ?? [totalLoad() / 4, -totalLoad() / 2];
   state.system = data.system;
   state.exampleName = data.exampleName;
-  state.image = null;                 // the image is not in the file
+  state.image = null;
+  state.imageData = data.imageData ?? null;
   state.consistent = { ok: true, problems: [] };
 
   ui.system.value = data.system;
@@ -2387,12 +3647,25 @@ function openWork(text) {
   recompute();
   fitViews();
   draw();
+  if (state.imageData?.dataUrl) {
+    replaceBackgroundImage(state.imageData.dataUrl, {
+      name: state.imageData.name,
+      type: state.imageData.type,
+    }, () => {
+      fitViews();
+      draw();
+    });
+  }
   listForces();
   reportScale();
-  ui.saveStatus.textContent = data.imageName
-    ? `opened — the background image (${data.imageName}) is not in the file, `
-      + 'load it again if you want it'
-    : 'opened';
+  if (state.imageData?.dataUrl) {
+    ui.saveStatus.textContent = `opened with background image (${state.imageData.name ?? 'embedded'})`;
+  } else {
+    ui.saveStatus.textContent = data.imageName
+      ? `opened — the background image (${data.imageName}) is not in the file, `
+        + 'load it again if you want it'
+      : 'opened';
+  }
 }
 
 ui.saveState.addEventListener('click', saveWork);
@@ -2410,7 +3683,8 @@ ui.stateFile.addEventListener('change', (e) => {
   e.target.value = '';
 });
 for (const k of ['showImage', 'showBlocks', 'showWeights', 'showThrust',
-  'showCable', 'showLabels', 'showJoints', 'showRays', 'showScale']) {
+  'showCable', 'showLabels', 'showJoints', 'showRays', 'showReactions',
+  'showScale']) {
   ui[k].addEventListener('change', draw);
 }
 // SHOWING THE MECHANISM CHANGES THE LINE, not only what is drawn of it: with
@@ -2422,9 +3696,7 @@ ui.showMech.addEventListener('change', () => {
   draw();
 });
 ui.flipY.addEventListener('change', () => {
-  mainAx.yUp = !ui.flipY.checked;
-  fitViews();
-  draw();
+  if (ui.flipY.checked) flipBackgroundImage();
 });
 window.addEventListener('resize', () => {
   // A resize changes the box without touching the view, which breaks the equal
@@ -2432,9 +3704,11 @@ window.addEventListener('resize', () => {
   mainAx.syncSize();
   forceAx.syncSize();
   solidAx.syncSize();
+  plotAx.syncSize();
   mainAx.reequalize();
   forceAx.reequalize();
   solidAx.reequalize();
+  plotAx.reequalize();
   draw();
 });
 
@@ -2462,6 +3736,8 @@ window.aLOT = {
   axes: { main: mainAx, force: forceAx },
 };
 
+applyRadiusTriStep({ commit: true });
+reportThreePointRing();
 loadCatalogue().catch((err) => {
   ui.meta.textContent = `could not load the examples: ${err.message}`;
 });

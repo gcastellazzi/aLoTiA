@@ -76,6 +76,61 @@ test('a session survives the round trip through JSON unchanged', () => {
   assert.equal(back.trace.outer.length, state.trace.outer.length);
 });
 
+test('a user-loaded background image is embedded in the saved JSON', () => {
+  const { state, controls } = session();
+  state.imageData = {
+    name: 'bridge.png',
+    type: 'image/png',
+    width: 320,
+    height: 240,
+    dataUrl: 'data:image/png;base64,AAAA',
+  };
+
+  const saved = serialise(state, controls);
+  const back = deserialise(JSON.stringify(saved));
+  assert.equal(saved.image.name, 'bridge.png');
+  assert.equal(saved.image.width, 320);
+  assert.equal(back.imageData.dataUrl, 'data:image/png;base64,AAAA');
+});
+
+test('an image-only session can be saved before tracing blocks', () => {
+  const state = {
+    model: {
+      name: 'survey.jpg',
+      blocks: [],
+      centroids: [],
+      weights: [],
+      areas: [],
+      thickness: [],
+      joints: [],
+      image: 'survey.jpg',
+      imageSize: [800, 600],
+      frame: { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
+    },
+    imageData: {
+      name: 'survey.jpg',
+      type: 'image/jpeg',
+      width: 800,
+      height: 600,
+      dataUrl: 'data:image/jpeg;base64,AAAA',
+    },
+  };
+  const back = deserialise(JSON.stringify(serialise(state)));
+  assert.equal(back.model.blocks.length, 0);
+  assert.equal(back.model.imageSize[0], 800);
+  assert.equal(back.imageData.name, 'survey.jpg');
+});
+
+test('a stretched background image keeps its drawn size', () => {
+  const { state } = session();
+  state.model.image = 'survey.jpg';
+  state.model.imageSize = [800, 600];
+  state.model.imageDrawSize = [12, 7];
+
+  const back = deserialise(JSON.stringify(serialise(state)));
+  assert.deepEqual(back.model.imageDrawSize, [12, 7]);
+});
+
 test('the reopened model gives exactly the same thrust line', () => {
   // The real test: not that the fields came back, but that the mechanics did.
   const { state } = session(16);

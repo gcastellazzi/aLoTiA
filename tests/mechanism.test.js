@@ -18,7 +18,7 @@ import {
   TOUCH, bestLineForThrust, collapseRange, findHinges, bodies, bodyOfBlock,
   degreesOfFreedom, nullSpace, mechanismMotion, displaced, analyse,
   displacedConfiguration, transformPoint, separationSense, jointOpenings,
-  constrainedLine,
+  constrainedLine, freezeBranch, lineWithFrozenBranch,
 } from '../docs/app/js/core/mechanism.js';
 
 function arc(r, n = 300) {
@@ -163,6 +163,28 @@ test('the collapse patterns are the classical ones', () => {
   };
   assert.equal(pattern(band.min), 'SieiS', 'minimum thrust: five hinges');
   assert.equal(pattern(band.max), 'SiiS', 'maximum thrust: four hinges');
+});
+
+test('a frozen mechanism branch keeps the support-to-hinge segment fixed', () => {
+  const r = ring(4, 4.72, 16);
+  const band = collapseRange(r.seq, r.joints);
+  const limit = constrainedLine(r.seq, r.joints, band, band.max);
+  const frozen = freezeBranch(limit.lot, limit.crossings, r.joints, r.blocks.length);
+  assert.ok(frozen, 'the limit state must provide an interior hinge to freeze');
+
+  const moved = lineWithFrozenBranch(r.seq, r.joints, frozen, band.max * 0.95);
+  assert.ok(moved, 'the far side must still be drawable from the frozen hinge');
+  assert.ok(moved.crossings.every((c) => c && c.inside !== false),
+    'the frozen mechanism line must stay inside the thickness');
+
+  const branch = frozen.side === 'first'
+    ? moved.lot.points.slice(moved.lot.points.length - frozen.points.length)
+    : moved.lot.points.slice(0, frozen.points.length);
+  assert.equal(branch.length, frozen.points.length);
+  branch.forEach((p, i) => {
+    assert.ok(Math.hypot(p[0] - frozen.points[i][0], p[1] - frozen.points[i][1]) < 1e-9,
+      `frozen point ${i} moved`);
+  });
 });
 
 test('the macro-blocks are the voussoirs between consecutive hinges', () => {

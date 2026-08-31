@@ -132,6 +132,49 @@ main {
 }
 .tabs .tab:hover { background: #eee; }
 #side canvas[hidden] { display: none; }
+.plot-status {
+  min-height: 18px;
+  text-align: center;
+}
+.plotmetric {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 4px;
+}
+.plotmetric[hidden] { display: none; }
+.plotmetric button {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.plotmetric button:first-child { border-radius: 4px 0 0 4px; }
+.plotmetric button:last-child { border-radius: 0 4px 4px 0; }
+.plotmetric button.active {
+  background: #fff;
+  color: inherit;
+  font-weight: 600;
+}
+.plotmetric label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.plotmetric input {
+  width: 46px;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  font: inherit;
+  font-size: 12px;
+}
 
 figure {
   margin: 0;
@@ -159,6 +202,11 @@ figure {
   border-radius: 3px;
 }
 .viewtools button:hover { background: #eee; }
+.viewtools button.active {
+  background: #262626;
+  color: #fff;
+  font-weight: 600;
+}
 .viewtools .hint { margin: 0 0 0 4px; font-size: 11px; }
 .viewtools[hidden] { display: none; }
 
@@ -259,6 +307,11 @@ footer {
 }
 #panel label.inline input { width: 76px; padding: 3px 5px; font: inherit;
   border: 1px solid var(--line); border-radius: 3px; }
+#panel label.image-lock {
+  justify-content: flex-start;
+  color: var(--muted);
+}
+#panel label.image-lock input { width: auto; }
 #panel button.armed {
   background: var(--accent); color: #fff; border-color: var(--accent);
 }

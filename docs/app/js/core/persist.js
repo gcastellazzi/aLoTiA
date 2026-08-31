@@ -13,10 +13,9 @@
  * thrust line and the joint crossings are all recomputed on opening, so a file
  * saved by one version stays readable when the mechanics is corrected.
  *
- * The background image is also left out, deliberately. Photographs of a real
- * arch run to several megabytes, and embedding one as base64 turns a 40 kB
- * file into something a browser struggles to hand back. The file records the
- * image's NAME so the app can ask for it again.
+ * A user-loaded background image is saved as a data URL, so the session can be
+ * reopened as a single file. Older saved sessions and catalogue examples may
+ * still carry only the image name.
  *
  * The format is the one documented in data/README.md: polygons as {x, y}
  * arrays, points as [x, y] pairs, joints as {a, b}.
@@ -54,12 +53,25 @@ export function serialise(state, controls = {}, imageName = null) {
     // `image` the file the student traced over.
     exampleName: state.exampleName ?? m.name ?? null,
     imageName: imageName ?? m.image ?? null,
+    image: state.imageData
+      ? {
+        name: state.imageData.name ?? imageName ?? m.image ?? null,
+        type: state.imageData.type ?? null,
+        width: Number(state.imageData.width ?? m.imageSize?.[0] ?? 0),
+        height: Number(state.imageData.height ?? m.imageSize?.[1] ?? 0),
+        dataUrl: state.imageData.dataUrl,
+      }
+      : null,
     system: state.system ?? 'SI',
     trace: state.trace
       ? { inner: points(state.trace.inner), outer: points(state.trace.outer) }
       : null,
     model: state.model
       ? {
+        name: m.name ?? null,
+        image: m.image ?? null,
+        imageSize: m.imageSize ? [...m.imageSize] : null,
+        imageDrawSize: m.imageDrawSize ? [...m.imageDrawSize] : null,
         blocks: (m.blocks ?? []).map(polygon),
         joints: (m.joints ?? []).map((j) => ({ a: [...j.a], b: [...j.b] })),
         centroids: points(m.centroids),
@@ -141,14 +153,21 @@ export function deserialise(text) {
   const m = data.model;
   if (m) {
     const n = (m.centroids ?? []).length;
-    if (!n) throw new Error('the file carries a model with no blocks');
-    for (const [key, want] of [['weights', n], ['areas', n], ['thickness', n],
-      ['blocks', n], ['joints', n + 1]]) {
-      const got = (m[key] ?? []).length;
-      if (got !== want) {
-        throw new Error(
-          `the file is inconsistent: ${got} ${key} against ${n} blocks`,
-        );
+    if (n) {
+      for (const [key, want] of [['weights', n], ['areas', n], ['thickness', n],
+        ['blocks', n], ['joints', n + 1]]) {
+        const got = (m[key] ?? []).length;
+        if (got !== want) {
+          throw new Error(
+            `the file is inconsistent: ${got} ${key} against ${n} blocks`,
+          );
+        }
+      }
+    } else {
+      for (const key of ['weights', 'areas', 'thickness', 'blocks']) {
+        if ((m[key] ?? []).length) {
+          throw new Error(`the file is inconsistent: ${key} without blocks`);
+        }
       }
     }
     if (!(m.blocks ?? []).every((p) => p && p.x && p.y
@@ -161,13 +180,19 @@ export function deserialise(text) {
   if (f && (f.points ?? []).length !== (f.magnitudes ?? []).length) {
     throw new Error('the file has a force without a magnitude, or the reverse');
   }
+  if (data.image && (
+    typeof data.image.dataUrl !== 'string'
+    || !data.image.dataUrl.startsWith('data:image/')
+  )) {
+    throw new Error('the file has a malformed background image');
+  }
 
   return {
     ...data,
     model: m
       ? {
         ...m,
-        blocks: m.blocks.map((p) => ({ x: [...p.x], y: [...p.y] })),
+        blocks: (m.blocks ?? []).map((p) => ({ x: [...p.x], y: [...p.y] })),
         thrustLine: null,
       }
       : null,
@@ -180,6 +205,7 @@ export function deserialise(text) {
       thrust: 50, startPos: 50, split: 50, ...(data.controls ?? {}),
     },
     dome: { poleni: false, angleDeg: 15, axisX: 0, ...(data.dome ?? {}) },
+    imageData: data.image ?? null,
   };
 }
 

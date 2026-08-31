@@ -62,6 +62,36 @@ export function projectedBounds(solidList, f) {
   return { xmin, xmax, ymin, ymax };
 }
 
+/** Centre of all 3-D vertices in a solid list. */
+export function solidCentre(solidList) {
+  let xmin = Infinity;
+  let xmax = -Infinity;
+  let ymin = Infinity;
+  let ymax = -Infinity;
+  let zmin = Infinity;
+  let zmax = -Infinity;
+  for (const faces of solidList) {
+    for (const face of faces) {
+      for (const p of face) {
+        xmin = Math.min(xmin, p[0]); xmax = Math.max(xmax, p[0]);
+        ymin = Math.min(ymin, p[1]); ymax = Math.max(ymax, p[1]);
+        zmin = Math.min(zmin, p[2]); zmax = Math.max(zmax, p[2]);
+      }
+    }
+  }
+  if (!Number.isFinite(xmin)) return [0, 0, 0];
+  return [(xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2];
+}
+
+/** Translate solids for display without changing the mechanical model. */
+export function recenteredSolids(solidList, centre) {
+  return solidList.map((faces) => faces.map((face) => face.map((p) => [
+    p[0] - centre[0],
+    p[1] - centre[1],
+    p[2] - centre[2],
+  ])));
+}
+
 /** The unit normal of a face, from its first three vertices. */
 function normalOf(face) {
   const [a, b, c] = face;
@@ -144,11 +174,11 @@ export function drawSolids(ax, solidList, opt = {}) {
  * assumes.
  */
 export function drawAxis(ax, axisX, zRange, f, opt = {}) {
-  const { colour = '#A2142F' } = opt;
+  const { colour = '#A2142F', depth: y = 0 } = opt;
   const [lo, hi] = zRange;
   ax.clipped((c) => {
-    const a = ax.toPx(project([axisX, 0, lo], f));
-    const b = ax.toPx(project([axisX, 0, hi], f));
+    const a = ax.toPx(project([axisX, y, lo], f));
+    const b = ax.toPx(project([axisX, y, hi], f));
     c.setLineDash([5, 4]);
     c.strokeStyle = colour;
     c.lineWidth = 1.2;
@@ -158,4 +188,54 @@ export function drawAxis(ax, axisX, zRange, f, opt = {}) {
     c.stroke();
     c.setLineDash([]);
   });
+}
+
+/** A small 3-D reference frame, projected in the same view as the solid. */
+export function drawReferenceFrame(ax, bounds, f, opt = {}) {
+  if (!bounds) return;
+  const { origin = null, scale = 0.18 } = opt;
+  const span = Math.max(bounds.xmax - bounds.xmin, bounds.ymax - bounds.ymin, 1);
+  const L = span * scale;
+  const o2 = origin ?? [
+    bounds.xmin + (bounds.xmax - bounds.xmin) * 0.08,
+    bounds.ymin + (bounds.ymax - bounds.ymin) * 0.12,
+  ];
+
+  const draw = (dir, label, colour) => {
+    const p1 = [o2[0] + project(dir, f)[0] * L, o2[1] + project(dir, f)[1] * L];
+    ax.clipped((c) => {
+      const [x0, y0] = ax.toPx(o2);
+      const [x1, y1] = ax.toPx(p1);
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      const len = Math.hypot(dx, dy);
+      if (len < 1) return;
+      const ux = dx / len;
+      const uy = dy / len;
+      const head = Math.min(9, len * 0.35);
+      const bx = x1 - ux * head;
+      const by = y1 - uy * head;
+      c.strokeStyle = colour;
+      c.fillStyle = colour;
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.lineTo(bx, by);
+      c.stroke();
+      c.beginPath();
+      c.moveTo(x1, y1);
+      c.lineTo(bx - uy * head * 0.38, by + ux * head * 0.38);
+      c.lineTo(bx + uy * head * 0.38, by - ux * head * 0.38);
+      c.closePath();
+      c.fill();
+      c.font = 'bold 12px Helvetica, Arial, sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(label, x1 + ux * 10, y1 + uy * 10);
+    });
+  };
+
+  draw([1, 0, 0], 'X', '#A2142F');
+  draw([0, 1, 0], 'Y', '#0072BD');
+  draw([0, 0, 1], 'Z', '#2e7d32');
 }

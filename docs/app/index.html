@@ -35,6 +35,21 @@
       <label class="file">Load an image
         <input type="file" id="imageFile" accept="image/*">
       </label>
+      <label class="inline">Image width
+        <input type="number" id="imageRealWidth" min="0" step="0.1" placeholder="auto">
+      </label>
+      <label class="inline">Image height
+        <input type="number" id="imageRealHeight" min="0" step="0.1" placeholder="auto">
+      </label>
+      <label class="inline image-lock"><span id="imageLockIcon">locked</span>
+        <input type="checkbox" id="imageAspectLocked" checked>
+      </label>
+      <button id="applyImageSize" disabled>Apply image size</button>
+      <button id="pickImageRef">Pick known distance</button>
+      <label class="inline">Distance
+        <input type="number" id="imageRefLength" min="0" step="0.1" value="10">
+      </label>
+      <button id="applyImageRefScale" disabled>Apply distance scale</button>
       <div class="row">
         <button id="traceInner">Trace intrados</button>
         <button id="traceOuter">Trace extrados</button>
@@ -73,6 +88,24 @@
       </label>
       <button id="makeRing">Generate ring</button>
       <p id="ringStatus" class="meta">uses the unit weight and thickness above</p>
+    </section>
+    <section>
+      <h2>3-point circular arch</h2>
+      <div class="row">
+        <button id="pickInner1">I1</button>
+        <button id="pickInner2">I2</button>
+        <button id="pickInner3">I3</button>
+      </div>
+      <div class="row">
+        <button id="pickOuter1">E1</button>
+        <button id="pickOuter2">E2</button>
+        <button id="pickOuter3">E3</button>
+      </div>
+      <div class="row">
+        <button id="makeThreePointRing" disabled>Generate 3-point arch</button>
+        <button id="clearThreePointRing">Clear pts</button>
+      </div>
+      <p id="threePointRingStatus" class="meta">pick 3 intrados and 3 extrados points</p>
     </section>
     <section>
       <h2>Trace a whole profile</h2>
@@ -242,8 +275,8 @@
       <input id="stateFile" type="file" accept=".json,application/json" hidden>
       <p id="saveStatus" class="meta">&mdash;</p>
       <p class="hint">Writes everything &mdash; the traced curves, the blocks,
-        the applied forces, the scale and the equilibrium state &mdash; to one
-        JSON file. The background image is not included: reopen it separately.</p>
+        the applied forces, the scale, the background image and the equilibrium
+        state &mdash; to one JSON file.</p>
     </section>
   </aside>
 
@@ -269,9 +302,20 @@
       <div class="tabs" role="tablist">
         <button class="tab active" id="tabForce" role="tab">Force polygon</button>
         <button class="tab" id="tabSolid" role="tab">Blocks</button>
+        <button class="tab" id="tabHeyman" role="tab">Heyman</button>
+        <button class="tab" id="tabRadius" role="tab">t/ri</button>
       </div>
       <canvas id="force"></canvas>
       <canvas id="solid" hidden></canvas>
+      <canvas id="plot" hidden></canvas>
+      <div class="plotmetric" id="radiusMetric" hidden>
+        <button class="active" id="radiusByWeight" type="button">Weight</button>
+        <button id="radiusByThrust" type="button">Horizontal thrust</button>
+        <label>A steps <input id="radiusASteps" type="number" min="3" max="21" step="1" value="5"></label>
+        <label>B steps <input id="radiusBSteps" type="number" min="3" max="21" step="1" value="5"></label>
+        <label>N steps <input id="radiusNSteps" type="number" min="2" max="31" step="1" value="7"></label>
+        <label>t/ri step <input id="radiusTriStep" type="number" min="0.0001" max="1" step="0.0001" value="0.01"></label>
+      </div>
       <div class="viewtools" data-ax="side">
         <button data-act="fit" title="Fit">fit</button>
         <button data-act="fitx" title="Fit the width">&#8596;</button>
@@ -282,8 +326,10 @@
       <div class="viewtools" id="solidTools" hidden>
         <button data-view3d="front" title="Look at the face">front</button>
         <button data-view3d="corner" title="Three quarters">3/4</button>
+        <button data-view3d="axes" id="showSolidAxes" title="Show reference frame">axes</button>
         <span class="hint">drag to turn &middot; wheel to zoom &middot; shift-drag to pan</span>
       </div>
+      <p id="plotStatus" class="meta plot-status" hidden>Click a joint for N-M, or generate a circular ring for t/ri.</p>
       <figcaption id="sideCaption">Force polygon</figcaption>
     </figure>
   </div>
@@ -308,13 +354,14 @@
       <label><input type="checkbox" id="showLabels"> Block numbers</label>
       <label><input type="checkbox" id="showJoints"> Joints</label>
       <label><input type="checkbox" id="showRays"> Ray letters</label>
+      <label><input type="checkbox" id="showReactions"> Reactions</label>
       <label><input type="checkbox" id="showMech"> Mechanism</label>
       <label><input type="checkbox" id="showScale" checked> Scale bar</label>
     </div>
 
     <div class="group">
       <span class="glabel">View</span>
-      <label><input type="checkbox" id="flipY"> Flip Y</label>
+      <label><input type="checkbox" id="flipY"> Flip image</label>
       <button id="reset">Reset view</button>
     </div>
   </div>

@@ -163,7 +163,7 @@ export function drawCable(ax, points, opt = {}) {
  * An arrow whose head is a fixed size in pixels, as drawArrow was fixed to do:
  * the shaft scales, the head does not, so a short arrow still reads as one.
  */
-export function drawArrow(ax, p0, p1, colour = '#c00', headPx = 9) {
+export function drawArrow(ax, p0, p1, colour = '#c00', headPx = 9, lineWidth = 1.4) {
   const [x0, y0] = ax.toPx(p0);
   const [x1, y1] = ax.toPx(p1);
   const dx = x1 - x0;
@@ -180,7 +180,7 @@ export function drawArrow(ax, p0, p1, colour = '#c00', headPx = 9) {
   c.save();
   c.strokeStyle = colour;
   c.fillStyle = colour;
-  c.lineWidth = 1.4;
+  c.lineWidth = lineWidth;
   c.beginPath();
   c.moveTo(x0, y0);
   c.lineTo(bx, by);
@@ -192,6 +192,46 @@ export function drawArrow(ax, p0, p1, colour = '#c00', headPx = 9) {
   c.closePath();
   c.fill();
   c.restore();
+}
+
+export function drawReactionLabel(ctx, x, y, name, value, opt = {}) {
+  const {
+    colour = '#0072BD',
+    align = 'left',
+    baseline = 'middle',
+    size = 11,
+  } = opt;
+  const sub = name === 'R_A' ? 'A' : name === 'R_B' ? 'B' : '';
+  const main = sub ? 'R' : name;
+  const valueText = value ? ` = ${value}` : '';
+  const mainFont = `bold ${size}px Helvetica, Arial, sans-serif`;
+  const subFont = `bold ${Math.round(size * 0.72)}px Helvetica, Arial, sans-serif`;
+  const oldFont = ctx.font;
+  ctx.save();
+  ctx.fillStyle = colour;
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = mainFont;
+  const mainW = ctx.measureText(main).width;
+  ctx.font = subFont;
+  const subW = sub ? ctx.measureText(sub).width : 0;
+  ctx.font = mainFont;
+  const valW = ctx.measureText(valueText).width;
+  const totalW = mainW + subW + valW;
+  const baseY = baseline === 'bottom' ? y : y + size * 0.35;
+  let startX = x;
+  if (align === 'right') startX = x - totalW;
+  if (align === 'center') startX = x - totalW / 2;
+  ctx.textAlign = 'left';
+  ctx.font = mainFont;
+  ctx.fillText(main, startX, baseY);
+  if (sub) {
+    ctx.font = subFont;
+    ctx.fillText(sub, startX + mainW + 1, baseY + size * 0.24);
+  }
+  ctx.font = mainFont;
+  ctx.fillText(valueText, startX + mainW + subW + (sub ? 2 : 0), baseY);
+  ctx.font = oldFont;
+  ctx.restore();
 }
 
 /** The weight of each block, as a downward arrow from its centroid. */
@@ -271,6 +311,7 @@ export function labelStride(count, most = 18) {
 export function drawForcePolygon(ax, fp, opt = {}) {
   const {
     labels = true, rayLabels = false, stride = 1, construction = null,
+    reactions = false, reactionLabels = null,
   } = opt;
   const { stations, pole } = fp;
   const c = ax.ctx;
@@ -305,6 +346,32 @@ export function drawForcePolygon(ax, fp, opt = {}) {
         const [X, Y] = ax.toPx([0, s]);
         c.fillText(rayLabel(j), X + side * 6, Y);
       });
+    }
+    if (reactions && stations.length >= 2) {
+      const top = [0, stations[0]];
+      const bottom = [0, stations[stations.length - 1]];
+      const drawRay = (p, name, side) => {
+        drawArrow(ax, pole, p, '#0072BD', 12, 2.6);
+      const [X, Y] = ax.toPx(p);
+      const value = reactionLabels?.[name.replace('_', '')] ?? '';
+      drawReactionLabel(c, X + (side === 'left' ? -7 : 7), Y, name, value, {
+        align: side,
+        baseline: 'middle',
+      });
+    };
+      drawRay(top, 'R_B', pole[0] >= 0 ? 'left' : 'right');
+      drawRay(bottom, 'R_A', pole[0] >= 0 ? 'left' : 'right');
+
+      const h0 = pole;
+      const h1 = [0, pole[1]];
+      drawArrow(ax, h0, h1, '#111', 11, 2.3);
+      const [hx0, hy0] = ax.toPx(h0);
+      const [hx1, hy1] = ax.toPx(h1);
+      c.font = 'bold 11px Helvetica, Arial, sans-serif';
+      c.fillStyle = '#111';
+      c.textAlign = 'center';
+      c.textBaseline = 'bottom';
+      c.fillText(reactionLabels?.H ?? 'H', (hx0 + hx1) / 2, hy0 - 5);
     }
     // The load line, one red segment per weight.
     c.strokeStyle = '#c00';

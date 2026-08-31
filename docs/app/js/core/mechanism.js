@@ -31,8 +31,9 @@
  */
 
 import {
-  forcePolygon, freeThrustLine, jointCrossings,
+  forcePolygon, freeThrustLine, funicular, jointCrossings, poleForEnds,
 } from './statics.js';
+import { distance } from './geometry.js';
 
 /** How close to a face counts as touching it, as a fraction of the joint. */
 export const TOUCH = 0.02;
@@ -214,6 +215,94 @@ export function constrainedLine(seq, joints, band, thrust, opt = {}) {
   const beyond = thrust > band.max ? 1 : thrust < band.min ? -1 : 0;
   const best = bestLineForThrust(seq, joints, held, opt);
   return best ? { ...best, thrust: held, beyond } : null;
+}
+
+/**
+ * The first interior hinge to lock when mechanism mode reaches a limit state.
+ *
+ * The support is chosen geometrically, as a student would read the picture:
+ * whichever springing point is closer to the contact point C owns the frozen
+ * branch.
+ */
+export function firstFreezableHinge(crossings, joints, nBlocks) {
+  const a = analyse(crossings, joints, nBlocks);
+  const interior = a.hinges.filter((h) => !h.support);
+  if (!interior.length) return null;
+  const first = joints[0];
+  const last = joints[joints.length - 1];
+  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+  let best = null;
+  for (const h of interior) {
+    const d0 = distance(h.point, mid(first));
+    const d1 = distance(h.point, mid(last));
+    const side = d0 <= d1 ? 'first' : 'last';
+    const d = Math.min(d0, d1);
+    if (!best || d < best.distance) best = { ...h, side, distance: d };
+  }
+  return best;
+}
+
+/** Store the support-to-C branch of a line of thrust. */
+export function freezeBranch(lot, crossings, joints, nBlocks) {
+  const h = firstFreezableHinge(crossings, joints, nBlocks);
+  if (!h || !lot || !lot.points || !crossings[h.joint]) return null;
+  const c = crossings[h.joint];
+  const segment = c.segment ?? h.joint;
+  const nearFirst = h.side === 'first';
+  const points = nearFirst
+    ? [c.point, ...lot.points.slice(segment + 1)]
+    : [...lot.points.slice(0, segment + 1), c.point];
+  return {
+    joint: h.joint,
+    face: h.face,
+    side: h.side,
+    point: c.point,
+    s: c.s,
+    points,
+  };
+}
+
+/**
+ * Recompute the unfrozen side while keeping the saved support-C branch fixed.
+ *
+ * The returned line is deliberately a plotted admissible line for the current
+ * teaching mode: the frozen branch is copied verbatim, and the rest is solved
+ * as an imposed-ends funicular between C and the opposite support.
+ */
+export function lineWithFrozenBranch(seq, joints, frozen, thrust, opt = {}) {
+  if (!frozen || !joints || joints.length < 2 || !seq?.weights?.length) return null;
+  const last = joints.length - 1;
+  const nearFirst = frozen.side === 'first';
+  const oppositeJoint = nearFirst ? joints[last] : joints[0];
+  const opposite = [(oppositeJoint.a[0] + oppositeJoint.b[0]) / 2,
+    (oppositeJoint.a[1] + oppositeJoint.b[1]) / 2];
+
+  const lo = Math.min(frozen.point[0], opposite[0]);
+  const hi = Math.max(frozen.point[0], opposite[0]);
+  const kept = [];
+  seq.centroids.forEach((g, i) => {
+    if (g[0] >= lo - 1e-9 && g[0] <= hi + 1e-9) kept.push(i);
+  });
+  if (!kept.length) return null;
+
+  const weights = kept.map((i) => seq.weights[i]);
+  const centroids = kept.map((i) => seq.centroids[i]);
+  const total = weights.reduce((a, b) => a + b, 0);
+  const P = nearFirst ? opposite : frozen.point;
+  const Q = nearFirst ? frozen.point : opposite;
+  const pole = poleForEnds(weights, centroids, P, Q,
+    Math.abs(thrust) * total, opt.trialOrdinate);
+  if (!pole) return null;
+  const fp = forcePolygon(weights, pole.pole);
+  const free = funicular(fp, centroids, P, Q);
+  if (!free.points || free.points.length < 2) return null;
+  const points = nearFirst
+    ? [...free.points, ...frozen.points.slice(1)]
+    : [...frozen.points, ...free.points.slice(1)];
+  const crossings = jointCrossings(points, joints);
+  const clearance = crossings.reduce((acc, c) => (c
+    ? Math.min(acc, c.s, 1 - c.s) : -Infinity), Infinity);
+  return { lot: { points, closed: true }, fp, crossings, clearance, frozen };
 }
 
 /**

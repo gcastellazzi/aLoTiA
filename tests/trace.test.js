@@ -158,7 +158,21 @@ test('a symmetric arch gives symmetric weights', () => {
 
 // ------------------------------------------------------- applied forces --
 
-import { blocksLike } from '../docs/app/js/core/blocks.js';
+import { blocksLike, circularRingThroughPoints } from '../docs/app/js/core/blocks.js';
+
+test('a circular arch can be defined by three intrados and three extrados points', () => {
+  const got = circularRingThroughPoints({
+    inner: [[4, 0], [0, 4], [-4, 0]],
+    outer: [[5, 0], [0, 5], [-5, 0]],
+    count: 8,
+  });
+  assert.equal(got.blocks.length, 8);
+  assert.equal(got.joints.length, 9);
+  for (const j of got.joints) {
+    assert.ok(Math.abs(Math.hypot(j.a[0], j.a[1]) - 4) < 1e-10);
+    assert.ok(Math.abs(Math.hypot(j.b[0], j.b[1]) - 5) < 1e-10);
+  }
+});
 
 /** A three-block arch, weights 1, 2, 3, centroids at x = 1, 2, 3. */
 function threeBlocks() {
