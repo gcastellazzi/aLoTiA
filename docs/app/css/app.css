@@ -57,8 +57,11 @@ main {
 }
 /* The panel is three tabbed panes: Geometry, LoT, Mechanism. The tab strip
    is the same one the right-hand pane uses. */
-#panel .tabs { position: sticky; top: 0; background: var(--panel); z-index: 2;
-  padding-bottom: 4px; margin-bottom: 8px; }
+#panel .tabs { position: sticky; top: -14px; background: var(--panel); z-index: 2;
+  /* top:-14px, and the padding put back, because `top: 0` sticks BELOW the
+     panel's own 14px top padding and leaves a gap for the scrolled content to
+     show through above the tabs. */
+  padding: 14px 0 4px; margin-bottom: 8px; }
 #panel .pane[hidden] { display: none; }
 #panel section { margin-bottom: 20px; }
 #panel h2 {
@@ -79,8 +82,26 @@ main {
   background: #fff;
   border-radius: 3px;
 }
+/* The two tab strips inside the panel are NOT panel buttons: the rule above
+   is an id selector and would otherwise win over `.tabs .tab` and
+   `.methodtabs button`, handing them a 14px font and a 21px line box. That
+   is what made one tab wrap and its neighbour not, so a row of buttons meant
+   to read as one control came out at three different heights. */
+#panel .tabs .tab,
+#panel .methodtabs button {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+/* `font: inherit` in the id rule above also resets the weight, so the active
+   tab has to say so again from a selector that outranks it. */
+#panel .tabs .tab.active,
+#panel .methodtabs button.active { font-weight: 600; }
 #panel button { cursor: pointer; }
 #panel button:hover { background: #eee; }
+/* A full-width select sits in the same stack as the full-width buttons, so it
+   is given their height rather than its own intrinsic 30px. */
+#panel section > select { min-height: 33px; }
 
 .meta { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
 .hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-style: italic; }
@@ -131,7 +152,80 @@ main {
   font-weight: 600;
 }
 .tabs .tab:hover { background: #eee; }
+.methodtabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* EVERY BUTTON THE SAME HEIGHT. `1fr` rows are all given the height of the
+     tallest, so "Trace whole profile" wrapping onto two lines lifts the whole
+     grid rather than leaving one button taller than the rest. */
+  grid-auto-rows: 1fr;
+  gap: 5px;
+}
+.methodtabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 34px;
+  --method-border: #666;
+  --method-bg: #f3f3f3;
+  --method-active: #e8e8e8;
+  padding: 5px 7px;
+  border: 1px solid var(--method-border);
+  border-radius: 4px;
+  background: var(--method-bg);
+  color: #222;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.methodtabs button.active {
+  background: var(--method-active);
+  border-color: var(--method-border);
+  color: inherit;
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--method-border);
+}
+.methodtabs .method-draw {
+  --method-border: #0072BD; --method-bg: #e8f2fb; --method-active: #cfe5f7;
+}
+.methodtabs .method-trace {
+  --method-border: #77AC30; --method-bg: #edf6e6; --method-active: #dcedcb;
+}
+.methodtabs .method-three {
+  --method-border: #D95319; --method-bg: #fbece5; --method-active: #f5d4c3;
+}
+.methodtabs .method-ring {
+  --method-border: #7E2F8E; --method-bg: #f2e9f4; --method-active: #e4d0e9;
+}
+.methodtabs .method-profile {
+  --method-border: #4D4D4D; --method-bg: #eeeeee; --method-active: #dddddd;
+}
 #side canvas[hidden] { display: none; }
+.texttab {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.texttab[hidden] { display: none; }
+.texttab textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 260px;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  background: #fff;
+  color: inherit;
+}
+.texttab textarea[readonly] {
+  color: #444;
+  background: #f7f7f7;
+}
 .plot-status {
   min-height: 18px;
   text-align: center;
@@ -298,7 +392,19 @@ footer {
 
 /* ------------------------------------------------------------ tracing UI -- */
 #panel .row { display: flex; gap: 6px; margin: 6px 0; }
-#panel .row button { flex: 1; }
+/* Half-width buttons: at the panel's 14px a label like "Generate blocks"
+   wraps and the pair comes out 54px tall beside a 33px pair in the same
+   section. A notch smaller keeps almost every label on one line, and the
+   min-height keeps the two that do not from shrinking the row. */
+#panel .row button {
+  flex: 1;
+  font-size: 13px;
+  min-height: 33px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
 #panel label.file { display: block; font-size: 13px; margin-bottom: 6px; }
 #panel label.file input { width: 100%; font-size: 12px; margin-top: 3px; }
 #panel label.inline {
@@ -317,9 +423,17 @@ footer {
 }
 #panel button.armed:hover { background: #8e1f26; }
 
-#panel label.inline select { width: 110px; padding: 3px 4px; font: inherit;
-  border: 1px solid var(--line); border-radius: 3px; }
-#panel button + button { margin-top: 6px; }
+#panel label.inline select { width: 110px; padding: 3px 5px; font: inherit;
+  border: 1px solid var(--line); border-radius: 3px;
+  /* The number input beside it is 27.5px tall; a select left to its own
+     intrinsic height is 25px, and the row reads as misaligned. */
+  height: 27.5px; }
+/* Stacked buttons want air between them; buttons SIDE BY SIDE in a tab strip
+   or a .row do not. Left unscoped, this margin was collapsed into the cross
+   size of every flex/grid line: the first button in a strip stretched to the
+   full line and each of its neighbours came out exactly 6px shorter, which is
+   why the tabs and the block-generation buttons were all different heights. */
+#panel section > button + button { margin-top: 6px; }
 #panel section > button { margin-top: 4px; }
 
 ul.forces { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; }

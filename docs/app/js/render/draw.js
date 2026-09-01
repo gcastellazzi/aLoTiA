@@ -29,7 +29,9 @@ function hslToCss(h, s, l) {
 
 /** Outline and fill the voussoirs. */
 export function drawBlocks(ax, polys, opt = {}) {
-  const { labels = false, highlight = -1 } = opt;
+  const {
+    labels = false, highlight = -1, colours = null,
+  } = opt;
   ax.clipped((c) => {
     polys.forEach((block, k) => {
       for (const p of piecesOf(block)) {
@@ -39,7 +41,7 @@ export function drawBlocks(ax, polys, opt = {}) {
           if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
         }
         c.closePath();
-        c.fillStyle = k === highlight ? '#ffd27f' : brickColour(k);
+        c.fillStyle = k === highlight ? '#ffd27f' : (colours?.[k] ?? brickColour(k));
         c.fill();
         c.strokeStyle = 'rgba(40,40,40,0.75)';
         c.lineWidth = k === highlight ? 1.6 : 0.8;

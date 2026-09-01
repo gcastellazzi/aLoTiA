@@ -53,6 +53,8 @@ export function serialise(state, controls = {}, imageName = null) {
     // `image` the file the student traced over.
     exampleName: state.exampleName ?? m.name ?? null,
     imageName: imageName ?? m.image ?? null,
+    notes: String(state.notes ?? ''),
+    log: (state.log ?? []).map((row) => String(row)),
     image: state.imageData
       ? {
         name: state.imageData.name ?? imageName ?? m.image ?? null,
@@ -72,6 +74,8 @@ export function serialise(state, controls = {}, imageName = null) {
         image: m.image ?? null,
         imageSize: m.imageSize ? [...m.imageSize] : null,
         imageDrawSize: m.imageDrawSize ? [...m.imageDrawSize] : null,
+        groups: m.groups?.length ? m.groups.map((g) => ({ ...g })) : undefined,
+        blockGroups: m.blockGroups?.length ? m.blockGroups.map((id) => Number(id)) : undefined,
         blocks: (m.blocks ?? []).map(polygon),
         joints: (m.joints ?? []).map((j) => ({ a: [...j.a], b: [...j.b] })),
         centroids: points(m.centroids),
@@ -174,11 +178,17 @@ export function deserialise(text) {
       && p.x.length === p.y.length)) {
       throw new Error('the file has a malformed block');
     }
+    if (m.blockGroups?.length && m.blockGroups.length !== (m.blocks ?? []).length) {
+      throw new Error('the file has malformed block groups');
+    }
   }
 
   const f = data.forces;
   if (f && (f.points ?? []).length !== (f.magnitudes ?? []).length) {
     throw new Error('the file has a force without a magnitude, or the reverse');
+  }
+  if (data.log && !Array.isArray(data.log)) {
+    throw new Error('the file has a malformed project log');
   }
   if (data.image && (
     typeof data.image.dataUrl !== 'string'
@@ -206,6 +216,8 @@ export function deserialise(text) {
     },
     dome: { poleni: false, angleDeg: 15, axisX: 0, ...(data.dome ?? {}) },
     imageData: data.image ?? null,
+    notes: String(data.notes ?? ''),
+    log: (data.log ?? []).map((row) => String(row)),
   };
 }
 

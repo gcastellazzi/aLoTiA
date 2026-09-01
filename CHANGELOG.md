@@ -7,6 +7,92 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ### Added
 
+- **Block generation is five named tools, not one long panel.** *Draw blocks*,
+  *Trace intr/extr*, *3-point arch*, *Parametric arch* and *Trace whole
+  profile* are a colour-coded strip, and only the chosen one's controls are on
+  screen. The panel used to show all five at once, which read as one procedure
+  with many steps rather than five ways of answering the same question.
+
+- **A 3-point circular arch.** Three clicks on the intrados and three on the
+  extrados, and the circle through each triple is the face. Where an arch is
+  known to be circular this is the whole of its geometry, and it is quicker and
+  far more repeatable than tracing by hand a curve one already knows to be an
+  arc.
+
+- **Blocks belong to groups, and a group carries its own material and
+  thickness.** Every use of a generator puts the voussoirs it makes into a
+  group; the unit weight and the out-of-plane thickness are then applied either
+  to one named group or to all of them. A ring traced from a photograph, a
+  spandrel cut from a second outline and a pier drawn corner by corner become
+  one model with three materials and three widths. *Group colours* paints them
+  and labels each group on the drawing. The funicular is indifferent to the
+  mixture: whatever a block is made of, its weight is one station on the load
+  line.
+
+- **A drawn block snaps to the blocks already there, and the joints between
+  them are found.** Three things that are really one:
+
+  *The click snaps to a corner.* Within eleven screen pixels of an existing
+  corner it lands on it exactly, and a green square says which corner before the
+  click is made. The tolerance is in pixels rather than in model units, because
+  the tolerance a hand has is one on the screen and must not grow and shrink
+  with the zoom. Only committed blocks are offered: snapping to the corner just
+  placed would turn a slightly short click into an edge of no length.
+
+  *Failing a corner, it snaps onto an EDGE and splits it.* A new block rarely
+  meets an old one corner to corner — a pier lands in the middle of a springing
+  face, a second course starts halfway along the back of the first. A point that
+  merely lies on the edge is not enough, because `contactJoint` looks for
+  vertices of either block on the boundary of the other, so the edge is broken
+  in two and the point becomes a vertex of the old block as well as of the new.
+  It is added on a straight edge, so the polygon's area, centroid and weight are
+  unchanged; only its description gains a point. A green diamond marks this
+  case, to distinguish it from the corner that leaves the old block alone.
+
+  *The joints are then recovered.* A block drawn by hand used to arrive with no
+  cuts at all, and the model kept whatever joints it had from before — one fewer
+  than it should have, silently, so admissibility was read against the wrong
+  list. **A hand-built arch could not be analysed at all.** Committing a block
+  now runs the same recovery `joints.js` performs on a stored example, over four
+  candidate orders — as drawn, the reverse of that, and either way along the
+  arch — which between them cover how blocks actually arrive. Five quadrilaterals
+  drawn corner to corner are now a chain with six joints, two springings, an
+  admissibility verdict and a collapse band, which they were not before. Where
+  no order is a chain the blocks genuinely are not one, and the panel says so
+  and names the pair that does not touch instead of guessing.
+
+  The same recovery runs when a second traced run is appended to the first,
+  where the concatenated joint list was `blocks + runs` long against the
+  `blocks + 1` every panel downstream indexes into.
+
+- **Blocks are cleared a group at a time, from a control that is always in
+  view.** *Clear blocks in* takes either one named group or all of them, and it
+  sits with the group menus rather than inside a method's pane: what was added
+  by tracing is often removed while the parametric tool is on screen. It makes a
+  group the unit of editing — trace a ring, add a fill, decide the fill was
+  wrong, drop it and add another — which is what having groups at all is for.
+  The joints of what remains are recovered from the polygons rather than sliced
+  out of the old array, since that array is a concatenation with no index to cut
+  at once two methods have been mixed; where the remainder is not a chain the
+  panels say so, as they already do for a stored example. The tracer's own
+  *Clear* becomes **Clear curves** and now does only that.
+
+- **Project notes and a project log**, as two tabs beside the plots and two
+  fields in the saved file. The notes are the student's, for what the file
+  cannot infer — where the photograph came from, what was assumed. The log is
+  the application's, append-only, one timestamped line for every action taken,
+  so the sequence that produced a result can be read off the file instead of
+  being remembered.
+
+- **The traced image travels inside the session file**, so a saved analysis is
+  one self-contained document that opens on another machine. A file that names
+  an image it does not carry says which one and offers to load it, rather than
+  opening with an empty background and no explanation.
+
+- **Saving goes through the browser's file picker** where there is one, so the
+  folder and the name are chosen in one dialog. Browsers without the File
+  System Access API keep the old prompt-and-download path.
+
 - **The horizontal thrust slider is repeated under the arch**, mirrored both
   ways with the one in the panel and sharing its enabled state. The panel
   scrolls; the parameter a student moves continuously should not be able to
@@ -45,6 +131,22 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ### Changed
 
+- **An image loaded from disk is mirrored on the way in.** The drawing has *y*
+  running upward, so pixel row 0 — the top of a photograph — lands at the
+  bottom of the frame and the picture was drawn upside down: a student's own
+  photograph came in with the arch hanging downwards and the lettering
+  reversed, and had to be put right by hand with *Flip image*. The examples
+  that ship with the app are stored already mirrored, which is why the defect
+  was invisible until someone loaded a file of their own. The mirrored copy is
+  what is saved, so reopening a session shows what was traced. *Flip image*
+  remains, for a file that needs it the other way.
+
+- **Switching to the LoT panel no longer throws away the plot on the right.**
+  It forced the force polygon back on screen whatever was there, so reaching
+  for the thrust slider cost a student the t/ri study or the N–M diagram they
+  were reading. It now does that only from the Notes and Log tabs, which carry
+  no drawing at all.
+
 - **Changing the unit system converts, rather than relabelling.** It used to
   change the labels alone, so an arch of 2 m became "2 mm" — a different arch,
   with nothing on screen to say so, because every readout agreed with every
@@ -72,6 +174,52 @@ and the project uses [semantic versioning](https://semver.org/).
   to discard whatever had been entered.
 
 ### Fixed
+
+- **The horizontal thrust was misreported in two of the three modes.** With
+  *Drive from the thrust* on, or with both ends imposed, `recompute` returned
+  before it wrote the reading, so all three copies went on showing the last
+  free-mode value and the words "×1.00 of the reference pole". Pressing **H
+  min** moved the slider, moved the line and turned the verdict from
+  hyperstatic to isostatic while the number beside it did not change. Each mode
+  now states its own thrust and how it was arrived at: a multiple of the
+  reference pole, a fraction of H max, or carried from A to B.
+
+- **H min and H max moved only one of the three sliders.** The panel's slider
+  went to the end of its travel while the copies under the plot and in the LoT
+  pane stayed at mid-travel, so the control the student was looking at
+  disagreed with the arch.
+
+- **One slider tick redrew everything three times.** The two mirrored thrust
+  sliders had been given a recompute listener of their own on top of the
+  mirroring, which already forwards to the panel's slider — six full canvas
+  clears where there should be two, on the one control that is dragged
+  continuously.
+
+- **The header and the scale line went stale.** Tracing an arch, cutting a
+  profile, drawing a block or reopening a saved file left "no arch yet" or
+  "0 blocks" above a drawn arch, and "not scaled — lengths are pixels" under a
+  ring built in metres. An image scaled before any block is traced now reports
+  the size of the image rather than denying that anything is scaled.
+
+- **The 3-point arch had no subdivision control.** It read the parametric
+  ring's block count, falling back to the tracer's, and the method tabs hide
+  both of those panes — so the number of voussoirs was stuck at whatever those
+  invisible fields held, which is the default 16, with nothing on screen to
+  change it. The pane now carries its own *Blocks* field, as the other three
+  generators do.
+
+- **Every hand-drawn block became a group of its own.** A pier drawn stone by
+  stone made twenty groups, twenty rows in both "apply to" menus and twenty
+  colours. A run of drawn blocks is one group; a new one starts when the last
+  group was made some other way.
+
+- **The panel's buttons were all different heights.** `#panel button + button`
+  set a 6px top margin that the flex and grid strips folded into their line
+  height, so the first button of a strip stretched and each of its neighbours
+  came out exactly 6px shorter; and an id selector was overriding the tab
+  strips' own font, so a label wrapped in one button and not in its neighbour.
+  The block-generation buttons are now one grid of equal cells, and the selects
+  match the number fields beside them.
 
 - **The line of thrust could leave the masonry.** Driven from the thrust, the
   slider ran fifteen per cent past both collapse thrusts, and out there the

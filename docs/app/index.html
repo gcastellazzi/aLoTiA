@@ -30,8 +30,8 @@
       <p id="scaleSource" class="meta scale-source" hidden></p>
       <p id="warn" class="warn" hidden></p>
     </section>
-    <section id="traceSection">
-      <h2>Trace your own</h2>
+    <section id="imageSection">
+      <h2>Image and scale</h2>
       <label class="file">Load an image
         <input type="file" id="imageFile" accept="image/*">
       </label>
@@ -50,6 +50,40 @@
         <input type="number" id="imageRefLength" min="0" step="0.1" value="10">
       </label>
       <button id="applyImageRefScale" disabled>Apply distance scale</button>
+    </section>
+    <section id="traceSection">
+      <h2>Block generation</h2>
+      <div class="methodtabs" role="tablist">
+        <button class="active method-draw" type="button" data-method="draw">Draw blocks</button>
+        <button class="method-trace" type="button" data-method="trace">Trace intr/extr</button>
+        <button class="method-three" type="button" data-method="three">3-point arch</button>
+        <button class="method-ring" type="button" data-method="ring">Parametric arch</button>
+        <button class="method-profile" type="button" data-method="profile">Trace whole profile</button>
+      </div>
+    </section>
+    <section>
+      <h2>Block properties</h2>
+      <label class="inline"><span id="gammaLabel">Unit weight kN/m³</span>
+        <input type="number" id="gamma" min="0" step="0.5" value="20">
+      </label>
+      <label class="inline">Apply material to
+        <select id="gammaTarget"></select>
+      </label>
+      <label class="inline"><span id="thickLabel">Thickness m</span>
+        <input type="number" id="thick" min="0" step="0.1" value="1">
+      </label>
+      <label class="inline">Apply thickness to
+        <select id="thickTarget"></select>
+      </label>
+      <label><input type="checkbox" id="showGroups"> Group colours</label>
+      <label class="inline">Clear blocks in
+        <select id="clearTarget"></select>
+      </label>
+      <button id="clearBlocks" disabled>Clear blocks</button>
+      <p id="groupStatus" class="meta">no groups yet</p>
+    </section>
+    <section class="method-section" id="methodTrace" data-method-pane="trace" hidden>
+      <h2>Trace intrados/extrados</h2>
       <div class="row">
         <button id="traceInner">Trace intrados</button>
         <button id="traceOuter">Trace extrados</button>
@@ -59,20 +93,14 @@
       <label class="inline">Blocks
         <input type="number" id="nBlocks" min="1" max="200" value="16">
       </label>
-      <label class="inline"><span id="gammaLabel">Unit weight kN/m³</span>
-        <input type="number" id="gamma" min="0" step="0.5" value="20">
-      </label>
-      <label class="inline"><span id="thickLabel">Thickness m</span>
-        <input type="number" id="thick" min="0" step="0.1" value="1">
-      </label>
       <div class="row">
         <button id="makeBlocks">Generate blocks</button>
-        <button id="clearTrace">Clear</button>
+        <button id="clearTrace">Clear curves</button>
       </div>
       <p id="traceStatus" class="meta"></p>
     </section>
-    <section>
-      <h2>Circular ring</h2>
+    <section class="method-section" id="methodRing" data-method-pane="ring" hidden>
+      <h2>Parametric circular arch</h2>
       <p class="hint">An exact ring from its numbers, with no image to trace.
         The published figures for the admissible band and the least admissible
         thickness are computed on this ring, so a point of either can be
@@ -89,25 +117,22 @@
       <button id="makeRing">Generate ring</button>
       <p id="ringStatus" class="meta">uses the unit weight and thickness above</p>
     </section>
-    <section>
+    <section class="method-section" id="methodThree" data-method-pane="three" hidden>
       <h2>3-point circular arch</h2>
       <div class="row">
-        <button id="pickInner1">I1</button>
-        <button id="pickInner2">I2</button>
-        <button id="pickInner3">I3</button>
+        <button id="pickInnerArc">Pick 3 intrados points</button>
+        <button id="pickOuterArc">Pick 3 extrados points</button>
       </div>
-      <div class="row">
-        <button id="pickOuter1">E1</button>
-        <button id="pickOuter2">E2</button>
-        <button id="pickOuter3">E3</button>
-      </div>
+      <label class="inline">Blocks
+        <input type="number" id="threePointN" min="1" max="200" value="16">
+      </label>
       <div class="row">
         <button id="makeThreePointRing" disabled>Generate 3-point arch</button>
         <button id="clearThreePointRing">Clear pts</button>
       </div>
       <p id="threePointRingStatus" class="meta">pick 3 intrados and 3 extrados points</p>
     </section>
-    <section>
+    <section class="method-section" id="methodProfile" data-method-pane="profile" hidden>
       <h2>Trace a whole profile</h2>
       <div class="row">
         <button id="traceProfile">Trace an outline</button>
@@ -125,14 +150,17 @@
       <p id="profileStatus" class="meta">no outline traced</p>
     </section>
 
-    <section>
+    <section class="method-section" id="methodDraw" data-method-pane="draw">
       <h2>Add a block</h2>
       <label class="inline">Sides
         <input type="number" id="nSides" min="3" max="24" value="4">
       </label>
       <button id="addBlock">Draw a block</button>
       <p class="hint">Click the corners in turn. Useful for a pier, a fill, or
-        anywhere the radial cut does not suit the shape.</p>
+        anywhere the radial cut does not suit the shape. A click near a corner
+        of a block already drawn snaps onto it &mdash; a green square shows
+        which &mdash; so the two meet exactly and the joint between them can be
+        recovered.</p>
     </section>
 
     <section>
@@ -304,10 +332,20 @@
         <button class="tab" id="tabSolid" role="tab">Blocks</button>
         <button class="tab" id="tabHeyman" role="tab">Heyman</button>
         <button class="tab" id="tabRadius" role="tab">t/ri</button>
+        <button class="tab" id="tabNotes" role="tab">Notes</button>
+        <button class="tab" id="tabLog" role="tab">Log</button>
       </div>
       <canvas id="force"></canvas>
       <canvas id="solid" hidden></canvas>
       <canvas id="plot" hidden></canvas>
+      <div class="texttab" id="notesPane" hidden>
+        <textarea id="projectNotes" spellcheck="true"
+          placeholder="Image credits, assumptions, steps needed to rerun the analysis..."></textarea>
+      </div>
+      <div class="texttab" id="logPane" hidden>
+        <textarea id="projectLog" readonly
+          placeholder="The project log will appear here."></textarea>
+      </div>
       <div class="plotmetric" id="radiusMetric" hidden>
         <button class="active" id="radiusByWeight" type="button">Weight</button>
         <button id="radiusByThrust" type="button">Horizontal thrust</button>

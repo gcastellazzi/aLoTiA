@@ -13,7 +13,7 @@ import {
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary,
 } from './render/draw.js';
-import { bounds, area as signedAreaOf } from './core/geometry.js';
+import { bounds, area as signedAreaOf, piecesOf } from './core/geometry.js';
 import {
   forcePolygon, funicular, poleFromForcePolygon, hangingCable, jointCrossings,
   freeThrustLine, poleForEnds,
@@ -22,6 +22,7 @@ import { fromExample, poleOf, consistency } from './core/model.js';
 import {
   blocksBetween, checkTrace, weighBlocks, centroidsOf, springings,
 } from './core/trace.js';
+import { jointsFromBlocks } from './core/joints.js';
 import {
   blocksLike, circularRing, circularRingThroughPoints, betweenEnds,
 } from './core/blocks.js';
@@ -66,6 +67,7 @@ const ui = {
   showRays: el('showRays'), showReactions: el('showReactions'),
   showMech: el('showMech'),
   showScale: el('showScale'),
+  showGroups: el('showGroups'),
   mechOn: el('mechOn'), mechVerdict: el('mechVerdict'),
   mechCount: el('mechCount'), mechBand: el('mechBand'),
   mechAmp: el('mechAmp'), goHmin: el('goHmin'), goHmax: el('goHmax'),
@@ -73,6 +75,9 @@ const ui = {
   pickAxis: el('pickAxis'), domeStatus: el('domeStatus'),
   tabForce: el('tabForce'), tabSolid: el('tabSolid'),
   tabHeyman: el('tabHeyman'), tabRadius: el('tabRadius'),
+  tabNotes: el('tabNotes'), tabLog: el('tabLog'),
+  notesPane: el('notesPane'), logPane: el('logPane'),
+  projectNotes: el('projectNotes'), projectLog: el('projectLog'),
   radiusMetric: el('radiusMetric'),
   radiusByWeight: el('radiusByWeight'), radiusByThrust: el('radiusByThrust'),
   radiusASteps: el('radiusASteps'), radiusBSteps: el('radiusBSteps'),
@@ -102,14 +107,17 @@ const ui = {
   nBlocks: el('nBlocks'), gamma: el('gamma'), thick: el('thick'),
   ringRi: el('ringRi'), ringTri: el('ringTri'), ringN: el('ringN'),
   makeRing: el('makeRing'), ringStatus: el('ringStatus'),
-  pickInner1: el('pickInner1'), pickInner2: el('pickInner2'), pickInner3: el('pickInner3'),
-  pickOuter1: el('pickOuter1'), pickOuter2: el('pickOuter2'), pickOuter3: el('pickOuter3'),
+  pickInnerArc: el('pickInnerArc'), pickOuterArc: el('pickOuterArc'),
+  threePointN: el('threePointN'),
   makeThreePointRing: el('makeThreePointRing'),
   clearThreePointRing: el('clearThreePointRing'),
   threePointRingStatus: el('threePointRingStatus'),
   thickLabel: el('thickLabel'),
   makeBlocks: el('makeBlocks'), clearTrace: el('clearTrace'),
   traceStatus: el('traceStatus'), gammaLabel: el('gammaLabel'),
+  gammaTarget: el('gammaTarget'), thickTarget: el('thickTarget'),
+  clearTarget: el('clearTarget'), clearBlocks: el('clearBlocks'),
+  groupStatus: el('groupStatus'),
   forceMag: el('forceMag'), forceLabel: el('forceLabel'),
   addForce: el('addForce'), clearForces: el('clearForces'),
   forceList: el('forceList'),
@@ -134,6 +142,7 @@ const state = {
   model: null,
   image: null,
   imageData: null,
+  fitAfterImageLoad: false,
   basePole: null,   // the pole as saved: thrust slider is relative to it
   mech: null,       // the hinge analysis, when the mechanism tab is driving
   band: null,       // the two collapse thrusts, once computed
@@ -157,6 +166,9 @@ const state = {
   radiusMetric: 'weight',
   showSolidAxes: false,
   frozenBranch: null,
+  notes: '',
+  log: [],
+  snap: null,       // the corner a click would land on, while a block is drawn
   pole: null,
   fp: null,
   lot: null,
@@ -171,6 +183,11 @@ const state = {
   forces: { points: [], magnitudes: [], placing: false },
 };
 
+const GROUP_COLOURS = [
+  '#8ecae6', '#ffb703', '#90be6d', '#f28482', '#b8a1e3', '#80cbc4',
+  '#f6bd60', '#a3b18a', '#cdb4db', '#adb5bd',
+];
+
 function clearPlotState({ keepStudy = false } = {}) {
   state.selectedJoint = null;
   state.frozenBranch = null;
@@ -180,6 +197,248 @@ function clearPlotState({ keepStudy = false } = {}) {
     state.ringAuto = false;
     state.visibleStudyTris = [];
   }
+}
+
+function syncProjectText() {
+  ui.projectNotes.value = state.notes ?? '';
+  ui.projectLog.value = (state.log ?? []).join('\n');
+  ui.projectLog.scrollTop = ui.projectLog.scrollHeight;
+}
+
+function appendLog(message) {
+  const text = String(message ?? '').trim();
+  if (!text) return;
+  const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  state.log = [...(state.log ?? []), `${stamp}  ${text}`];
+  syncProjectText();
+}
+
+function groupColour(index) {
+  return GROUP_COLOURS[index % GROUP_COLOURS.length];
+}
+
+function groupName(method, index) {
+  const names = {
+    draw: 'Drawn blocks',
+    trace: 'Trace intrados/extrados',
+    three: '3-point circular arch',
+    ring: 'Parametric circular arch',
+    profile: 'Traced profile',
+    imported: 'Imported/example blocks',
+  };
+  return `${names[method] ?? 'Group'} ${index + 1}`;
+}
+
+function ensureGroups() {
+  const m = state.model;
+  if (!m) return;
+  const n = m.blocks?.length ?? 0;
+  m.groups = Array.isArray(m.groups) ? m.groups : [];
+  m.blockGroups = Array.isArray(m.blockGroups) ? m.blockGroups.slice(0, n) : [];
+  const gamma = Number(ui.gamma.value) || 20;
+  const thickness = Math.max(0, Number(ui.thick.value) || 1);
+  if (n && !m.groups.length) {
+    m.groups.push({
+      id: 1,
+      name: groupName('imported', 0),
+      method: 'imported',
+      gamma,
+      thickness,
+      color: groupColour(0),
+    });
+  }
+  for (let i = 0; i < n; i++) {
+    if (!m.blockGroups[i]) m.blockGroups[i] = m.groups[0]?.id ?? 1;
+  }
+  m.groups.forEach((g, i) => {
+    if (!g.id) g.id = i + 1;
+    if (!g.name) g.name = groupName(g.method ?? 'imported', i);
+    if (!Number.isFinite(Number(g.gamma))) g.gamma = gamma;
+    if (!Number.isFinite(Number(g.thickness))) g.thickness = thickness;
+    if (!g.color) g.color = groupColour(i);
+  });
+}
+
+function newGroup(method, count) {
+  const m = state.model;
+  if (!m) return null;
+  const n = m.blocks?.length ?? 0;
+  const gamma = Number(ui.gamma.value) || 20;
+  const thickness = Math.max(0, Number(ui.thick.value) || 1);
+  m.groups = Array.isArray(m.groups) ? m.groups : [];
+  m.blockGroups = Array.isArray(m.blockGroups) ? m.blockGroups.slice(0, n) : [];
+  const firstNew = Math.max(0, n - Math.max(0, count));
+
+  if (!m.groups.length && firstNew > 0) {
+    m.groups.push({
+      id: 1,
+      name: groupName('imported', 0),
+      method: 'imported',
+      gamma,
+      thickness,
+      color: groupColour(0),
+    });
+  }
+  m.groups.forEach((old, i) => {
+    if (!old.id) old.id = i + 1;
+    if (!old.name) old.name = groupName(old.method ?? 'imported', i);
+    if (!Number.isFinite(Number(old.gamma))) old.gamma = gamma;
+    if (!Number.isFinite(Number(old.thickness))) old.thickness = thickness;
+    if (!old.color) old.color = groupColour(i);
+  });
+  for (let i = 0; i < firstNew; i++) {
+    if (!m.blockGroups[i]) m.blockGroups[i] = m.groups[0]?.id ?? 1;
+  }
+
+  const id = Math.max(0, ...(m.groups ?? []).map((g) => Number(g.id) || 0)) + 1;
+  const g = {
+    id,
+    name: groupName(method, m.groups.length),
+    method,
+    gamma,
+    thickness,
+    color: groupColour(m.groups.length),
+  };
+  m.groups = [...(m.groups ?? []), g];
+  for (let i = firstNew; i < n; i++) m.blockGroups[i] = id;
+  reportGroups();
+  return g;
+}
+
+function selectedGroupId(select) {
+  return select.value === 'all' ? 'all' : Number(select.value);
+}
+
+function reportGroups() {
+  const m = state.model;
+  if (m) ensureGroups();
+  const groups = m?.groups ?? [];
+  for (const sel of [ui.gammaTarget, ui.thickTarget, ui.clearTarget]) {
+    const old = sel.value || 'all';
+    sel.innerHTML = '';
+    const all = document.createElement('option');
+    all.value = 'all';
+    all.textContent = 'All';
+    sel.append(all);
+    groups.forEach((g, i) => {
+      const o = document.createElement('option');
+      o.value = String(g.id);
+      o.textContent = `${i + 1}. ${g.name}`;
+      sel.append(o);
+    });
+    sel.value = [...sel.options].some((o) => o.value === old) ? old : 'all';
+  }
+  ui.clearBlocks.disabled = !(m?.blocks?.length);
+  if (!groups.length) {
+    ui.groupStatus.textContent = 'no groups yet';
+    return;
+  }
+  const n = m.blockGroups ?? [];
+  ui.groupStatus.textContent = groups.map((g, i) => {
+    const count = n.filter((id) => id === g.id).length;
+    return `${i + 1}: ${count} blocks`;
+  }).join(' · ');
+}
+
+function applyGroupProperty(kind, value) {
+  const m = state.model;
+  if (!m?.blocks?.length) return;
+  ensureGroups();
+  const target = selectedGroupId(kind === 'gamma' ? ui.gammaTarget : ui.thickTarget);
+  for (const g of m.groups) {
+    if (target === 'all' || g.id === target) g[kind] = value;
+  }
+  reweigh();
+  refreshRingStudy();
+  state.band = null; state.bandKey = null;
+  state.frozenBranch = null;
+  recompute();
+  fitForceView();
+  reportGroups();
+  draw();
+}
+
+/**
+ * Delete the blocks of one group, or all of them.
+ *
+ * A GROUP IS THE UNIT OF EDITING. Blocks arrive one generator at a time, so a
+ * generator's worth of them is what a student wants to take back: trace a ring,
+ * add a fill, decide the fill was wrong, drop it and add another. That is why
+ * this control is not inside a method's pane -- what was added by tracing may
+ * well be removed while the parametric tool is on screen -- and why it deletes
+ * a group rather than a block.
+ *
+ * THE JOINTS ARE RE-RECOVERED, not sliced out of the old array. That array is a
+ * concatenation: one run of n+1 joints per generator, and none at all for
+ * hand-drawn blocks, so once two methods have been mixed there is no index to
+ * cut at. `joints.js` already recovers the cuts of a chain from the polygons
+ * themselves, and where what is left is not a chain it says so and the panels
+ * explain themselves exactly as they do for a stored example.
+ */
+function clearBlocks(target) {
+  const m = state.model;
+  const had = m?.blocks?.length ?? 0;
+  if (!had) return;
+  ensureGroups();
+
+  const keep = target === 'all'
+    ? []
+    : m.blocks.map((_, i) => i).filter((i) => m.blockGroups[i] !== target);
+  if (keep.length === had) return;              // that group holds nothing
+  const gone = m.groups.find((g) => g.id === target);
+  const label = target === 'all' ? 'all blocks' : (gone?.name ?? `group ${target}`);
+  const pick = (a) => (Array.isArray(a) ? keep.map((i) => a[i]) : a);
+
+  if (!keep.length) {
+    state.model = {
+      ...m,
+      blocks: [], centroids: [], weights: [], areas: [], thickness: [],
+      joints: null, jointRecovery: null,
+      groups: [], blockGroups: [],
+      pointA: null, pointB: null,
+      forcePolygon: null, thrustLine: null,
+    };
+    state.fp = null; state.lot = null; state.basePole = null;
+  } else {
+    state.model = {
+      ...m,
+      blocks: keep.map((i) => m.blocks[i]),
+      centroids: pick(m.centroids),
+      areas: pick(m.areas),
+      weights: pick(m.weights),
+      thickness: pick(m.thickness),
+      blockGroups: keep.map((i) => m.blockGroups[i]),
+      groups: m.groups.filter((g) => g.id !== target),
+      // Cleared first, so that recoverJoints cannot mistake the old list for
+      // one that still describes what is left.
+      joints: null, jointRecovery: null,
+      pointA: null, pointB: null,
+      forcePolygon: null, thrustLine: null,
+    };
+    recoverJoints();
+  }
+
+  clearPlotState();
+  state.consistent = { ok: true, reason: null, extraRows: 0 };
+  state.band = null; state.bandKey = null;
+  state.mech = null; state.crossings = null;
+  state.frozenBranch = null;
+  state.ringStudySource = null;
+  state.ringAuto = false;
+  state.ends = { A: null, B: null, picking: null, construction: null };
+  if (state.model.blocks.length) reweigh();
+  setThrustSlider(50);
+
+  reportGroups();
+  describe();
+  reportBlocks();
+  reportScale();
+  reportTrace();
+  recompute();
+  fitViews();
+  const gone2 = had - keep.length;
+  appendLog(`Cleared ${gone2} block${gone2 === 1 ? '' : 's'} — ${label}`);
+  draw();
 }
 
 function clearThreePointRing() {
@@ -326,6 +585,8 @@ function newWork() {
   state.ringStudySource = null;
   state.ringAuto = false;
   state.frozenBranch = null;
+  state.notes = '';
+  state.log = [];
   state.consistent = { ok: true, reason: null, extraRows: 0 };
   state.axisPicked = false;
   ui.example.value = '';
@@ -343,6 +604,8 @@ function newWork() {
   listForces();
   reportProfiles();
   reportMechanism();
+  reportGroups();
+  appendLog('New project');
   mainAx.begin(); mainAx.decorate();
   forceAx.begin(); forceAx.decorate();
   draw();
@@ -384,11 +647,14 @@ async function loadExample(file) {
     state.ringStudySource = null;
     state.ringAuto = false;
     state.frozenBranch = null;
+    state.notes = '';
+    state.log = [];
     state.image = null;
     state.imageData = null;
     state.trace = { inner: [], outer: [], armed: null, cursor: null };
     clearThreePointRing();
     state.forces = { points: [], magnitudes: [], placing: false };
+    appendLog(`Failed to load example ${file}: ${err.message}`);
     assessAdmissibility();
     reportMechanism();
     draw();
@@ -397,6 +663,7 @@ async function loadExample(file) {
   state.model = model;
   state.consistent = consistency(model);
   clearPlotState();
+  ensureGroups();
 
   // The pole the example was saved with; the slider moves around it.
   try {
@@ -414,7 +681,7 @@ async function loadExample(file) {
     const total = (model.weights ?? []).reduce((a, b) => a + b, 0);
     state.basePole = total > 0 ? [0.3 * total, -0.5 * total] : null;
   }
-  ui.thrust.value = 50;
+  setThrustSlider(50);
 
   // The saved examples were traced in MATLAB axes with y increasing UPWARD,
   // even when the coordinates are image pixels, because the user flips the
@@ -437,6 +704,8 @@ async function loadExample(file) {
   state.ringStudySource = null;
   state.ringAuto = false;
   state.frozenBranch = null;
+  state.notes = '';
+  state.log = [];
   state.mech = null;
   state.crossings = null;
   state.image = null;
@@ -452,6 +721,8 @@ async function loadExample(file) {
   reportDome();
   recompute();
   fitViews();
+  reportGroups();
+  appendLog(`Loaded example ${file}`);
   draw();
 }
 
@@ -690,6 +961,34 @@ function armEnd(which) {
 }
 
 /** Where the thrust slider must sit to ask for a given thrust fraction. */
+/**
+ * The horizontal thrust, written to all three copies of the reading.
+ *
+ * There are three sliders and three readings -- panel, under the plot, LoT
+ * pane -- and they must never disagree. `suffix` says how the thrust was
+ * arrived at, which is different in each of the three modes: free, held
+ * inside the collapse band, or carried between two imposed ends.
+ */
+function showThrust(suffix = '') {
+  const m = state.model;
+  const scaled = !!(m && m.frame && m.frame.coordinates === 'physical');
+  const H = state.fp ? state.fp.thrust : NaN;
+  const value = Number.isFinite(H)
+    ? (scaled ? format(H, 'force', state.system) : `${H.toPrecision(4)} (unscaled)`)
+    : '—';
+  const text = `H = ${value}${suffix ? `  ·  ${suffix}` : ''}`;
+  ui.thrustValue.textContent = text;
+  ui.thrustValueM.textContent = text;
+  ui.thrustValueP.textContent = text;
+}
+
+/** Move the thrust slider and both of its copies together. */
+function setThrustSlider(value) {
+  for (const el of [ui.thrust, ui.thrustM, ui.thrustP]) {
+    if (el) el.value = String(value);
+  }
+}
+
 function sliderForThrust(f) {
   const band = state.band;
   if (!band) return 50;
@@ -847,6 +1146,13 @@ function recompute() {
         assessAdmissibility();
         reportEnds(ends);
         reportMechanism(f);
+        // THE READING BELONGS TO THIS BRANCH TOO. Returning here without
+        // writing it left the free-mode value on screen: pressing "H min"
+        // moved the slider, moved the line and turned the verdict, while all
+        // three readings went on saying "x1.00 of the reference pole".
+        showThrust(state.beyondBand
+          ? `held at H ${state.beyondBand > 0 ? 'max' : 'min'}`
+          : `${(f / band.max).toFixed(2)} of H max`);
         return;
       }
     }
@@ -935,8 +1241,9 @@ function recompute() {
       state.segForces = state.fp.magnitudes.map((r) => r[2]);
       assessAdmissibility();
       reportEnds(null);
-      reportImposed(got);
+      reportImposed(solved.g);
       reportMechanism();
+      showThrust('carried from A to B');
       return;
     }
   }
@@ -974,10 +1281,7 @@ function recompute() {
     ui.endsStatus.textContent =
       'this example carries no joints and no springings — pick both ends, '
       + 'or trace the arch, to place the line';
-    ui.thrustValue.textContent = 'H = '
-      + `${state.fp.thrust.toPrecision(4)} (unscaled)`;
-    ui.thrustValueM.textContent = ui.thrustValue.textContent;
-    ui.thrustValueP.textContent = ui.thrustValue.textContent;
+    showThrust();
     return;
   }
   state.segForces = state.fp.magnitudes.map((r) => r[2]);
@@ -989,13 +1293,7 @@ function recompute() {
   // "isostatic -- three hinges" about an arch the panel had no joints for.
   reportMechanism();
 
-  const scaled = m.frame && m.frame.coordinates === 'physical';
-  const reading = `H = ${scaled ? format(state.fp.thrust, 'force', state.system)
-    : `${state.fp.thrust.toPrecision(4)} (unscaled)`}`
-    + `  ·  ×${factor.toFixed(2)} of the reference pole`;
-  ui.thrustValue.textContent = reading;
-  ui.thrustValueM.textContent = reading;
-  ui.thrustValueP.textContent = reading;
+  showThrust(`×${factor.toFixed(2)} of the reference pole`);
 }
 
 /**
@@ -1166,7 +1464,12 @@ function draw() {
       // together, not that adjacent stones are distinguishable.
       drawMacroBlocks(mainAx, m.blocks, state.mech.bodyOf);
     } else {
-      drawBlocks(mainAx, m.blocks, { labels: ui.showLabels.checked });
+      ensureGroups();
+      const colours = ui.showGroups.checked
+        ? m.blockGroups.map((id) => m.groups.find((g) => g.id === id)?.color)
+        : null;
+      drawBlocks(mainAx, m.blocks, { labels: ui.showLabels.checked, colours });
+      if (ui.showGroups.checked) drawGroupLabels();
     }
   }
   if (ui.showWeights.checked && m.centroids && m.weights) {
@@ -1229,6 +1532,8 @@ function draw() {
     drawRadiusView();
     return;
   }
+  // Notes and Log put a textarea over the pane; there is no canvas on show.
+  if (sideView() === 'notes' || sideView() === 'log') return;
   forceAx.begin();
   forceAx.reequalize();
   if (state.fp) {
@@ -1360,6 +1665,34 @@ function reactionLabels() {
     RB: f(r.RB),
     H: `H = ${f(r.H)}`,
   };
+}
+
+function drawGroupLabels() {
+  const m = state.model;
+  if (!m?.groups?.length || !m.centroids?.length) return;
+  ensureGroups();
+  mainAx.clipped((c) => {
+    c.font = 'bold 10px Helvetica, Arial, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    m.groups.forEach((g, i) => {
+      const pts = m.centroids.filter((_, k) => m.blockGroups[k] === g.id);
+      if (!pts.length) return;
+      const x = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const y = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      const [X, Y] = mainAx.toPx([x, y]);
+      c.fillStyle = 'rgba(255,255,255,0.78)';
+      c.strokeStyle = 'rgba(40,40,40,0.45)';
+      c.lineWidth = 0.8;
+      c.beginPath();
+      if (typeof c.roundRect === 'function') c.roundRect(X - 13, Y - 9, 26, 18, 4);
+      else c.rect(X - 13, Y - 9, 26, 18);
+      c.fill();
+      c.stroke();
+      c.fillStyle = '#222';
+      c.fillText(`G${i + 1}`, X, Y + 0.5);
+    });
+  });
 }
 
 function plotContentBounds() {
@@ -1923,9 +2256,23 @@ function reportScale() {
       return;
     }
   }
-  ui.scaleStatus.textContent = refCount === 2
-    ? 'reference picked — set the length, then apply'
-    : 'not scaled — lengths are pixels';
+  if (refCount === 2) {
+    ui.scaleStatus.textContent = 'reference picked — set the length, then apply';
+    return;
+  }
+  // AN IMAGE CAN BE SCALED BEFORE THERE IS AN ARCH. Saying "not scaled --
+  // lengths are pixels" the moment after the student has told the app how wide
+  // the photograph is contradicts the field they have just filled in; the span
+  // and rise are simply not available yet, because there are no joints.
+  if (m && m.frame && m.frame.coordinates === 'physical') {
+    const box = imageBounds(m);
+    ui.scaleStatus.textContent = box
+      ? `image ${format(box.xmax, 'length', state.system)} × `
+        + `${format(box.ymax, 'length', state.system)} — trace the arch for its span`
+      : 'scaled — trace the arch for its span';
+    return;
+  }
+  ui.scaleStatus.textContent = 'not scaled — lengths are pixels';
 }
 
 function reportImageLock() {
@@ -2034,7 +2381,7 @@ function applyScale() {
   scalePixelWorkspace(k, `reference length ${real} ${SYSTEMS[state.system].length.label}`);
   ui.refLength.value = String(real);
   ui.imageRefLength.value = String(real);
-  ui.thrust.value = 50;
+  setThrustSlider(50);
 
   disarmReference();
   reportScale();
@@ -2043,6 +2390,7 @@ function applyScale() {
   describe();
   recompute();
   fitViews();
+  appendLog(`Applied reference scale: ${real} ${SYSTEMS[state.system].length.label}`);
   draw();
   ui.warn.hidden = true;
 }
@@ -2097,7 +2445,7 @@ function applyImageSize() {
       scaleSource: `image stretch ${realW.toPrecision(6)} × `
         + `${realH.toPrecision(6)} ${SYSTEMS[state.system].length.label}`,
     };
-    ui.thrust.value = 50;
+    setThrustSlider(50);
     reportScale();
     reportBlocks();
     reportTrace();
@@ -2105,6 +2453,8 @@ function applyImageSize() {
     describe();
     if (state.basePole) recompute();
     fitViews();
+    appendLog(`Stretched background image to ${realW.toPrecision(6)} x `
+      + `${realH.toPrecision(6)} ${SYSTEMS[state.system].length.label}`);
     draw();
     ui.warn.hidden = true;
     return;
@@ -2116,7 +2466,7 @@ function applyImageSize() {
   state.model.imageDrawSize = null;
   ui.imageRealWidth.value = (pixW * k).toPrecision(6);
   ui.imageRealHeight.value = (pixH * k).toPrecision(6);
-  ui.thrust.value = 50;
+  setThrustSlider(50);
   reportScale();
   reportBlocks();
   reportTrace();
@@ -2124,6 +2474,8 @@ function applyImageSize() {
   describe();
   recompute();
   fitViews();
+  appendLog(`Scaled background image to ${(pixW * k).toPrecision(6)} x `
+    + `${(pixH * k).toPrecision(6)} ${SYSTEMS[state.system].length.label}`);
   draw();
   ui.warn.hidden = true;
 }
@@ -2152,6 +2504,45 @@ function replaceBackgroundImage(dataUrl, meta = {}, onload = null) {
     ui.warn.textContent = 'could not decode the background image';
   };
   img.src = dataUrl;
+}
+
+function requestMissingBackgroundImage(name) {
+  const label = name ? ` (${name})` : '';
+  ui.warn.hidden = false;
+  ui.warn.textContent = `background image${label} is not embedded; choose the image file to reload it`;
+  ui.saveStatus.textContent = `opened — choose the missing background image${label}`;
+  state.fitAfterImageLoad = true;
+  showPanel('geom');
+  const open = window.confirm(`The background image${label} is not embedded in this JSON. Choose it now?`);
+  if (open) ui.imageFile.click();
+}
+
+/**
+ * A vertically mirrored copy of a decoded image.
+ *
+ * WHY EVERY LOADED IMAGE GETS ONE. The drawing has y running UP, so pixel row
+ * 0 -- the top of the photograph -- lands at the BOTTOM of the frame and the
+ * picture is drawn upside down. The examples that ship with the app were
+ * stored already mirrored so that the two inversions cancel; a photograph or a
+ * scan the student loads is not, and came in with the arch hanging downwards
+ * and the lettering reversed. Mirroring once, on the way in, is what makes the
+ * file on disk and the picture on screen agree. The mirrored copy is what is
+ * saved in the session, so reopening a file shows what was traced.
+ */
+function mirroredImage(img, type) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const c = canvas.getContext('2d');
+  c.translate(0, h);
+  c.scale(1, -1);
+  c.drawImage(img, 0, 0, w, h);
+  // Re-encoding a photograph as PNG would multiply the size of the saved
+  // session, so the original format is kept where the canvas can write it.
+  const keep = /^image\/(png|jpeg|webp)$/.test(type) ? type : 'image/png';
+  return { canvas, dataUrl: canvas.toDataURL(keep), type: keep, w, h };
 }
 
 function flipBackgroundImage() {
@@ -2233,21 +2624,25 @@ function reportThreePointRing() {
   const nOut = p.outer.filter(Boolean).length;
   const ready = nIn === 3 && nOut === 3;
   ui.makeThreePointRing.disabled = !ready;
-  ui.threePointRingStatus.textContent = ready
-    ? 'ready to generate'
-    : `${nIn}/3 intrados · ${nOut}/3 extrados`;
-  for (const [key, btn] of [
-    ['inner:0', ui.pickInner1], ['inner:1', ui.pickInner2], ['inner:2', ui.pickInner3],
-    ['outer:0', ui.pickOuter1], ['outer:1', ui.pickOuter2], ['outer:2', ui.pickOuter3],
-  ]) {
-    btn.classList.toggle('armed', p.picking === key);
-  }
+  const active = p.picking;
+  ui.threePointRingStatus.textContent = active
+    ? `click ${active === 'inner' ? 'intrados' : 'extrados'} point `
+      + `${(active === 'inner' ? nIn : nOut) + 1} of 3`
+    : ready
+      ? 'ready to generate'
+      : `${nIn}/3 intrados · ${nOut}/3 extrados`;
+  ui.pickInnerArc.classList.toggle('armed', active === 'inner');
+  ui.pickOuterArc.classList.toggle('armed', active === 'outer');
+  ui.pickInnerArc.textContent = active === 'inner'
+    ? `Click intrados ${nIn + 1}/3` : 'Pick 3 intrados points';
+  ui.pickOuterArc.textContent = active === 'outer'
+    ? `Click extrados ${nOut + 1}/3` : 'Pick 3 extrados points';
 }
 
-function armThreePointRing(which, index) {
-  const key = `${which}:${index}`;
-  state.threePointRing.picking = state.threePointRing.picking === key ? null : key;
+function armThreePointRing(which) {
+  state.threePointRing.picking = state.threePointRing.picking === which ? null : which;
   if (state.threePointRing.picking) {
+    state.threePointRing[which] = [null, null, null];
     if (traceArmed()) finishTrace();
     if (state.ref.picking) disarmReference();
     if (state.pickingAxis) ui.pickAxis.click();
@@ -2333,17 +2728,21 @@ function cutProfiles() {
     ])
     : [null, null];
   const [e0, e1] = ends;
+  const previous = state.model ?? {};
   state.model = {
-    ...state.model,
+    ...previous,
     blocks, joints, centroids,
     areas: blocks.map((b) => blockArea(b)),
+    groups: [],
+    blockGroups: [],
     pointA: e0 && e1 ? (e0[0] <= e1[0] ? e0 : e1) : null,
     pointB: e0 && e1 ? (e0[0] <= e1[0] ? e1 : e0) : null,
     forcePolygon: null, thrustLine: null,
-    units: null,
-    frame: { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
+    units: previous.units ?? null,
+    frame: previous.frame ?? { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
   };
   clearPlotState();
+  newGroup('profile', blocks.length);
   state.consistent = { ok: true, reason: null, extraRows: 0 };
   if (!state.axisPicked) resetAxis();
   reweigh();
@@ -2352,14 +2751,205 @@ function cutProfiles() {
   ui.warn.hidden = !warnings.length;
   if (warnings.length) ui.warn.textContent = warnings.join('; ') + '.';
   reportProfiles();
+  describe();
+  reportBlocks(blocks.length);
+  reportScale();
   recompute();
   fitViews();
+  appendLog(`Cut traced profile into ${blocks.length} blocks`);
   draw();
+}
+
+/** How near, in screen pixels, a click has to be to jump onto a corner. */
+const SNAP_PX = 11;
+
+/**
+ * The corner of an existing block nearest the pointer, if one is near enough.
+ *
+ * WHY A DRAWN BLOCK NEEDS THIS. A block drawn beside another has to MEET it —
+ * a pier under a springing, a second course on the back of the first — and by
+ * eye the corners always miss. The gap is not cosmetic: `jointsFromBlocks`
+ * recovers a joint from the face along which two voussoirs abut, so two blocks
+ * a fraction of a pixel apart are read as a broken chain, and the arch loses
+ * its joints, its admissibility verdict and its mechanism with them. Landing
+ * the click exactly on a corner that is already there makes the contact exact
+ * and costs the student nothing.
+ *
+ * MEASURED IN PIXELS, not in data units: the tolerance a hand has is a
+ * tolerance on the screen, and it must not grow and shrink with the zoom.
+ * Only committed blocks are offered — snapping to the corner just placed would
+ * turn a slightly short click into an edge of no length.
+ */
+function cornerNear(px) {
+  let best = null;
+  let bestD = SNAP_PX;
+  for (const block of state.model?.blocks ?? []) {
+    for (const piece of piecesOf(block)) {
+      const xs = piece?.x ?? [];
+      const ys = piece?.y ?? [];
+      for (let i = 0; i < xs.length; i++) {
+        const [X, Y] = mainAx.toPx([xs[i], ys[i]]);
+        const d = Math.hypot(X - px[0], Y - px[1]);
+        if (d < bestD) { bestD = d; best = [xs[i], ys[i]]; }
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * The point on the EDGE of an existing block nearest the pointer.
+ *
+ * A new block rarely meets an old one corner to corner: a pier lands in the
+ * middle of a springing face, a second course starts halfway along the back of
+ * the first. A point that merely lies on the edge is not enough — the two
+ * polygons would touch along a face that only one of them has a vertex for,
+ * and `contactJoint` looks for VERTICES of either block on the boundary of the
+ * other. So the edge is split: the point becomes a vertex of the old block as
+ * well as of the new one, the two now share it, and the joint is recoverable.
+ * Splitting adds a vertex on a straight edge, so the polygon's area, centroid
+ * and weight are unchanged; only its description gains a point.
+ *
+ * The foot of the perpendicular is found in PIXELS and the same fraction is
+ * then applied in data units — the transform is affine, so the two agree — and
+ * the ends of the segment are left to `cornerNear`, which is tried first.
+ */
+function edgeNear(px) {
+  let best = null;
+  let bestD = SNAP_PX;
+  const blocks = state.model?.blocks ?? [];
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const pieces = piecesOf(blocks[bi]);
+    for (let pi = 0; pi < pieces.length; pi++) {
+      const xs = pieces[pi]?.x ?? [];
+      const ys = pieces[pi]?.y ?? [];
+      const n = xs.length;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const A = mainAx.toPx([xs[i], ys[i]]);
+        const B = mainAx.toPx([xs[j], ys[j]]);
+        const vx = B[0] - A[0];
+        const vy = B[1] - A[1];
+        const len2 = vx * vx + vy * vy;
+        if (!(len2 > 0)) continue;
+        const t = ((px[0] - A[0]) * vx + (px[1] - A[1]) * vy) / len2;
+        // Strictly inside: an end of the segment is a corner, and a corner is
+        // snapped to as a corner, not by splitting a zero-length piece off it.
+        if (!(t > 0 && t < 1)) continue;
+        const d = Math.hypot(A[0] + t * vx - px[0], A[1] + t * vy - px[1]);
+        if (d < bestD) {
+          bestD = d;
+          best = {
+            block: bi,
+            piece: pi,
+            at: i + 1,                       // insert after vertex i
+            point: [xs[i] + t * (xs[j] - xs[i]), ys[i] + t * (ys[j] - ys[i])],
+          };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Where the next click would land: a corner if there is one, else an edge. */
+function snapAt(px) {
+  const corner = cornerNear(px);
+  if (corner) return { kind: 'corner', point: corner };
+  const edge = edgeNear(px);
+  if (edge) return { kind: 'edge', point: edge.point, split: edge };
+  return null;
+}
+
+/** Put the snapped point into the old block's outline, between its neighbours. */
+function splitEdgeAt(split) {
+  const m = state.model;
+  const block = m?.blocks?.[split.block];
+  if (!block) return;
+  const cut = (piece) => ({
+    ...piece,
+    x: [...piece.x.slice(0, split.at), split.point[0], ...piece.x.slice(split.at)],
+    y: [...piece.y.slice(0, split.at), split.point[1], ...piece.y.slice(split.at)],
+  });
+  const next = block.pieces
+    ? { ...block, pieces: block.pieces.map((p, i) => (i === split.piece ? cut(p) : p)) }
+    : cut(block);
+  m.blocks = m.blocks.map((b, i) => (i === split.block ? next : b));
+}
+
+/**
+ * Find the joints of the blocks as they now stand, if they form a chain.
+ *
+ * WHY IT IS NEEDED HERE. `blocksBetween` hands back the cuts it made, so a
+ * traced arch arrives with exact joints; a block drawn by hand arrives with
+ * none, and until now the model kept whatever joints it had from before — one
+ * fewer than it should have, silently, so admissibility was read against the
+ * wrong list. A hand-built arch could not be analysed at all.
+ *
+ * `joints.js` recovers the cuts of a chain from the polygons themselves, but it
+ * needs consecutive entries to be neighbours. Four orders are tried, which
+ * between them cover how blocks actually arrive: as drawn, the reverse of that,
+ * and either way along the arch. Nothing more clever is attempted — where none
+ * of the four is a chain, the blocks genuinely are not one, and saying so is
+ * the answer, not a guess.
+ *
+ * @returns {boolean} whether a whole chain was recovered
+ */
+function recoverJoints() {
+  const m = state.model;
+  const n = m?.blocks?.length ?? 0;
+  if (!n) return false;
+
+  const identity = m.blocks.map((_, i) => i);
+  const byX = [...identity].sort(
+    (a, b) => blockCentroid(m.blocks[b])[0] - blockCentroid(m.blocks[a])[0],
+  );
+  const orders = [identity, [...identity].reverse(), byX, [...byX].reverse()];
+
+  for (const order of orders) {
+    const blocks = order.map((i) => m.blocks[i]);
+    const got = jointsFromBlocks(blocks);
+    if (!got.ok) continue;
+    const pick = (a) => (Array.isArray(a) && a.length === n ? order.map((i) => a[i]) : a);
+    const ends = springings(got.joints);
+    state.model = {
+      ...m,
+      blocks,
+      centroids: blocks.map(blockCentroid),
+      areas: blocks.map(blockArea),
+      weights: pick(m.weights),
+      thickness: pick(m.thickness),
+      blockGroups: pick(m.blockGroups),
+      joints: got.joints,
+      jointRecovery: { ok: true, reason: null, gaps: 0 },
+      pointA: ends.pointA,
+      pointB: ends.pointB,
+    };
+    return true;
+  }
+
+  // No chain. Keep joints that still describe the blocks; drop a list that no
+  // longer counts right, because every panel downstream indexes into it.
+  const failed = jointsFromBlocks(m.blocks);
+  if ((m.joints?.length ?? 0) !== n + 1) {
+    state.model = {
+      ...m,
+      joints: null,
+      jointRecovery: {
+        ok: false,
+        reason: failed.warnings[0] ?? null,
+        gaps: failed.gaps.length,
+      },
+    };
+  }
+  return false;
 }
 
 /** Arm the free-hand block tool. */
 function armBlock() {
+  if (!state.newBlock && !state.model) ensureTraceModel();
   state.newBlock = state.newBlock ? null : [];
+  state.snap = null;
   ui.addBlock.classList.toggle('armed', !!state.newBlock);
   ui.addBlock.textContent = state.newBlock ? 'Click the corners…' : 'Draw a block';
   draw();
@@ -2374,12 +2964,45 @@ function commitBlock() {
   m.blocks = [...(m.blocks ?? []), poly];
   m.centroids = m.blocks.map(blockCentroid);
   m.areas = m.blocks.map((b) => blockArea(b));
+  // A RUN OF DRAWN BLOCKS IS ONE GROUP. A pier drawn stone by stone was
+  // becoming twenty groups, twenty rows in both "apply to" menus and twenty
+  // colours; the material a student sets on it is one material. A new group
+  // starts when the last one was made some other way -- a ring, a trace -- so
+  // blocks drawn on top of a generated arch still keep their own properties.
+  // NOT ensureGroups() first: on the very first drawn block that would invent
+  // an empty "imported" group to hold the blocks that are already there --
+  // there are none -- and leave it in both menus for ever. newGroup does the
+  // same tidying, but only for blocks that really predate this one.
+  const groups = Array.isArray(m.groups) ? m.groups : [];
+  const last = groups[groups.length - 1];
+  if (last && last.method === 'draw') {
+    m.blockGroups[m.blocks.length - 1] = last.id;
+    reportGroups();
+  } else {
+    newGroup('draw', 1);
+  }
   // armBlock is a TOGGLE: clearing the state first and then calling it would
   // arm the tool again instead of putting it away.
   armBlock();
+  // THE JOINTS ARE FOUND, not left to the next generator. Without this a
+  // hand-built arch had no cuts at all and no admissibility verdict, and a
+  // block added to a traced one left the joint list one short of the blocks.
+  const chained = recoverJoints();
+  clearPlotState();
   reweigh();
   state.band = null; state.bandKey = null; state.solidFit = null;
+  describe();
+  reportBlocks(state.model.blocks.length);
+  reportScale();
+  reportGroups();
   recompute();
+  fitForceView();
+  if (!chained && state.model.blocks.length > 1) {
+    ui.warn.hidden = false;
+    ui.warn.textContent = 'the blocks are not one chain, so they have no joints: '
+      + 'draw against a corner or an edge of a block already there — the green '
+      + 'marker says where the click will land';
+  }
   draw();
 }
 
@@ -2425,6 +3048,26 @@ function drawProfiles() {
       }
     }
 
+    // Where the next click would land, and on what: a square for a corner that
+    // is already there, a diamond for a point on an edge, which the click will
+    // split. The two are worth telling apart — one leaves the old block as it
+    // was, the other gives it a vertex.
+    if (state.newBlock && state.snap) {
+      const [X, Y] = mainAx.toPx(state.snap.point);
+      c.strokeStyle = '#2e7d32';
+      c.lineWidth = 1.6;
+      c.setLineDash([]);
+      if (state.snap.kind === 'corner') {
+        c.strokeRect(X - 5.5, Y - 5.5, 11, 11);
+      } else {
+        c.beginPath();
+        c.moveTo(X, Y - 7); c.lineTo(X + 7, Y);
+        c.lineTo(X, Y + 7); c.lineTo(X - 7, Y);
+        c.closePath();
+        c.stroke();
+      }
+    }
+
     if (p.centre) {
       const [X, Y] = mainAx.toPx(p.centre);
       c.strokeStyle = '#7d3c98';
@@ -2442,6 +3085,8 @@ function sideView() {
   if (ui.tabSolid.classList.contains('active')) return 'solid';
   if (ui.tabHeyman.classList.contains('active')) return 'heyman';
   if (ui.tabRadius.classList.contains('active')) return 'radius';
+  if (ui.tabNotes.classList.contains('active')) return 'notes';
+  if (ui.tabLog.classList.contains('active')) return 'log';
   return 'force';
 }
 
@@ -2569,26 +3214,30 @@ function reweigh() {
   if (!m || !m.blocks || !m.blocks.length) return;
   const gamma = Number(ui.gamma.value) || 20;
   const dome = domeOptions();
+  ensureGroups();
+  const groupOf = (i) => m.groups.find((g) => g.id === m.blockGroups[i])
+    ?? { gamma, thickness: Math.max(0, Number(ui.thick.value) || 1) };
 
   if (dome.poleni) {
     // W = gamma * A * theta * rbar, by Pappus: exact for a plane region turned
     // about an axis in its plane, and it needs only the area and the centroid.
     const { weights, widths } = luneWeights(m.blocks, {
-      axisX: dome.axisX, angleDeg: dome.angleDeg, specificWeight: gamma,
+      axisX: dome.axisX, angleDeg: dome.angleDeg, specificWeight: 1,
     });
-    m.weights = weights;
+    m.weights = weights.map((w, i) => w * (Number(groupOf(i).gamma) || gamma));
     // The out-of-plane dimension is no longer a constant the user typed: it is
     // the width of the lune, and it varies block by block.
     m.thickness = widths;
   } else {
-    const thickness = Math.max(0, Number(ui.thick.value) || 1);
-    m.weights = weighBlocks(m.blocks, { specificWeight: gamma, thickness });
-    m.thickness = m.blocks.map(() => thickness);
+    m.thickness = m.blocks.map((_, i) => Math.max(0, Number(groupOf(i).thickness) || 0));
+    m.weights = m.blocks.map((b, i) => blockArea(b)
+      * (Number(groupOf(i).gamma) || gamma) * m.thickness[i]);
   }
 
   const total = m.weights.reduce((a, b) => a + b, 0);
   state.basePole = [total / 4, -total / 2];
   reportDome();
+  reportGroups();
 }
 
 /** Say how far the lune tapers, which is the number that explains the result. */
@@ -2654,6 +3303,8 @@ function generateRing(opt = {}) {
     blocks, centroids, weights, joints,
     areas: blocks.map((p) => Math.abs(signedAreaOf(p))),
     thickness: blocks.map(() => thickness),
+    groups: [],
+    blockGroups: [],
     pointA, pointB,
     forcePolygon: null, thrustLine: null,
     name: `circular ring, t/ri = ${tri}`,
@@ -2665,6 +3316,7 @@ function generateRing(opt = {}) {
   if (!state.axisPicked) {
     ui.domeAxis.value = defaultAxis(pointA, pointB, blocks).toPrecision(6);
   }
+  newGroup('ring', blocks.length);
   reweigh();
   const total = state.model.weights.reduce((a, b) => a + b, 0);
   state.ringStudySource = currentRingStudySource({ ri, tri, n });
@@ -2678,7 +3330,7 @@ function generateRing(opt = {}) {
   state.band = null; state.bandKey = null;
   state.mech = null; state.crossings = null;
   state.basePole = [total / 4, -total / 2];
-  ui.thrust.value = 50;
+  setThrustSlider(50);
 
   ui.ringStatus.textContent =
     `${n} blocks, ri = ${ri}, ro = ${(ri * (1 + tri)).toPrecision(6)}, `
@@ -2687,9 +3339,12 @@ function generateRing(opt = {}) {
     + `${plotted.points.length} admissible states`;
   ui.warn.hidden = true;
   ui.meta.textContent = `${n} blocks · circular ring · t/ri = ${tri}`;
+  reportBlocks(blocks.length);
+  reportScale();
 
   recompute();
   fitViews();
+  appendLog(`Generated circular ring: ${n} blocks, ri = ${ri}, t/ri = ${tri}`);
   draw();
 }
 
@@ -2697,7 +3352,11 @@ function generateThreePointRing() {
   const picked = state.threePointRing;
   const inner = picked.inner.map((p) => p && p.slice());
   const outer = picked.outer.map((p) => p && p.slice());
-  const n = Math.max(1, Math.round(Number(ui.ringN.value) || Number(ui.nBlocks.value) || 16));
+  // ITS OWN FIELD. This used to read the parametric ring's count, falling back
+  // to the tracer's, and both of those live in panes the method tabs hide: the
+  // subdivision was fixed at whatever those hidden fields happened to hold --
+  // 16 -- with no control on screen to change it.
+  const n = Math.max(1, Math.round(Number(ui.threePointN.value) || 16));
   const gamma = Number(ui.gamma.value) || 20;
   const thickness = Math.max(0, Number(ui.thick.value) || 1);
   let built;
@@ -2722,6 +3381,8 @@ function generateThreePointRing() {
     blocks, centroids, weights, joints,
     areas: blocks.map((p) => Math.abs(signedAreaOf(p))),
     thickness: blocks.map(() => thickness),
+    groups: [],
+    blockGroups: [],
     pointA, pointB,
     forcePolygon: null, thrustLine: null,
     name: '3-point circular arch',
@@ -2729,6 +3390,7 @@ function generateThreePointRing() {
     frame: state.model?.frame ?? { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
   };
   clearPlotState();
+  newGroup('three', blocks.length);
   if (!state.axisPicked) {
     ui.domeAxis.value = defaultAxis(pointA, pointB, blocks).toPrecision(6);
   }
@@ -2738,14 +3400,17 @@ function generateThreePointRing() {
   state.band = null; state.bandKey = null;
   state.mech = null; state.crossings = null;
   state.basePole = [total / 4, -total / 2];
-  ui.thrust.value = 50;
+  setThrustSlider(50);
 
   ui.threePointRingStatus.textContent = `${n} blocks · generated from 3+3 points`;
   ui.warn.hidden = true;
   ui.meta.textContent = `${n} blocks · 3-point circular arch`;
 
+  reportBlocks(blocks.length);
+  reportScale();
   recompute();
   fitViews();
+  appendLog(`Generated 3-point circular arch: ${n} blocks`);
   draw();
 }
 
@@ -2777,6 +3442,11 @@ function generateBlocks() {
     units: previous?.units ?? null,
     frame,
   };
+  newGroup('trace', built.blocks.length);
+  // ONE RUN CARRIES ITS OWN CUTS; two runs concatenated do not. The joint list
+  // was `blocks + runs` long where every panel downstream expects `blocks + 1`,
+  // so a second trace added to the first was read against a list one too long.
+  if (existing) recoverJoints();
   clearPlotState();
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   // A traced arch has no stored solution to be inconsistent with.
@@ -2784,7 +3454,10 @@ function generateBlocks() {
   // The axis of revolution defaults to the mid-point of the springings, which
   // is right for any symmetric arch; the field and the picker override it.
   if (!state.axisPicked) {
-    ui.domeAxis.value = defaultAxis(pointA, pointB, blocks).toPrecision(6);
+    // Read back from the model: recoverJoints may have relocated the
+    // springings, and the axis has to follow the arch it belongs to.
+    const m2 = state.model;
+    ui.domeAxis.value = defaultAxis(m2.pointA, m2.pointB, m2.blocks).toPrecision(6);
   }
   reweigh();
   const total = state.model.weights.reduce((s, v) => s + v, 0);
@@ -2792,13 +3465,17 @@ function generateBlocks() {
   // Start from a pole giving a thrust of about a quarter of the total weight,
   // which for a normal arch puts the line roughly inside the ring.
   state.basePole = [total / 4, -total / 2];
-  ui.thrust.value = 50;
+  setThrustSlider(50);
 
   reportBlocks(blocks.length, built.flipped);
+  describe();
+  reportScale();
   ui.warn.hidden = true;
 
   recompute();
   fitViews();
+  appendLog(`${existing ? 'Added' : 'Generated'} ${built.blocks.length} traced blocks`
+    + (existing ? ` (${blocks.length} total)` : ''));
   draw();
 }
 
@@ -2816,19 +3493,27 @@ function attachNavigation(ax) {
     if (ax === mainAx && state.forces.placing) {
       const mag = Number(ui.forceMag.value);
       if (mag > 0) {
-        state.forces.points.push(mainAx.toData([e.offsetX, e.offsetY]));
+        const p = mainAx.toData([e.offsetX, e.offsetY]);
+        state.forces.points.push(p);
         state.forces.magnitudes.push(mag);
         listForces();
         recompute();
         fitForceView();
+        appendLog(`Added force ${format(mag, 'force', state.system)} `
+          + `at (${p[0].toPrecision(4)}, ${p[1].toPrecision(4)})`);
       }
       armForce();
       return;
     }
     if (ax === mainAx && state.threePointRing.picking) {
-      const [which, raw] = state.threePointRing.picking.split(':');
-      state.threePointRing[which][Number(raw)] = mainAx.toData([e.offsetX, e.offsetY]);
-      state.threePointRing.picking = null;
+      const which = state.threePointRing.picking;
+      const slot = state.threePointRing[which].findIndex((p) => !p);
+      if (slot >= 0) {
+        state.threePointRing[which][slot] = mainAx.toData([e.offsetX, e.offsetY]);
+      }
+      if (state.threePointRing[which].filter(Boolean).length >= 3) {
+        state.threePointRing.picking = null;
+      }
       reportThreePointRing();
       draw();
       return;
@@ -2849,7 +3534,11 @@ function attachNavigation(ax) {
       return;
     }
     if (ax === mainAx && state.newBlock) {
-      state.newBlock.push(mainAx.toData([e.offsetX, e.offsetY]));
+      const at = [e.offsetX, e.offsetY];
+      const snap = snapAt(at);
+      if (snap?.kind === 'edge') splitEdgeAt(snap.split);
+      state.newBlock.push(snap ? snap.point : mainAx.toData(at));
+      state.snap = null;
       if (state.newBlock.length >= Math.max(3, Number(ui.nSides.value) || 4)) {
         commitBlock();
       } else {
@@ -2911,6 +3600,16 @@ function attachNavigation(ax) {
     ax.canvas.setPointerCapture(e.pointerId);
   });
   ax.canvas.addEventListener('pointermove', (e) => {
+    if (ax === mainAx && state.newBlock) {
+      // Shown before it is used: a snap the student cannot see is a click that
+      // lands somewhere they did not aim at.
+      const found = snapAt([e.offsetX, e.offsetY]);
+      const key = (v) => (v ? `${v.kind}:${v.point}` : '');
+      const moved = key(found) !== key(state.snap);
+      state.snap = found;
+      if (moved) draw();
+      return;
+    }
     if (ax === mainAx && traceArmed()) {
       state.trace.cursor = mainAx.toData([e.offsetX, e.offsetY]);
       draw();
@@ -2957,11 +3656,13 @@ window.addEventListener('keydown', (e) => {
 
 ui.addForce.addEventListener('click', armForce);
 ui.clearForces.addEventListener('click', () => {
+  const n = state.forces.points.length;
   state.forces.points = [];
   state.forces.magnitudes = [];
   listForces();
   recompute();
   fitForceView();
+  if (n) appendLog(`Cleared ${n} applied force${n === 1 ? '' : 's'}`);
   draw();
 });
 
@@ -3064,6 +3765,13 @@ ui.system.addEventListener('change', () => {
     field(ui.refLength, kL);
     field(ui.domeAxis, kL);
     field(ui.forceMag, kF);
+    if (state.model?.groups) {
+      state.model.groups = state.model.groups.map((g) => ({
+        ...g,
+        gamma: Number.isFinite(Number(g.gamma)) ? Number(g.gamma) * density : g.gamma,
+        thickness: Number.isFinite(Number(g.thickness)) ? Number(g.thickness) * kL : g.thickness,
+      }));
+    }
   } else if (!scaled) {
     // Nothing to carry: offer the density that suits the system instead.
     ui.gamma.value = String(SYSTEMS[to].typicalDensity);
@@ -3074,6 +3782,7 @@ ui.system.addEventListener('change', () => {
   listForces();
   recompute();
   fitViews();
+  appendLog(from === to ? `Selected unit system ${to}` : `Changed units from ${from} to ${to}`);
   draw();
 });
 
@@ -3081,43 +3790,55 @@ ui.traceInner.addEventListener('click', () => arm('inner'));
 ui.traceOuter.addEventListener('click', () => arm('outer'));
 ui.makeBlocks.addEventListener('click', generateBlocks);
 ui.nBlocks.addEventListener('change', reportTrace);
+document.querySelectorAll('.methodtabs button').forEach((button) => {
+  button.addEventListener('click', () => {
+    const method = button.dataset.method;
+    document.querySelectorAll('.methodtabs button').forEach((b) => {
+      b.classList.toggle('active', b === button);
+    });
+    document.querySelectorAll('[data-method-pane]').forEach((pane) => {
+      pane.hidden = pane.dataset.methodPane !== method;
+    });
+  });
+});
+for (const sel of [ui.gammaTarget, ui.thickTarget]) {
+  sel.addEventListener('change', () => {
+    const m = state.model;
+    if (!m?.groups?.length) return;
+    const id = selectedGroupId(sel);
+    const g = id === 'all' ? null : m.groups.find((x) => x.id === id);
+    if (sel === ui.gammaTarget && g) ui.gamma.value = Number(g.gamma).toPrecision(6);
+    if (sel === ui.thickTarget && g) ui.thick.value = Number(g.thickness).toPrecision(6);
+  });
+}
 for (const f of [ui.gamma, ui.thick]) {
   f.addEventListener('input', () => {
     if (!state.model || !state.model.blocks || !state.model.blocks.length) return;
-    reweigh();
-    refreshRingStudy();
-    state.band = null; state.bandKey = null;
-    state.frozenBranch = null;
-    recompute();
-    fitForceView();
-    draw();
+    const value = f === ui.gamma
+      ? Math.max(0, Number(ui.gamma.value) || 0)
+      : Math.max(0, Number(ui.thick.value) || 0);
+    applyGroupProperty(f === ui.gamma ? 'gamma' : 'thickness', value);
+  });
+  f.addEventListener('change', () => {
+    const select = f === ui.gamma ? ui.gammaTarget : ui.thickTarget;
+    const label = select.value === 'all' ? 'all groups' : `group ${select.selectedIndex}`;
+    appendLog(`${f === ui.gamma ? 'Changed material' : 'Changed thickness'} for ${label}`);
   });
 }
+ui.showGroups.addEventListener('change', draw);
+ui.clearBlocks.addEventListener('click', () => {
+  clearBlocks(selectedGroupId(ui.clearTarget));
+});
+// CURVES ONLY. This used to empty the model as well, which made it the one
+// place blocks could be deleted -- inside the pane of one method, unreachable
+// from the other four. Blocks are now cleared by group from the panel above,
+// and this button does what its section is about: it discards the two traced
+// polylines so the faces can be traced again.
 ui.clearTrace.addEventListener('click', () => {
+  if (traceArmed()) finishTrace();
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
-  state.model = {
-    ...(state.model ?? {}),
-    blocks: [],
-    centroids: [],
-    weights: [],
-    joints: null,
-    areas: [],
-    thickness: [],
-    pointA: null,
-    pointB: null,
-    forcePolygon: null,
-    thrustLine: null,
-  };
-  clearPlotState();
-  state.consistent = { ok: true, reason: null, extraRows: 0 };
-  state.fp = null; state.lot = null; state.basePole = null;
-  state.band = null; state.bandKey = null;
-  state.mech = null; state.crossings = null;
-  finishTrace();
   reportTrace();
-  reportBlocks();
-  recompute();
-  fitViews();
+  appendLog('Cleared the traced curves');
   draw();
 });
 
@@ -3135,19 +3856,22 @@ ui.imageFile.addEventListener('change', (e) => {
         || state.trace?.outer?.length
         || state.forces?.points?.length
       );
-      state.image = img;
+      // Mirrored once here, so the picture on screen is the picture in the
+      // file; see mirroredImage. Everything below works with the copy.
+      const shown = mirroredImage(img, file.type || '');
+      state.image = shown.canvas;
       state.imageData = {
         name: file.name,
-        type: file.type || 'image/*',
-        width: img.naturalWidth,
-        height: img.naturalHeight,
-        dataUrl,
+        type: shown.type,
+        width: shown.w,
+        height: shown.h,
+        dataUrl: shown.dataUrl,
       };
       if (hasWork && state.model) {
         state.model = {
           ...state.model,
           image: file.name,
-          imageSize: [img.naturalWidth, img.naturalHeight],
+          imageSize: [shown.w, shown.h],
         };
       } else {
         // A first image creates an empty arch in ITS pixel frame, so a trace on
@@ -3156,7 +3880,7 @@ ui.imageFile.addEventListener('change', (e) => {
           name: file.name, blocks: [], centroids: [], weights: [],
           pointA: null, pointB: null, forcePolygon: null, thrustLine: null,
           units: null, lengthScaling: 1, massToWeight: 1,
-          image: file.name, imageSize: [img.naturalWidth, img.naturalHeight],
+          image: file.name, imageSize: [shown.w, shown.h],
           frame: { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
         };
         clearPlotState();
@@ -3169,24 +3893,30 @@ ui.imageFile.addEventListener('change', (e) => {
       }
       const upp = state.model.frame?.coordinates === 'physical'
         ? state.model.frame.units_per_pixel : 1;
-      ui.imageRealWidth.value = (img.naturalWidth * upp).toPrecision(6);
-      ui.imageRealHeight.value = (img.naturalHeight * upp).toPrecision(6);
-      ui.meta.textContent =
-        `${file.name} · ${img.naturalWidth}×${img.naturalHeight} px`;
+      ui.imageRealWidth.value = (shown.w * upp).toPrecision(6);
+      ui.imageRealHeight.value = (shown.h * upp).toPrecision(6);
+      ui.meta.textContent = `${file.name} · ${shown.w}×${shown.h} px`;
       ui.warn.hidden = true;
       if (hasWork) {
-        if (state.basePole) {
+        if (state.fitAfterImageLoad) {
+          recompute();
+          fitViews();
+        } else if (state.basePole) {
           recompute();
           fitForceView();
         }
       } else {
         mainAx.syncSize();
-        mainAx.fit({ xmin: 0, xmax: img.naturalWidth,
-          ymin: 0, ymax: img.naturalHeight });
+        mainAx.fit({ xmin: 0, xmax: shown.w, ymin: 0, ymax: shown.h });
       }
+      // Cleared whatever branch ran: an opened session with no blocks yet took
+      // the `else` above and left the flag armed for the next image.
+      state.fitAfterImageLoad = false;
       reportScale();
       reportTrace();
       reportBlocks();
+      reportGroups();
+      appendLog(`${hasWork ? 'Replaced' : 'Loaded'} background image ${file.name}`);
       draw();
     };
     img.onerror = () => {
@@ -3208,14 +3938,15 @@ ui.example.addEventListener('change', () => {
   else newWork();
 });
 ui.newWork.addEventListener('click', newWork);
-ui.thrust.addEventListener('input', () => {
+function updateThrust() {
   recompute();
   // Refit the force plane only: the pole travels a long way and would leave
   // the view. The arch view is left alone, so the flattening of the thrust
   // line stays visible against a fixed frame.
   fitForceView();
   draw();
-});
+}
+ui.thrust.addEventListener('input', updateThrust);
 for (const k of ['startPos', 'split']) {
   ui[k].addEventListener('input', () => {
     recompute();
@@ -3304,6 +4035,19 @@ function showPanel(which) {
     pane.hidden = !on;
   }
   el('panel').scrollTop = 0;
+  if (which === 'lot') {
+    listForces();
+    recompute();
+    fitForceView();
+    // Only from a TEXT tab. Switching to the LoT panel used to force the force
+    // polygon back on screen whatever was there, so a student who had the t/ri
+    // study or the Heyman diagram up lost it by reaching for the thrust
+    // slider. Notes and Log carry no drawing at all, so there it is a help.
+    if (sideView() === 'notes' || sideView() === 'log') showSide('force');
+  } else if (which === 'mech') {
+    reportMechanism();
+  }
+  draw();
 }
 ui.tabGeom.addEventListener('click', () => showPanel('geom'));
 ui.tabLot.addEventListener('click', () => showPanel('lot'));
@@ -3348,6 +4092,11 @@ function mirror(primary, clone, event = 'input') {
 // own 'input' listener does the recomputation once, whichever was moved.
 mirror(ui.thrust, ui.thrustM, 'input');
 mirror(ui.thrust, ui.thrustP, 'input');
+// NO LISTENER OF THEIR OWN. `mirror` copies the value onto ui.thrust and
+// dispatches 'input' there, and ui.thrust's own listener does the work. Giving
+// the two clones a second listener made every tick of any of the three sliders
+// recompute and redraw three times over -- measured as six canvas clears where
+// there should be two -- for one move of one control.
 mirror(ui.imposeEnds, ui.imposeEnds2, 'change');
 for (const b of [ui.pickA, ui.pickA2]) b.addEventListener('click', () => armEnd('A'));
 for (const b of [ui.pickB, ui.pickB2]) b.addEventListener('click', () => armEnd('B'));
@@ -3375,13 +4124,20 @@ function showSide(which) {
   const solid = which === 'solid';
   const heyman = which === 'heyman';
   const radius = which === 'radius';
+  const notes = which === 'notes';
+  const log = which === 'log';
   ui.tabSolid.classList.toggle('active', solid);
   ui.tabHeyman.classList.toggle('active', heyman);
   ui.tabRadius.classList.toggle('active', radius);
-  ui.tabForce.classList.toggle('active', !solid && !heyman && !radius);
+  ui.tabNotes.classList.toggle('active', notes);
+  ui.tabLog.classList.toggle('active', log);
+  ui.tabForce.classList.toggle('active', !solid && !heyman && !radius && !notes && !log);
   el('solid').hidden = !solid;
   el('plot').hidden = !heyman && !radius;
-  el('force').hidden = solid || heyman || radius;
+  el('force').hidden = solid || heyman || radius || notes || log;
+  ui.notesPane.hidden = !notes;
+  ui.logPane.hidden = !log;
+  document.querySelector('.viewtools[data-ax="side"]').hidden = notes || log;
   el('solidTools').hidden = !solid;
   ui.radiusMetric.hidden = !radius;
   ui.plotStatus.hidden = !heyman && !radius;
@@ -3389,6 +4145,8 @@ function showSide(which) {
     ? (ui.poleni.checked ? 'Blocks — dome lune' : 'Blocks — constant thickness')
     : heyman ? 'Heyman N-M diagram'
       : radius ? 'Thickness study'
+        : notes ? 'Project notes'
+          : log ? 'Project log'
     : 'Force polygon';
   // The canvas that was hidden has no size to speak of, so it must be
   // re-measured the moment it is shown or the first draw lands on a stale box.
@@ -3403,6 +4161,11 @@ ui.tabForce.addEventListener('click', () => showSide('force'));
 ui.tabSolid.addEventListener('click', () => showSide('solid'));
 ui.tabHeyman.addEventListener('click', () => showSide('heyman'));
 ui.tabRadius.addEventListener('click', () => showSide('radius'));
+ui.tabNotes.addEventListener('click', () => showSide('notes'));
+ui.tabLog.addEventListener('click', () => showSide('log'));
+ui.projectNotes.addEventListener('input', () => {
+  state.notes = ui.projectNotes.value;
+});
 function setRadiusMetric(metric) {
   state.radiusMetric = metric;
   ui.radiusByWeight.classList.toggle('active', metric === 'weight');
@@ -3436,7 +4199,10 @@ ui.poleni.addEventListener('change', () => {
     ? (ui.poleni.checked ? 'Blocks — dome lune' : 'Blocks — constant thickness')
     : sideView() === 'heyman' ? 'Heyman N-M diagram'
       : sideView() === 'radius' ? 'Thickness study'
+        : sideView() === 'notes' ? 'Project notes'
+          : sideView() === 'log' ? 'Project log'
     : 'Force polygon';
+  appendLog(ui.poleni.checked ? 'Enabled dome/Poleni weighting' : 'Disabled dome/Poleni weighting');
   recompute();
   fitForceView();
   draw();
@@ -3508,12 +4274,8 @@ ui.makeRing.addEventListener('click', () => {
   generateRing();
   showSide('radius');
 });
-ui.pickInner1.addEventListener('click', () => armThreePointRing('inner', 0));
-ui.pickInner2.addEventListener('click', () => armThreePointRing('inner', 1));
-ui.pickInner3.addEventListener('click', () => armThreePointRing('inner', 2));
-ui.pickOuter1.addEventListener('click', () => armThreePointRing('outer', 0));
-ui.pickOuter2.addEventListener('click', () => armThreePointRing('outer', 1));
-ui.pickOuter3.addEventListener('click', () => armThreePointRing('outer', 2));
+ui.pickInnerArc.addEventListener('click', () => armThreePointRing('inner'));
+ui.pickOuterArc.addEventListener('click', () => armThreePointRing('outer'));
 ui.makeThreePointRing.addEventListener('click', generateThreePointRing);
 ui.clearThreePointRing.addEventListener('click', () => {
   clearThreePointRing();
@@ -3546,10 +4308,11 @@ ui.cableWeights.addEventListener('input', draw);
 for (const [b, pick] of [[ui.goHmin, (x) => x.min], [ui.goHmax, (x) => x.max]]) {
   b.addEventListener('click', () => {
     if (!state.band) return;
-    ui.thrust.value = sliderForThrust(pick(state.band));
-    recompute();
-    fitForceView();
-    draw();
+    // Through the slider's own event, so the two copies under the plot and in
+    // the LoT pane follow. Setting ui.thrust.value alone left them sitting at
+    // mid-travel while the arch was at a collapse state.
+    setThrustSlider(sliderForThrust(pick(state.band)));
+    updateThrust();
   });
 }
 ui.reset.addEventListener('click', () => { fitViews(); draw(); });
@@ -3560,21 +4323,40 @@ ui.applyImageSize.addEventListener('click', applyImageSize);
 /**
  * Hand the file to the browser.
  *
- * A blob URL and a synthetic click is the only way a page with no server can
- * give a file to the person reading it. The URL is revoked afterwards, or the
- * blob stays in memory for the life of the tab.
+ * Prefer the File System Access API, because it lets the user choose the
+ * folder and file name. Browsers without it fall back to the old download
+ * path.
  */
-function saveWork() {
+async function saveWork() {
   try {
-    // ALWAYS A SAVE AS. A page cannot write back to a file it opened, so every
-    // save is a new file whatever it is called; asking for the name makes that
-    // plain and lets a student keep a series -- "ring 0.15", "ring 0.20" --
-    // instead of a directory of timestamps.
     const suggested = suggestedName(state);
-    const chosen = window.prompt('Save the session as', suggested);
-    if (chosen === null) return;                 // cancelled
-    const name = chosen.trim() || suggested;
+    let name = suggested;
+    let handle = null;
+    if ('showSaveFilePicker' in window) {
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: suggested,
+          types: [{
+            description: 'aLOTofImaginArches JSON session',
+            accept: { 'application/json': ['.json'] },
+          }],
+        });
+        name = handle.name || suggested;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+        throw e;
+      }
+    } else {
+      // Fallback for browsers that cannot choose a folder from a static page.
+      const chosen = window.prompt('Save the session as', suggested);
+      if (chosen === null) return;                 // cancelled
+      name = chosen.trim() || suggested;
+    }
+
+    const fileName = /\.json$/i.test(name) ? name : `${name}.json`;
+    state.notes = ui.projectNotes.value;
     state.dome = domeOptions();
+    appendLog(`Saved session as ${fileName}`);
     const data = serialise(state, {
       thrust: ui.thrust.value,
       startPos: ui.startPos.value,
@@ -3582,16 +4364,21 @@ function saveWork() {
       imposeEnds: ui.imposeEnds.checked,
     });
     const text = JSON.stringify(data, null, 1);
-    const url = URL.createObjectURL(
-      new Blob([text], { type: 'application/json' }),
-    );
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = /\.json$/i.test(name) ? name : `${name}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const blob = new Blob([text], { type: 'application/json' });
+    if (handle) {
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
     const kb = (text.length / 1024).toFixed(0);
-    ui.saveStatus.textContent = `saved ${a.download} (${kb} kB)`;
+    ui.saveStatus.textContent = `saved ${fileName} (${kb} kB)`;
   } catch (e) {
     ui.saveStatus.textContent = `could not save: ${e.message}`;
   }
@@ -3620,6 +4407,11 @@ function openWork(text) {
   state.exampleName = data.exampleName;
   state.image = null;
   state.imageData = data.imageData ?? null;
+  state.notes = data.notes ?? '';
+  state.log = data.log ?? [];
+  appendLog(data.exampleName
+    ? `Opened session ${data.exampleName}`
+    : 'Opened saved session');
   state.consistent = { ok: true, problems: [] };
 
   ui.system.value = data.system;
@@ -3628,7 +4420,7 @@ function openWork(text) {
   ui.domeAxis.value = data.dome.axisX;
   state.axisPicked = true;          // the file's axis, not a fresh default
   state.dome = data.dome;
-  ui.thrust.value = data.controls.thrust;
+  setThrustSlider(data.controls.thrust);
   ui.startPos.value = data.controls.startPos;
   ui.split.value = data.controls.split;
   // The ends the student imposed, and whether they were imposed at all. A file
@@ -3641,6 +4433,8 @@ function openWork(text) {
   };
   ui.imposeEnds.checked = !!(data.ends && data.ends.imposed);
   ui.imposeEnds2.checked = ui.imposeEnds.checked;
+  ensureGroups();
+  syncProjectText();
 
   resetAxis();
   reportDome();
@@ -3652,19 +4446,22 @@ function openWork(text) {
       name: state.imageData.name,
       type: state.imageData.type,
     }, () => {
+      recompute();
       fitViews();
       draw();
     });
   }
   listForces();
+  describe();
+  reportBlocks();
   reportScale();
+  reportGroups();
   if (state.imageData?.dataUrl) {
     ui.saveStatus.textContent = `opened with background image (${state.imageData.name ?? 'embedded'})`;
   } else {
-    ui.saveStatus.textContent = data.imageName
-      ? `opened — the background image (${data.imageName}) is not in the file, `
-        + 'load it again if you want it'
-      : 'opened';
+    const linkedImage = state.model?.image ?? data.imageName;
+    if (linkedImage) requestMissingBackgroundImage(linkedImage);
+    else ui.saveStatus.textContent = 'opened';
   }
 }
 

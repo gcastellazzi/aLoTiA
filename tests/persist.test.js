@@ -93,6 +93,32 @@ test('a user-loaded background image is embedded in the saved JSON', () => {
   assert.equal(back.imageData.dataUrl, 'data:image/png;base64,AAAA');
 });
 
+test('project notes and append-only log survive the round trip', () => {
+  const { state, controls } = session();
+  state.notes = 'Photo credit: archive\nRepeat with t/ri = 0.12';
+  state.log = [
+    '2026-08-31 10:00:00  Loaded image bridge.png',
+    '2026-08-31 10:05:00  Generated 16 traced blocks',
+  ];
+
+  const back = deserialise(JSON.stringify(serialise(state, controls)));
+  assert.equal(back.notes, state.notes);
+  assert.deepEqual(back.log, state.log);
+});
+
+test('block groups survive the round trip', () => {
+  const { state, controls } = session();
+  state.model.groups = [
+    { id: 1, name: 'Trace intrados/extrados 1', method: 'trace', gamma: 20, thickness: 0.8, color: '#8ecae6' },
+    { id: 2, name: 'Drawn blocks 2', method: 'draw', gamma: 22, thickness: 1.1, color: '#ffb703' },
+  ];
+  state.model.blockGroups = state.model.blocks.map((_, i) => (i < 6 ? 1 : 2));
+
+  const back = deserialise(JSON.stringify(serialise(state, controls)));
+  assert.deepEqual(back.model.groups, state.model.groups);
+  assert.deepEqual(back.model.blockGroups, state.model.blockGroups);
+});
+
 test('an image-only session can be saved before tracing blocks', () => {
   const state = {
     model: {
