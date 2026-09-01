@@ -77,7 +77,12 @@ export function serialise(state, controls = {}, imageName = null) {
         groups: m.groups?.length ? m.groups.map((g) => ({ ...g })) : undefined,
         blockGroups: m.blockGroups?.length ? m.blockGroups.map((id) => Number(id)) : undefined,
         blocks: (m.blocks ?? []).map(polygon),
-        joints: (m.joints ?? []).map((j) => ({ a: [...j.a], b: [...j.b] })),
+        // null, not [], when there are none. An empty array is TRUTHY, so a
+        // model saved with no joints came back claiming to have some and every
+        // `if (!m.joints)` guard downstream let it through.
+        joints: m.joints?.length
+          ? m.joints.map((j) => ({ a: [...j.a], b: [...j.b] }))
+          : null,
         centroids: points(m.centroids),
         weights: numbers(m.weights),
         areas: numbers(m.areas),
@@ -159,13 +164,26 @@ export function deserialise(text) {
     const n = (m.centroids ?? []).length;
     if (n) {
       for (const [key, want] of [['weights', n], ['areas', n], ['thickness', n],
-        ['blocks', n], ['joints', n + 1]]) {
+        ['blocks', n]]) {
         const got = (m[key] ?? []).length;
         if (got !== want) {
           throw new Error(
             `the file is inconsistent: ${got} ${key} against ${n} blocks`,
           );
         }
+      }
+      // NO JOINTS IS A STATE, NOT A FAULT. A Poleni dome, a section with
+      // detached members, an assembly drawn by hand: none of them is a chain,
+      // and the application already says so and carries on. Demanding n+1
+      // joints of every file meant that any such session could be saved and
+      // then never reopened -- "0 joints against 31 blocks" -- which is the
+      // one thing a save format must not do. Their COUNT is still checked,
+      // because every panel downstream indexes into the list.
+      const nJoints = (m.joints ?? []).length;
+      if (nJoints && nJoints !== n + 1) {
+        throw new Error(
+          `the file is inconsistent: ${nJoints} joints against ${n} blocks`,
+        );
       }
     } else {
       for (const key of ['weights', 'areas', 'thickness', 'blocks']) {
@@ -203,6 +221,9 @@ export function deserialise(text) {
       ? {
         ...m,
         blocks: (m.blocks ?? []).map((p) => ({ x: [...p.x], y: [...p.y] })),
+        // Older files wrote [] where they meant "none"; [] is truthy, so it has
+        // to be normalised here or the guards downstream never fire.
+        joints: m.joints?.length ? m.joints : null,
         thrustLine: null,
       }
       : null,

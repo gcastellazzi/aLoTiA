@@ -271,3 +271,35 @@ test('a file saved before the dome existed opens as a barrel', () => {
   const back = deserialise(JSON.stringify(data));
   assert.deepEqual(back.dome, { poleni: false, angleDeg: 15, axisX: 0 });
 });
+
+test('a model with no joints at all survives the round trip', () => {
+  // A Poleni dome, a section with detached members, an assembly drawn by hand:
+  // none of them is a chain of abutting voussoirs, so none of them has joints.
+  // Such a session used to save and then refuse to reopen — "0 joints against
+  // 31 blocks" — which is the one thing a save format must not do.
+  const { state, controls } = session();
+  state.model.joints = null;
+
+  const back = deserialise(JSON.stringify(serialise(state, controls)));
+  assert.equal(back.model.joints, null);
+  assert.equal(back.model.blocks.length, state.model.blocks.length);
+});
+
+test('an empty joint list reads back as no joints, not as an empty one', () => {
+  // [] is TRUTHY, so a file written by an older version came back claiming to
+  // have joints and every `if (!m.joints)` guard downstream let it through.
+  const { state, controls } = session();
+  const saved = serialise(state, controls);
+  saved.model.joints = [];
+
+  const back = deserialise(JSON.stringify(saved));
+  assert.equal(back.model.joints, null);
+});
+
+test('a joint list of the wrong length is still refused', () => {
+  const { state, controls } = session();
+  const saved = serialise(state, controls);
+  saved.model.joints = saved.model.joints.slice(0, 2);
+
+  assert.throws(() => deserialise(JSON.stringify(saved)), /joints against/);
+});

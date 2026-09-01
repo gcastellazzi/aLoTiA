@@ -63,7 +63,19 @@ and the project uses [semantic versioning](https://semver.org/).
 
   The same recovery runs when a second traced run is appended to the first,
   where the concatenated joint list was `blocks + runs` long against the
-  `blocks + 1` every panel downstream indexes into.
+  `blocks + 1` every panel downstream indexes into, and when a session is
+  reopened without joints — a file from a version that never looked.
+
+  **Where no order is a chain, the panel now says why in terms that can be
+  acted on.** "6 of 30 consecutive pairs do not touch" describes the order that
+  was tried, not the assembly; what settles the question is that a chain has
+  exactly two free ends. A flying buttress drawn with its pinnacle and a course
+  along its extrados has three, and no ordering of it will ever be a chain. The
+  panel names the blocks — *the assembly branches: a chain has two free ends and
+  this one has 3, at blocks 1, 19, 30* — and says what to do with the arms: they
+  load the arch rather than belonging to it, so the group is cleared and its
+  weight put back as an applied load. Blocks touching nothing at all are named
+  the same way.
 
 - **Blocks are cleared a group at a time, from a control that is always in
   view.** *Clear blocks in* takes either one named group or all of them, and it
@@ -174,6 +186,22 @@ and the project uses [semantic versioning](https://semver.org/).
   to discard whatever had been entered.
 
 ### Fixed
+
+- **A session with no joints could be saved and then never reopened.** The
+  reader demanded `blocks + 1` joints of every file, and the writer put `[]`
+  where the model had none, so any arch that is not a chain — a Poleni dome, a
+  section with detached members, an assembly drawn by hand — came back as *"the
+  file is inconsistent: 0 joints against 31 blocks"* and would not open at all.
+  Having no joints is a state the application already handles and explains
+  everywhere else; it is now a state the save format can carry. The count is
+  still checked when there are any, because every panel downstream indexes into
+  the list. `null` is written rather than `[]`, and an older file's `[]` is read
+  back as `null`: an empty array is TRUTHY, so such a model came back claiming
+  to have joints and every `if (!m.joints)` guard let it through.
+
+- **A line held between two imposed ends crashed on an arch with no joints.**
+  Two `jointCrossings` calls in that branch were unguarded, which the empty
+  array above had been hiding.
 
 - **The horizontal thrust was misreported in two of the three modes.** With
   *Drive from the thrust* on, or with both ends imposed, `recompute` returned

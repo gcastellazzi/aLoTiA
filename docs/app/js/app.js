@@ -22,7 +22,7 @@ import { fromExample, poleOf, consistency } from './core/model.js';
 import {
   blocksBetween, checkTrace, weighBlocks, centroidsOf, springings,
 } from './core/trace.js';
-import { jointsFromBlocks } from './core/joints.js';
+import { jointsFromBlocks, contactJoint } from './core/joints.js';
 import {
   blocksLike, circularRing, circularRingThroughPoints, betweenEnds,
 } from './core/blocks.js';
@@ -767,8 +767,9 @@ function describe() {
 function noJointsReason(m) {
   const r = m && m.jointRecovery;
   if (r && r.reason) {
-    return `no joints for this example — ${r.reason}. `
-      + 'Trace the outline, or the two faces, to cut it yourself.';
+    return `no joints for this example — ${r.reason}.`
+      + (r.advised ? '' : ' Trace the outline, or the two faces, to cut it '
+        + 'yourself.');
   }
   return 'available for a traced arch, which has joints';
 }
@@ -1189,7 +1190,11 @@ function recompute() {
       const fpTry = forcePolygon(span.weights, g.pole);
       const lotTry = funicular(fpTry, span.centroids, P, Q);
       return { g, fp: fpTry, lot: lotTry,
-        crossings: jointCrossings(lotTry.points, m.joints) };
+        // An arch with both ends imposed need not have joints at all: a pier
+        // and a course drawn beside a ring are not a chain. The construction
+        // still runs -- A and B are the student's, not the springings' -- and
+        // it is only the admissibility that has nothing to be asked of.
+        crossings: jointCrossings(lotTry.points, m.joints ?? []) };
     };
     const first = span.weights.length
       ? poleForEnds(span.weights, span.centroids, P, Q, pole[0], pole[1])
@@ -1202,7 +1207,7 @@ function recompute() {
         g: first,
         fp: fpTry,
         lot: lotTry,
-        crossings: jointCrossings(lotTry.points, m.joints),
+        crossings: jointCrossings(lotTry.points, m.joints ?? []),
       };
     }
     // WHENEVER THE MECHANISM IS ACTIVE, not only when the thrust is driving it.
@@ -2878,6 +2883,61 @@ function splitEdgeAt(split) {
 }
 
 /**
+ * Why the blocks are not a chain, said in terms the student can act on.
+ *
+ * "6 of 30 consecutive pairs do not touch" is true and unhelpful: it describes
+ * the ORDER that was tried, not the assembly. What decides the question is the
+ * shape of the whole thing. A chain has exactly two ends, so a block touching
+ * only one other is an end and a third of them is a branch — which is what a
+ * pinnacle above a pier, or a course laid along an extrados, actually is. No
+ * ordering of such an assembly is a chain, and no amount of redrawing will
+ * make one; the blocks have to be told apart into the chain the line runs
+ * along and the masonry that only loads it.
+ *
+ * The neighbours are counted with the same tolerances `jointsFromBlocks` uses.
+ * The loose one can only ADD neighbours, so this under-reports ends rather
+ * than inventing them.
+ */
+function chainDiagnosis() {
+  const blocks = state.model?.blocks ?? [];
+  if (blocks.length < 3) return null;
+  const b = bounds(blocks);
+  const diag = Math.hypot(b.xmax - b.xmin, b.ymax - b.ymin);
+  if (!(diag > 0)) return null;
+  const pts = (p) => (Array.isArray(p) ? p : p.x.map((x, i) => [x, p.y[i]]));
+  const P = blocks.map(pts);
+  const degree = blocks.map(() => 0);
+  for (let i = 0; i < P.length; i++) {
+    for (let j = i + 1; j < P.length; j++) {
+      if (contactJoint(P[i], P[j], 1e-3 * diag)
+        || contactJoint(P[i], P[j], 2e-2 * diag)) {
+        degree[i] += 1;
+        degree[j] += 1;
+      }
+    }
+  }
+  const name = (d) => degree
+    .map((v, i) => (v === d ? i + 1 : 0))
+    .filter(Boolean);
+  const loose = name(0);
+  const ends = name(1);
+  if (loose.length) {
+    return `block${loose.length > 1 ? 's' : ''} ${loose.join(', ')} `
+      + `touch${loose.length > 1 ? '' : 'es'} nothing at all. Draw against a `
+      + 'corner or an edge of a block already there, or clear that group and '
+      + 'redraw it';
+  }
+  if (ends.length > 2) {
+    return 'the assembly branches: a chain has two free ends and this one has '
+      + `${ends.length}, at blocks ${ends.join(', ')}. Only what the line runs `
+      + 'along can be a chain — a pinnacle or a spandrel course loads the arch '
+      + 'rather than belonging to it, so clear that group and put its weight '
+      + 'back as an applied load';
+  }
+  return null;
+}
+
+/**
  * Find the joints of the blocks as they now stand, if they form a chain.
  *
  * WHY IT IS NEEDED HERE. `blocksBetween` hands back the cuts it made, so a
@@ -2932,12 +2992,16 @@ function recoverJoints() {
   // longer counts right, because every panel downstream indexes into it.
   const failed = jointsFromBlocks(m.blocks);
   if ((m.joints?.length ?? 0) !== n + 1) {
+    const why = chainDiagnosis();
     state.model = {
       ...m,
       joints: null,
       jointRecovery: {
         ok: false,
-        reason: failed.warnings[0] ?? null,
+        reason: why ?? failed.warnings[0] ?? null,
+        // The diagnosis carries its own advice; the generic "trace it yourself"
+        // would contradict it.
+        advised: !!why,
         gaps: failed.gaps.length,
       },
     };
@@ -4434,6 +4498,11 @@ function openWork(text) {
   ui.imposeEnds.checked = !!(data.ends && data.ends.imposed);
   ui.imposeEnds2.checked = ui.imposeEnds.checked;
   ensureGroups();
+  // A session saved before the joints could be found — a hand-built assembly,
+  // or a file from a version that never looked — is given the same chance a
+  // freshly drawn block gets. Cheap, and it is the difference between an arch
+  // that reopens analysable and one that reopens as a picture.
+  if (!state.model?.joints?.length) recoverJoints();
   syncProjectText();
 
   resetAxis();
