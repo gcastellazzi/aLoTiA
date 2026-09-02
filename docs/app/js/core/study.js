@@ -8,10 +8,10 @@
 import { distance } from './geometry.js';
 import { circularRing, blocksLike } from './blocks.js';
 import { weighBlocks, centroidsOf } from './trace.js';
-import { collapseRange } from './mechanism.js';
+import { bestLineForThrust, collapseRange } from './mechanism.js';
 import { luneWeights } from './dome.js';
 import {
-  forcePolygon, funicular, jointCrossings, poleForEnds,
+  forcePolygon, funicular, jointCrossings, poleForEnds, pointOnJoint,
 } from './statics.js';
 
 const STUDY_COLLAPSE = {
@@ -120,6 +120,17 @@ function steppedThrustFractions(band, count) {
   return steppedFractions(count, Math.max(0.005, band.min * 0.55), band.max * 1.6);
 }
 
+/**
+ * An end point on a springing joint, at `s` along its OUTER HALF.
+ *
+ * NOT `pointOnJoint`, and the difference matters now that `pinnedRange` draws
+ * the classical construction beside this scatter. That one puts the end at the
+ * middle of the whole joint; this one runs `s` from the centroid of the
+ * springing voussoir out to the extrados, so `s = 0.5` here is the middle of
+ * the outer half and sits a little further out. A sample flagged `midBase` is
+ * therefore NOT a point of the pinned family, and the two must not be read as
+ * the same experiment.
+ */
 function horizontalPointOnBase(joint, s, side, centroidX) {
   const xmin = Math.min(joint.a[0], joint.b[0]);
   const xmax = Math.max(joint.a[0], joint.b[0]);
@@ -193,6 +204,126 @@ export function ringStudySamples(opt) {
     }
   }
   return { ok: true, points: samples, band };
+}
+
+/**
+ * The admissible thrust band with both ends PINNED at the joint mid-points.
+ *
+ * THE SUPERSEDED CONSTRUCTION, and that is the point of it. Fix the line to
+ * enter at the middle of one springing joint and leave at the middle of the
+ * other, and one number is left free: the horizontal thrust. That is the
+ * classical drawing-board construction, and it rejects rings that plainly
+ * stand -- a semicircular ring at t/ri = 0.15 among them. Set beside the free
+ * family, whose ends are the student's to place, it shows what the safe theorem
+ * buys: the free band opens where the pinned one has closed.
+ *
+ * Bisected rather than scanned, by the scheme `collapseRange` uses on the free
+ * family. A grid quantises the thrust to its step and records the last sample
+ * that fits, which UNDERSTATES the band at both ends -- and a band understated
+ * at both ends is a figure a reader cannot reproduce.
+ *
+ * @param {object} r  a `circularRingCase`
+ * @returns {{min:number, max:number}|null} thrust as a fraction of the weight,
+ *   or null when no line fits at any thrust.
+ */
+export function pinnedRange(r, opt = {}) {
+  const {
+    lo = 0.02, hi = 1.2, coarse = 60, refine = 18,
+  } = opt;
+  const { right, left } = springingJoints(r.joints);
+  const A = pointOnJoint(right, 0.5);
+  const B = pointOnJoint(left, 0.5);
+  const total = r.totalWeight;
+  const lineAt = (f) => {
+    const fp = forcePolygon(r.seq.weights, [total * f, -total / 2]);
+    const lot = funicular(fp, r.seq.centroids, A, B);
+    const cr = jointCrossings(lot.points, r.joints);
+    const inside = cr.length === r.joints.length && cr.every((c) => c && c.inside);
+    return { fp, lot, crossings: cr, inside };
+  };
+  const fits = (f) => lineAt(f).inside;
+
+  let seed = null;
+  for (let i = 0; i <= coarse; i++) {
+    const f = lo + ((hi - lo) * i) / coarse;
+    if (fits(f)) { seed = f; break; }
+  }
+  if (seed === null) return null;
+
+  const edge = (from, towards) => {
+    let good = from;
+    let bad = towards;
+    for (let i = 0; i < refine; i++) {
+      const m = (good + bad) / 2;
+      if (fits(m)) good = m; else bad = m;
+    }
+    return good;
+  };
+  const min = edge(seed, lo);
+  const max = edge(seed, hi);
+  return {
+    min,
+    max,
+    minLine: lineAt(min).lot.points.map((p) => p.slice()),
+    maxLine: lineAt(max).lot.points.map((p) => p.slice()),
+  };
+}
+
+function freeBandWithLines(r, band, opt = {}) {
+  if (!band) return null;
+  const search = opt.search ?? {};
+  const lineAt = (f) => bestLineForThrust(r.seq, r.joints, f, search);
+  const min = lineAt(band.min);
+  const max = lineAt(band.max);
+  return {
+    min: band.min,
+    max: band.max,
+    minLine: min?.lot?.points?.map((p) => p.slice()) ?? [],
+    maxLine: max?.lot?.points?.map((p) => p.slice()) ?? [],
+  };
+}
+
+/**
+ * Both admissible thrust bands for one thickness: ends free, and ends pinned.
+ *
+ * The free band is the application's own answer, `collapseRange`, at its full
+ * accuracy and not at the coarser settings the scatter tool runs at -- this is
+ * the number the published figure plots, and it has to be the same number.
+ */
+export function ringBands(opt) {
+  const r = circularRingCase(opt);
+  const free = collapseRange(r.seq, r.joints, opt.search ? { search: opt.search } : {});
+  return {
+    tri: opt.tri,
+    weight: r.totalWeight,
+    free: freeBandWithLines(r, free, opt),
+    pinned: pinnedRange(r, opt.pinned ?? {}),
+  };
+}
+
+/**
+ * The admissible band against thickness: the figure, computed by the tool.
+ *
+ * One row per thickness, each carrying both bands and the ring's weight, so
+ * that the same rows draw H/W or an absolute thrust without being recomputed.
+ *
+ * NOT CHEAP. Each row is a full `collapseRange` on a fresh ring, some two
+ * hundred milliseconds of it, so a caller with a screen to keep alive should
+ * step `thicknesses()` itself and hand back a row at a time rather than ask for
+ * the lot at once.
+ */
+export function thicknesses({ from = 0.08, to = 0.6, steps = 27 } = {}) {
+  const m = Math.max(2, Math.round(steps));
+  return Array.from({ length: m }, (_, i) => from + ((to - from) * i) / (m - 1));
+}
+
+export function thicknessBandStudy(opt = {}) {
+  const rows = [];
+  for (const tri of thicknesses(opt)) {
+    const row = ringBands({ ...opt, tri });
+    if (row.free || row.pinned) rows.push(row);
+  }
+  return { ok: rows.length > 0, rows };
 }
 
 /**

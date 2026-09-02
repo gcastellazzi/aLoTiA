@@ -102,9 +102,10 @@
     <section class="method-section" id="methodRing" data-method-pane="ring" hidden>
       <h2>Parametric circular arch</h2>
       <p class="hint">An exact ring from its numbers, with no image to trace.
-        The published figures for the admissible band and the least admissible
-        thickness are computed on this ring, so a point of either can be
-        checked here by hand.</p>
+        The published figures are computed on this ring: open the
+        <b>t/ri</b> tab and press <b>Admissible band</b> to draw the band of
+        admissible thrust against thickness, with the ends free and with the
+        ends pinned at the joint mid-points.</p>
       <label class="inline">Inner radius
         <input type="number" id="ringRi" min="0.01" step="0.5" value="4">
       </label>
@@ -181,7 +182,7 @@
         nothing at the crown. The weights follow, and so does the line of
         thrust &mdash; this is what Poleni saw in 1748.</p>
       <label class="inline">Slice angle &deg;
-        <input type="number" id="domeAngle" min="1" max="360" step="1" value="15">
+        <input type="number" id="domeAngle" min="1" max="360" step="0.5" value="22.5">
       </label>
       <label class="inline">Axis x
         <input type="number" id="domeAxis" step="0.001" value="0">
@@ -231,6 +232,13 @@
       <input id="split" type="range" min="5" max="95" value="50" disabled>
       <p class="meta"><span id="splitValue">&mdash;</span></p>
 
+      <label for="thrustWidth">Thickness of the line</label>
+      <input id="thrustWidth" type="range" min="0" max="100" value="30">
+      <p class="hint">The line of thrust is a band whose width is the force in
+        each segment, against the largest. This says how wide the largest is
+        drawn &mdash; at nothing it is a bare line, which is what to use when
+        the band would cover the joints it has to be read against.</p>
+
       <p class="hint">Three numbers fix the line, and these are they: the pole&rsquo;s
         distance from the load line, which is the thrust; where the line leaves
         its springing joint; and how the total weight divides between the two
@@ -252,9 +260,14 @@
         <label><input type="checkbox" id="showCable2"> Show the hanging cable</label>
         <label for="cableWeights">Weight circles</label>
         <input id="cableWeights" type="range" min="0" max="100" value="0">
-        <p class="hint">A circle at each vertex with its area proportional to the
-          weight carried there. On a dome lune the springing circles dwarf the
-          crown ones, which is the taper made visible.</p>
+        <p class="hint">A circle at each vertex with its area proportional to
+          the weight carried there: <b>blue for a voussoir</b>, <b>orange for a
+          load you applied</b>, because the construction treats the two alike
+          and the drawing should still say which is which. On a dome lune the
+          springing circles dwarf the crown ones, which is the taper made
+          visible. The cable itself is drawn like the line of thrust &mdash; its
+          width is the force in each segment &mdash; because it carries the same
+          forces, which is the whole of Hooke&rsquo;s sentence.</p>
       </section>
     </div>
     <div class="pane" id="paneMech" hidden>
@@ -365,21 +378,55 @@
           </div>
         </div>
       </div>
-      <div class="texttab" id="notesPane" hidden>
-        <textarea id="projectNotes" spellcheck="true"
-          placeholder="Image credits, assumptions, steps needed to rerun the analysis..."></textarea>
+      <div class="texttab notes" id="notesPane" hidden>
+        <div class="notetools">
+          <span class="noteedit" id="noteEditTools" hidden>
+            <button id="noteBold" type="button" title="Bold: **like this**"><b>B</b></button>
+            <button id="noteEmph" type="button" title="Emphasis: *like this*"><i>I</i></button>
+            <button id="noteUnder" type="button" title="Underline: _like this_"><u>U</u></button>
+            <button id="noteLink" type="button" title="Link: [what it says](where it goes)">link</button>
+            <select id="noteStyle" title="the style of the lines the cursor is on">
+              <option value="">Body</option>
+              <option value="# ">Title</option>
+              <option value="## ">Heading</option>
+              <option value="- ">Bullet</option>
+            </select>
+          </span>
+          <button id="noteEdit" type="button" class="notedone">Edit</button>
+        </div>
+        <textarea id="projectNotes" spellcheck="true" hidden
+          placeholder="Image credits, assumptions, steps needed to rerun the analysis...
+
+# A title
+Plain text, with **bold**, *emph*, _underline_ and
+[a link](https://example.org).
+- and bullets"></textarea>
+        <div class="noteread" id="notesRead"></div>
       </div>
       <div class="texttab" id="logPane" hidden>
         <textarea id="projectLog" readonly
           placeholder="The project log will appear here."></textarea>
       </div>
       <div class="plotmetric" id="radiusMetric" hidden>
+        <label>Method
+          <select id="radiusStudyMethod">
+            <option value="scatter">A/B/H samples</option>
+            <option value="couplet" selected>Couplet Hmin/Hmax</option>
+          </select>
+        </label>
         <button class="active" id="radiusByWeight" type="button">Weight</button>
         <button id="radiusByThrust" type="button">Horizontal thrust</button>
-        <label>A steps <input id="radiusASteps" type="number" min="3" max="21" step="1" value="5"></label>
-        <label>B steps <input id="radiusBSteps" type="number" min="3" max="21" step="1" value="5"></label>
-        <label>N steps <input id="radiusNSteps" type="number" min="2" max="31" step="1" value="7"></label>
+        <button id="radiusByThrustRatio" type="button">H/W</button>
+        <span id="radiusSampleControls">
+          <label>A steps <input id="radiusASteps" type="number" min="3" max="21" step="1" value="5"></label>
+          <label>B steps <input id="radiusBSteps" type="number" min="3" max="21" step="1" value="5"></label>
+          <label>N steps <input id="radiusNSteps" type="number" min="2" max="31" step="1" value="7"></label>
+        </span>
         <label>t/ri step <input id="radiusTriStep" type="number" min="0.0001" max="1" step="0.0001" value="0.01"></label>
+        <button id="radiusBand" type="button">Admissible band</button>
+        <label>from <input id="radiusBandFrom" type="number" min="0.005" max="2" step="0.01" value="0.08"></label>
+        <label>to <input id="radiusBandTo" type="number" min="0.005" max="2" step="0.01" value="0.6"></label>
+        <label>steps <input id="radiusBandSteps" type="number" min="2" max="60" step="1" value="27"></label>
       </div>
       <div class="viewtools" data-ax="side">
         <button data-act="fit" title="Fit">fit</button>
@@ -391,6 +438,9 @@
       <div class="viewtools" id="solidTools" hidden>
         <button data-view3d="front" title="Look at the face">front</button>
         <button data-view3d="corner" title="Three quarters">3/4</button>
+        <button data-view3d="alignCenter" id="solidAlignCenter" title="Centre blocks on the mean meridian">center</button>
+        <button data-view3d="alignLeft" id="solidAlignLeft" title="Align blocks on the left meridian">sx</button>
+        <button data-view3d="alignRight" id="solidAlignRight" title="Align blocks on the right meridian">dx</button>
         <button data-view3d="axes" id="showSolidAxes" title="Show reference frame">axes</button>
         <span class="hint">drag to turn &middot; wheel to zoom &middot; shift-drag to pan</span>
       </div>

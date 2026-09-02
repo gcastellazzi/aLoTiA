@@ -258,7 +258,9 @@ test('the dome settings travel with the weights they produced', () => {
   state.dome = { poleni: true, angleDeg: 22, axisX: 0.5 };
 
   const back = deserialise(JSON.stringify(serialise(state)));
-  assert.deepEqual(back.dome, { poleni: true, angleDeg: 22, axisX: 0.5 });
+  assert.deepEqual(back.dome, {
+    poleni: true, angleDeg: 22, axisX: 0.5, align: 'center',
+  });
   back.model.weights.forEach((w, i) => {
     assert.ok(Math.abs(w - weights[i]) < 1e-12, `weight ${i}`);
   });
@@ -269,7 +271,9 @@ test('a file saved before the dome existed opens as a barrel', () => {
   const data = serialise(state);
   delete data.dome;
   const back = deserialise(JSON.stringify(data));
-  assert.deepEqual(back.dome, { poleni: false, angleDeg: 15, axisX: 0 });
+  assert.deepEqual(back.dome, {
+    poleni: false, angleDeg: 22.5, axisX: 0, align: 'center',
+  });
 });
 
 test('a model with no joints at all survives the round trip', () => {

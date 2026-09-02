@@ -11,7 +11,7 @@ import {
   drawBlocks, drawThrustLine, drawCable, drawWeights, drawSupports,
   drawForcePolygon, drawArrow, drawReactionLabel, drawThrustLabels, labelStride,
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
-  drawEnds, drawPreliminary,
+  drawEnds, drawPreliminary, drawNotice, wrapText,
 } from './render/draw.js';
 import { bounds, area as signedAreaOf, piecesOf } from './core/geometry.js';
 import {
@@ -35,20 +35,23 @@ import {
   serialise, deserialise, suggestedName, FORMAT,
 } from './core/persist.js';
 import {
+  parseNotes, toggleWrap, setBlockStyle, insertLink,
+} from './core/notes.js';
+import {
   bestLineForThrust, constrainedLine, collapseRange, analyse, imposedBand,
   displacedConfiguration, displaced, freezeBranch, lineWithFrozenBranch,
 } from './core/mechanism.js';
 import {
-  ringStudySamples, heymanPoint, heymanDomain, thirdMiddleBand,
+  ringStudySamples, ringBands, thicknesses, heymanPoint, heymanDomain, thirdMiddleBand,
   heymanGeometricalSafety,
 } from './core/study.js';
 import {
-  defaultAxis, luneWeights, solids, widthRange,
+  defaultAxis, luneWeights, solids, widthRange, endParallels,
 } from './core/dome.js';
 import { cutRadially, blockCentroid, blockArea } from './core/profile.js';
 import {
   frame, projectedBounds, solidCentre, recenteredSolids,
-  drawSolids, drawAxis, drawReferenceFrame,
+  drawSolids, drawAxis, drawReferenceFrame, parallels, drawParallels,
 } from './render/solid.js';
 
 const DATA = 'data/examples/';
@@ -78,6 +81,10 @@ const ui = {
   tabForce: el('tabForce'), tabSolid: el('tabSolid'),
   tabHeyman: el('tabHeyman'), tabRadius: el('tabRadius'),
   tabNotes: el('tabNotes'), tabLog: el('tabLog'),
+  noteBold: el('noteBold'), noteEmph: el('noteEmph'), noteUnder: el('noteUnder'),
+  noteLink: el('noteLink'), noteStyle: el('noteStyle'),
+  noteEdit: el('noteEdit'), noteEditTools: el('noteEditTools'),
+  notesRead: el('notesRead'),
   tabBlockTable: el('tabBlockTable'), blockTablePane: el('blockTablePane'),
   groupList: el('groupList'), addGroup: el('addGroup'),
   tableFilter: el('tableFilter'), blockTable: el('blockTable'),
@@ -85,9 +92,14 @@ const ui = {
   notesPane: el('notesPane'), logPane: el('logPane'),
   projectNotes: el('projectNotes'), projectLog: el('projectLog'),
   radiusMetric: el('radiusMetric'),
+  radiusStudyMethod: el('radiusStudyMethod'),
+  radiusSampleControls: el('radiusSampleControls'),
   radiusByWeight: el('radiusByWeight'), radiusByThrust: el('radiusByThrust'),
+  radiusByThrustRatio: el('radiusByThrustRatio'),
   radiusASteps: el('radiusASteps'), radiusBSteps: el('radiusBSteps'),
   radiusNSteps: el('radiusNSteps'), radiusTriStep: el('radiusTriStep'),
+  radiusBand: el('radiusBand'), radiusBandFrom: el('radiusBandFrom'),
+  radiusBandTo: el('radiusBandTo'), radiusBandSteps: el('radiusBandSteps'),
   plotStatus: el('plotStatus'),
   sideCaption: el('sideCaption'),
   tabGeom: el('tabGeom'), tabLot: el('tabLot'), tabMech: el('tabMech'),
@@ -95,6 +107,7 @@ const ui = {
   thrustM: el('thrustM'), thrustValueM: el('thrustValueM'),
   thrustP: el('thrustP'), thrustValueP: el('thrustValueP'),
   showCable2: el('showCable2'), cableWeights: el('cableWeights'),
+  thrustWidth: el('thrustWidth'),
   imposeEnds: el('imposeEnds'), pickA: el('pickA'), pickB: el('pickB'),
   endsStatus: el('endsStatus'),
   imposeEnds2: el('imposeEnds2'), pickA2: el('pickA2'), pickB2: el('pickB2'),
@@ -133,7 +146,7 @@ const ui = {
 
 const mainAx = new Axes(el('main'), { equal: true, yUp: true });
 const forceAx = new Axes(el('force'), { equal: true, yUp: true });
-const plotAx = new Axes(el('plot'), { equal: false, yUp: true });
+const plotAx = new Axes(el('plot'), { equal: false, yUp: true, fontScale: 1.3 });
 // The block view lives on its own canvas, sharing the pane with the force
 // polygon. Its "data" coordinates are the screen plane of the projection, so
 // equal scales there mean the solid is drawn without distortion.
@@ -141,6 +154,8 @@ const solidAx = new Axes(el('solid'), { equal: true, yUp: true, margin: [8, 8, 8
 mainAx.xlabel = 'x';
 mainAx.ylabel = 'y';
 forceAx.title = 'Force polygon';
+forceAx.xlabel = 'Horizontal component';
+forceAx.ylabel = 'Vertical component';
 plotAx.title = 'Plots';
 
 /** Everything the drawing depends on. */
@@ -167,15 +182,22 @@ const state = {
   selectedJoint: null,
   thicknessStudy: null,
   ringStudySource: null,
+  // The two admissible bands against thickness -- the published figure, run by
+  // the tool. Held apart from `thicknessStudy`, which is the scatter of states
+  // the student has actually visited: one is computed, the other is a record.
+  thicknessBands: null,
   ringAuto: false,
   visibleStudyTris: [],
+  radiusStudyMethod: 'couplet',
   radiusMetric: 'weight',
   showSolidAxes: false,
+  solidAlign: 'center',
   frozenBranch: null,
   notes: '',
   log: [],
   snap: null,       // the corner a click would land on, while a block is drawn
   selectedBlock: null,   // the row of the block table the drawing is showing
+  notesEditing: false,   // the notes open on the reading of them, not the markers
   tableFilter: 'all',
   pole: null,
   fp: null,
@@ -204,13 +226,124 @@ function clearPlotState({ keepStudy = false } = {}) {
   if (!keepStudy) {
     state.thicknessStudy = null;
     state.ringStudySource = null;
+    stopBandStudy();
     state.ringAuto = false;
     state.visibleStudyTris = [];
   }
 }
 
+/**
+ * Turn the notes into elements.
+ *
+ * NOTHING HERE PARSES HTML, and that is the whole of the safety argument. The
+ * text arrives from a session file, which is something one student hands
+ * another; `parseNotes` returns a description and every piece of it is put on
+ * the page with `textContent`, so a note containing a tag renders as a note
+ * containing a tag. The one attribute that is written from the text is a link's
+ * address, and `safeHref` has already decided that it is one of three schemes.
+ */
+function renderNotes() {
+  const host = ui.notesRead;
+  host.innerHTML = '';
+  const blocks = parseNotes(state.notes ?? '');
+  let list = null;
+
+  const paint = (el, spans) => {
+    for (const s of spans) {
+      let node = document.createTextNode(s.text);
+      const wrap = (tag) => {
+        const e = document.createElement(tag);
+        e.append(node);
+        node = e;
+      };
+      if (s.underline) wrap('u');
+      if (s.emph) wrap('em');
+      if (s.bold) wrap('strong');
+      if (s.href) {
+        const a = document.createElement('a');
+        a.href = s.href;
+        a.target = '_blank';
+        // Without this the page opened can reach back through `window.opener`.
+        a.rel = 'noopener noreferrer';
+        a.append(node);
+        node = a;
+      }
+      el.append(node);
+    }
+  };
+
+  for (const b of blocks) {
+    if (b.kind === 'bullet') {
+      if (!list) { list = document.createElement('ul'); host.append(list); }
+      const li = document.createElement('li');
+      paint(li, b.spans);
+      list.append(li);
+      continue;
+    }
+    list = null;
+    if (b.kind === 'blank') {
+      const p = document.createElement('p');
+      p.className = 'blank';
+      host.append(p);
+      continue;
+    }
+    const tag = b.kind === 'title' ? 'h1' : b.kind === 'heading' ? 'h2' : 'p';
+    const el2 = document.createElement(tag);
+    paint(el2, b.spans);
+    host.append(el2);
+  }
+
+  if (!blocks.some((b) => b.spans.length)) {
+    const p = document.createElement('p');
+    p.className = 'blank';
+    p.textContent = 'nothing written yet — press Edit, or double-click here';
+    p.style.color = 'var(--muted)';
+    p.style.fontStyle = 'italic';
+    host.append(p);
+  }
+}
+
+/**
+ * Reading or writing.
+ *
+ * READING IS THE DEFAULT, because that is what notes are for most of the time:
+ * they are written once and read on every reopening, by whoever the file was
+ * handed to. Opening on the markers would show a reader the machinery instead
+ * of the note. The tools appear only while writing, so the strip is quiet the
+ * rest of the time.
+ */
+function showNotesEditing(on) {
+  state.notesEditing = on;
+  ui.projectNotes.hidden = !on;
+  ui.notesRead.hidden = on;
+  ui.noteEditTools.hidden = !on;
+  ui.noteEdit.textContent = on ? 'Done' : 'Edit';
+  ui.noteEdit.classList.toggle('on', on);
+  ui.noteEdit.title = on
+    ? 'stop writing and read it as it will be read'
+    : 'write, with the markers and the tools for them';
+  if (on) ui.projectNotes.focus();
+  else renderNotes();
+}
+
+/**
+ * Put a marker in, and give the textarea back its selection.
+ *
+ * The selection matters more than it looks: a button that leaves the cursor at
+ * the end of the document turns writing into a hunt for where you were.
+ */
+function editNotes(fn) {
+  const t = ui.projectNotes;
+  const got = fn(t.value, t.selectionStart, t.selectionEnd);
+  t.value = got.text;
+  state.notes = got.text;
+  t.focus();
+  t.setSelectionRange(got.start, got.end);
+}
+
 function syncProjectText() {
   ui.projectNotes.value = state.notes ?? '';
+  if (!state.notesEditing) renderNotes();
   ui.projectLog.value = (state.log ?? []).join('\n');
   ui.projectLog.scrollTop = ui.projectLog.scrollHeight;
 }
@@ -225,6 +358,12 @@ function appendLog(message) {
 
 function groupColour(index) {
   return GROUP_COLOURS[index % GROUP_COLOURS.length];
+}
+
+function rgbFromHex(hex, fallback = [196, 156, 110]) {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(String(hex ?? '').trim());
+  if (!m) return fallback;
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
 }
 
 function groupName(method, index) {
@@ -317,6 +456,53 @@ function newGroup(method, count) {
 
 function selectedGroupId(select) {
   return select.value === 'all' ? 'all' : Number(select.value);
+}
+
+function groupForBlock(i, fallback = {}) {
+  const m = state.model;
+  if (!m) return fallback;
+  ensureGroups();
+  return m.groups.find((g) => g.id === m.blockGroups[i]) ?? fallback;
+}
+
+function assignedThicknesses() {
+  const m = state.model;
+  if (!m?.blocks?.length) return [];
+  const fallback = { thickness: Math.max(0, Number(ui.thick.value) || 1) };
+  return m.blocks.map((_, i) => Math.max(0, Number(groupForBlock(i, fallback).thickness) || 0));
+}
+
+function structuralSolidCentre(polys) {
+  if (!polys?.length) return [0, 0, 0];
+  const b = bounds(polys);
+  if (!Number.isFinite(b.xmin)) return [0, 0, 0];
+  return [(b.xmin + b.xmax) / 2, 0, (b.ymin + b.ymax) / 2];
+}
+
+/**
+ * The parallels of the model, ready to draw: the springing's and the crown's.
+ *
+ * `endParallels` works out which circles those are and why; this puts them in
+ * the recentred frame the solids are drawn in, which is why `centre` is taken.
+ * The drawing subtracts it from every vertex, and a reference that did not
+ * follow would sit somewhere else entirely.
+ */
+function domeParallels(polys, axisX, centre) {
+  return endParallels(polys, axisX).flatMap(({ z, radii }) => parallels(
+    axisX - centre[0], radii, [z - centre[2]], { depth: -centre[1] },
+  ));
+}
+
+function visibleGroups() {
+  const m = state.model;
+  if (!m?.blocks?.length) return [];
+  ensureGroups();
+  return m.groups
+    .map((g) => ({
+      ...g,
+      count: m.blockGroups.filter((id) => id === g.id).length,
+    }))
+    .filter((g) => g.count > 0);
 }
 
 function reportGroups() {
@@ -446,6 +632,7 @@ function keepOnlyBlocks(keep, label) {
   state.mech = null; state.crossings = null;
   state.frozenBranch = null;
   state.ringStudySource = null;
+  stopBandStudy();
   state.ringAuto = false;
   state.ends = { A: null, B: null, picking: null, construction: null };
   if (state.model.blocks.length) reweigh();
@@ -737,9 +924,39 @@ function nudgeRingTri(direction) {
   ui.ringTri.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+function isCoupletStudy() {
+  return state.radiusStudyMethod === 'couplet';
+}
+
 function refreshRingStudy() {
   if (!state.ringStudySource) return;
   state.ringStudySource = currentRingStudySource(state.ringStudySource);
+  if (isCoupletStudy()) {
+    const seen = new Set();
+    const tris = [
+      ...(state.thicknessBands?.rows ?? []).map((p) => p.tri),
+      Number(ui.ringTri.value) || state.ringStudySource.tri,
+    ].filter((tri) => {
+      const key = tri.toPrecision(12);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    state.thicknessBands = {
+      rows: tris.map((tri) => ringBands({ ...state.ringStudySource, tri }))
+        .filter((row) => row.free || row.pinned)
+        .sort((a, b) => a.tri - b.tri),
+      done: tris.length,
+      total: tris.length,
+      running: false,
+      token: bandRun,
+      key: bandKey(state.ringStudySource),
+    };
+    state.thicknessStudy = { ok: true, points: [] };
+    state.visibleStudyTris = tris.slice(-3);
+    state.plotFitKey = null;
+    return;
+  }
   const seen = new Set();
   const tris = (state.thicknessStudy?.points ?? [])
     .map((p) => p.tri)
@@ -762,7 +979,109 @@ function refreshRingStudy() {
   state.plotFitKey = null;
 }
 
+/**
+ * What the admissible band depends on, so a stale one can be recognised.
+ *
+ * NOT the thickness: the band is a curve AGAINST thickness, and moving along
+ * it is the whole point. The ring's radius, its number of blocks, its material
+ * and whether it is read as a lune are another matter — change any of those and
+ * the curve is a curve for a different ring.
+ */
+function bandKey(src) {
+  if (!src) return null;
+  return [src.ri, src.n, src.gamma, src.thickness, src.poleni,
+    src.axisX, src.angleDeg].join(':');
+}
+
+let bandRun = 0;
+
+/**
+ * Abandon a band study in progress.
+ *
+ * Bumping the token is enough: the tick that is queued sees a number that is no
+ * longer its own and simply does not queue another. Called wherever the ring
+ * the band belongs to goes away, so that a study of a ring nobody is looking at
+ * stops burning the tab's time.
+ */
+function stopBandStudy() {
+  bandRun += 1;
+  state.thicknessBands = null;
+}
+
+/**
+ * Run the admissible band study, one thickness per tick.
+ *
+ * A FULL `collapseRange` PER THICKNESS, some two hundred milliseconds of it, so
+ * twenty-seven of them is six seconds. Done in one go the tab would be frozen
+ * for all of it with nothing on screen to say why; done a thickness at a time,
+ * the curve draws itself from left to right and the page stays alive. The token
+ * is what lets a second run, or a new ring, abandon the first one mid-way
+ * rather than have two of them writing into the same array.
+ */
+function runBandStudy() {
+  const src = state.ringStudySource;
+  if (!src) return;
+  const from = Math.max(0.005, Number(ui.radiusBandFrom.value) || 0.08);
+  const to = Math.max(from, Number(ui.radiusBandTo.value) || 0.6);
+  const steps = Math.min(60, Math.max(2, Math.round(Number(ui.radiusBandSteps.value) || 27)));
+  const list = thicknesses({ from, to, steps });
+
+  bandRun += 1;
+  const token = bandRun;
+  state.thicknessBands = {
+    rows: [], done: 0, total: list.length, running: true, token, key: bandKey(src),
+  };
+  state.plotFitKey = null;
+
+  const tick = () => {
+    const study = state.thicknessBands;
+    if (!study || study.token !== token) return;
+    const row = ringBands({ ...src, tri: list[study.done] });
+    if (row.free || row.pinned) study.rows.push(row);
+    study.done += 1;
+    state.plotFitKey = null;
+    if (study.done < list.length) {
+      if (sideView() === 'radius') drawRadiusView();
+      setTimeout(tick, 0);
+      return;
+    }
+    study.running = false;
+    if (sideView() === 'radius') drawRadiusView();
+    appendLog(`Admissible band: ${study.rows.length} thicknesses from `
+      + `${from.toPrecision(3)} to ${to.toPrecision(3)}`);
+  };
+  setTimeout(tick, 0);
+}
+
+/** The band rows, if they still belong to the ring on the screen. */
+function currentBands() {
+  const study = state.thicknessBands;
+  if (!study || !study.rows.length) return null;
+  return study.key === bandKey(state.ringStudySource) ? study : null;
+}
+
 function recordRingState(opt) {
+  if (isCoupletStudy()) {
+    const row = ringBands(opt);
+    const current = state.thicknessBands?.rows ?? [];
+    const same = (p) => Math.abs(p.tri - opt.tri) < 1e-9;
+    state.thicknessBands = {
+      rows: [...current.filter((p) => !same(p)), row]
+        .filter((p) => p.free || p.pinned)
+        .sort((a, b) => a.tri - b.tri),
+      done: 1,
+      total: 1,
+      running: false,
+      token: bandRun,
+      key: bandKey(opt),
+    };
+    state.thicknessStudy = { ok: true, points: [] };
+    state.visibleStudyTris = [...state.visibleStudyTris.filter((tri) => (
+      Math.abs(tri - opt.tri) >= 1e-9
+    )), opt.tri].slice(-3);
+    state.plotFitKey = null;
+    return { ok: !!(row.free || row.pinned), row };
+  }
   const got = ringStudySamples(opt);
   const current = state.thicknessStudy?.points ?? [];
   const same = (p) => Math.abs(p.tri - opt.tri) < 1e-9;
@@ -837,6 +1156,7 @@ function newWork() {
   state.selectedJoint = null;
   state.thicknessStudy = null;
   state.ringStudySource = null;
+  stopBandStudy();
   state.ringAuto = false;
   state.frozenBranch = null;
   state.notes = '';
@@ -913,6 +1233,7 @@ async function loadExample(file) {
     state.selectedJoint = null;
     state.thicknessStudy = null;
     state.ringStudySource = null;
+    stopBandStudy();
     state.ringAuto = false;
     state.frozenBranch = null;
     state.notes = '';
@@ -970,6 +1291,7 @@ async function loadExample(file) {
   state.selectedJoint = null;
   state.thicknessStudy = null;
   state.ringStudySource = null;
+  stopBandStudy();
   state.ringAuto = false;
   state.frozenBranch = null;
   state.notes = '';
@@ -1763,7 +2085,12 @@ function draw() {
   }
   if (sideView() === 'radius' && state.ringAuto) drawRingStudyCurves();
   if (ui.showThrust.checked && state.lot) {
-    drawThrustLine(mainAx, state.lot.points, state.segForces);
+    // The band's width is the force in each segment; the slider says how wide
+    // the largest is drawn. At nothing it is a bare line, which is what a
+    // student wants when the band would cover the joints it is read against.
+    drawThrustLine(mainAx, state.lot.points, state.segForces, {
+      widthFactor: (Number(ui.thrustWidth.value) / 100) * 40,
+    });
     if (ui.showRays.checked) {
       drawThrustLabels(mainAx, state.lot.points, { stride: raysStride() });
     }
@@ -1780,6 +2107,14 @@ function draw() {
     drawCable(mainAx, hangingCable(state.lot.points), {
       weights: state.seq ? state.seq.weights : null,
       weightScale: (Number(ui.cableWeights.value) / 100) * 40,
+      // The tag blocksLike already carries: 0 a voussoir, 1 a load applied by
+      // hand. The construction treats the two alike; the drawing need not.
+      kinds: state.seq ? state.seq.kind : null,
+      // The cable is the line of thrust reflected, so segment i of one is
+      // segment i of the other and carries the same force. Passing the same
+      // list is what lets the two drawings be compared at a glance.
+      forces: state.segForces,
+      widthFactor: (Number(ui.thrustWidth.value) / 100) * 40,
     });
   }
   if (ui.showMech.checked && state.mech) {
@@ -1887,16 +2222,22 @@ function heymanFrame() {
 }
 
 function radiusYValue(p) {
-  return state.radiusMetric === 'thrust'
-    ? (p.horizontalThrust ?? p.weight * p.thrust)
-    : p.weight;
+  if (state.radiusMetric === 'thrust') return p.horizontalThrust ?? p.weight * p.thrust;
+  if (state.radiusMetric === 'ratio') {
+    const H = p.horizontalThrust ?? p.weight * p.thrust;
+    return p.weight ? H / p.weight : p.thrust;
+  }
+  return p.weight;
 }
 
 function radiusYLabel() {
-  return state.radiusMetric === 'thrust' ? 'horizontal thrust' : 'total weight';
+  if (state.radiusMetric === 'thrust') return 'horizontal thrust';
+  if (state.radiusMetric === 'ratio') return 'H/W';
+  return 'total weight';
 }
 
 function formatRadiusY(value, scaled) {
+  if (state.radiusMetric === 'ratio') return value.toPrecision(4);
   return scaled ? format(value, 'force', state.system) : value.toPrecision(4);
 }
 
@@ -1996,12 +2337,27 @@ function plotContentBounds() {
     };
   }
   const pts = state.thicknessStudy?.points ?? [];
-  if (!pts.length) return { xmin: 0, xmax: 1, ymin: 0, ymax: 1 };
+  const bands = currentBands();
+  const xs = pts.map((q) => q.plotTri ?? q.tri);
+  const ys = pts.map((q) => radiusYValue(q));
+  if (bands && state.radiusMetric !== 'weight') {
+    for (const row of bands.rows) {
+      for (const which of ['free', 'pinned']) {
+        for (const side of ['min', 'max']) {
+          const y = bandY(row, { band: which, side });
+          if (y === null) continue;
+          xs.push(row.tri);
+          ys.push(y);
+        }
+      }
+    }
+  }
+  if (!xs.length) return { xmin: 0, xmax: 1, ymin: 0, ymax: 1 };
   return {
-    xmin: Math.min(...pts.map((q) => q.plotTri ?? q.tri)),
-    xmax: Math.max(...pts.map((q) => q.plotTri ?? q.tri)),
+    xmin: Math.min(...xs),
+    xmax: Math.max(...xs),
     ymin: 0,
-    ymax: Math.max(...pts.map((q) => radiusYValue(q))),
+    ymax: Math.max(...ys),
   };
 }
 
@@ -2012,7 +2368,8 @@ function ensurePlotFit() {
       + `${frame.nMax}:${frame.tMax}`
     : `study:${state.thicknessStudy?.points?.length ?? 0}:`
       + `${state.thicknessStudy?.minTri ?? ''}:${state.thicknessStudy?.maxTri ?? ''}:`
-      + `${state.radiusMetric}`;
+      + `${state.thicknessBands?.rows?.length ?? 0}:${state.thicknessBands?.token ?? ''}:`
+      + `${state.radiusMetric}:${state.radiusStudyMethod}`;
   if (state.plotFitKey === mode) return;
   plotAx.syncSize();
   plotAx.fit(plotContentBounds(), 0.12);
@@ -2048,66 +2405,186 @@ function drawMarker(ax, p, colour = '#A2142F', radius = 4, stroke = null) {
   });
 }
 
-function radiusEnvelope(pts, admissible) {
-  return radiusHull(pts.filter((p) => !!p.admissible === admissible));
+// THE CONVEX HULL OF THE SAMPLED STATES USED TO BE DRAWN HERE, and is gone.
+// It hulled the admissible states and, worse, the inadmissible ones, which is
+// not a region of anything: a state that does not stand says nothing about its
+// neighbours, and the pink polygon it produced claimed a shape the mechanics
+// never asserted. The band the figure wants is the least and the greatest
+// thrust that admit SOME line, which `collapseRange` and `pinnedRange` return
+// exactly -- see `drawThrustBand`. The scatter is still drawn, as the record of
+// where the student has been.
+
+/**
+ * The y value a band edge plots at, in whichever metric is on show.
+ *
+ * The rows carry the thrust as a FRACTION of the ring's weight, because that is
+ * what the mechanics returns and what the published figure plots. An absolute
+ * thrust is that fraction times the weight of the ring AT THAT THICKNESS, which
+ * the row also carries -- and against total weight there is no band at all,
+ * since the weight of a ring does not depend on how hard it is pushed.
+ */
+function bandY(row, edge) {
+  const f = row?.[edge.band]?.[edge.side];
+  if (!Number.isFinite(f)) return null;
+  if (state.radiusMetric === 'ratio') return f;
+  if (state.radiusMetric === 'thrust') return f * row.weight;
+  return null;
 }
 
-function radiusHull(pts) {
-  const entries = pts
-    .map((p) => ({ p, x: p.plotTri ?? p.tri, y: radiusYValue(p) }))
-    .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
-    .sort((a, b) => (a.x - b.x) || (a.y - b.y));
-  if (entries.length <= 2) return entries;
-
-  const unique = [];
-  for (const item of entries) {
-    const last = unique[unique.length - 1];
-    if (!last || Math.abs(last.x - item.x) > 1e-12 || Math.abs(last.y - item.y) > 1e-12) {
-      unique.push(item);
+/**
+ * One admissible band: the region between its least and its greatest thrust.
+ *
+ * Drawn as a single closed path, out along the minimum and back along the
+ * maximum, so the two edges cannot come apart. Rows where this band does not
+ * exist -- a ring too thin to stand at all, under that family -- break the
+ * path rather than being bridged across, because a band drawn across a gap
+ * claims the ring stands where it does not.
+ */
+function drawThrustBand(bands, which, style) {
+  if (!bands || state.radiusMetric === 'weight') return;
+  const runs = [];
+  let run = [];
+  for (const row of bands.rows) {
+    const lo = bandY(row, { band: which, side: 'min' });
+    const hi = bandY(row, { band: which, side: 'max' });
+    if (lo === null || hi === null) {
+      if (run.length) runs.push(run);
+      run = [];
+      continue;
     }
+    run.push({ tri: row.tri, lo, hi });
   }
-  if (unique.length <= 2) return unique;
+  if (run.length) runs.push(run);
 
-  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lower = [];
-  for (const p of unique) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
-      lower.pop();
-    }
-    lower.push(p);
-  }
-  const upper = [];
-  for (const p of unique.slice().reverse()) {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
-      upper.pop();
-    }
-    upper.push(p);
-  }
-  return lower.slice(0, -1).concat(upper.slice(0, -1));
-}
-
-function drawRadiusEnvelope(pts, admissible) {
-  const env = radiusEnvelope(pts, admissible);
-  if (env.length < 2) return new Set(env.map((q) => q.p));
-  const fill = admissible ? 'rgba(46,125,50,0.13)' : 'rgba(162,20,47,0.10)';
-  const stroke = admissible ? 'rgba(46,125,50,0.45)' : 'rgba(162,20,47,0.38)';
   plotAx.clipped((c) => {
-    c.beginPath();
-    env.forEach((p, i) => {
-      const [X, Y] = plotAx.toPx([p.x, p.y]);
-      if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
-    });
-    c.closePath();
-    c.fillStyle = fill;
-    c.fill();
-    c.strokeStyle = stroke;
-    c.lineWidth = 1.1;
-    c.stroke();
+    for (const seg of runs) {
+      if (seg.length < 2) continue;
+      c.beginPath();
+      seg.forEach((q, i) => {
+        const [X, Y] = plotAx.toPx([q.tri, q.lo]);
+        if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
+      });
+      for (let i = seg.length - 1; i >= 0; i--) {
+        const [X, Y] = plotAx.toPx([seg[i].tri, seg[i].hi]);
+        c.lineTo(X, Y);
+      }
+      c.closePath();
+      c.fillStyle = style.fill;
+      c.fill();
+      c.strokeStyle = style.stroke;
+      c.lineWidth = 1.4;
+      c.stroke();
+    }
   });
-  return new Set(env.map((q) => q.p));
+}
+
+/** Which band is which, in the corner. */
+function drawBandLegend(bands) {
+  if (state.radiusMetric === 'weight') return;
+  const rows = [
+    ['free', 'rgba(46,125,50,0.9)', 'rgba(46,125,50,0.16)', 'Couplet: Hmin-Hmax'],
+    ['pinned', 'rgba(0,114,189,0.9)', 'rgba(0,114,189,0.16)', 'A and B at mid-depth'],
+  ].filter(([key]) => bands.rows.some((r) => r[key]));
+  if (!rows.length) return;
+  plotAx.clipped((c) => {
+    c.font = '11px Helvetica, Arial, sans-serif';
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    const x = plotAx.box.x + 14;
+    let y = plotAx.box.y + 16;
+    for (const [, stroke, fill, label] of rows) {
+      c.fillStyle = fill;
+      c.fillRect(x, y - 6, 22, 12);
+      c.strokeStyle = stroke;
+      c.lineWidth = 1.4;
+      c.strokeRect(x, y - 6, 22, 12);
+      c.fillStyle = '#333';
+      c.fillText(label, x + 30, y);
+      y += 18;
+    }
+  });
+}
+
+function drawBandEdgeMarkers(bands) {
+  if (!bands || state.radiusMetric === 'weight') return;
+  const styles = [
+    { band: 'free', colour: '#2e7d32', label: 'Hmin/Hmax' },
+    { band: 'pinned', colour: '#0072BD', label: 'mid A-B' },
+  ];
+  plotAx.clipped((c) => {
+    c.font = '10px Helvetica, Arial, sans-serif';
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    for (const row of bands.rows) {
+      for (const s of styles) {
+        if (!row[s.band]) continue;
+        for (const side of ['min', 'max']) {
+          const y = bandY(row, { band: s.band, side });
+          if (y === null) continue;
+          const [X, Y] = plotAx.toPx([row.tri, y]);
+          c.beginPath();
+          c.arc(X, Y, s.band === 'pinned' ? 4 : 3.2, 0, 2 * Math.PI);
+          c.fillStyle = s.colour;
+          c.fill();
+          if (s.band !== 'pinned') {
+            c.strokeStyle = '#000';
+            c.lineWidth = 0.6;
+            c.stroke();
+          }
+        }
+      }
+    }
+    const last = bands.rows[bands.rows.length - 1];
+    if (last?.free) {
+      const yMin = bandY(last, { band: 'free', side: 'min' });
+      const yMax = bandY(last, { band: 'free', side: 'max' });
+      c.fillStyle = '#2e7d32';
+      if (yMin !== null) {
+        const [X, Y] = plotAx.toPx([last.tri, yMin]);
+        c.fillText('Hmin', X + 6, Y);
+      }
+      if (yMax !== null && Math.abs(yMax - yMin) > 1e-6) {
+        const [X, Y] = plotAx.toPx([last.tri, yMax]);
+        c.fillText('Hmax', X + 6, Y);
+      }
+    }
+  });
+}
+
+function drawCoupletStudyCurves() {
+  const bands = currentBands();
+  if (!bands) return;
+  const visible = new Set(state.visibleStudyTris.map((tri) => tri.toPrecision(12)));
+  mainAx.clipped((c) => {
+    for (const row of bands.rows) {
+      if (!visible.has(row.tri.toPrecision(12))) continue;
+      for (const [band, colour, width] of [
+        [row.free, 'rgba(46,125,50,0.86)', 2.4],
+        [row.pinned, 'rgba(0,114,189,0.92)', 2.1],
+      ]) {
+        if (!band) continue;
+        for (const side of ['minLine', 'maxLine']) {
+          const pts = band[side] ?? [];
+          if (pts.length < 2) continue;
+          c.beginPath();
+          pts.forEach((q, i) => {
+            const [X, Y] = mainAx.toPx(q);
+            if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
+          });
+          c.strokeStyle = colour;
+          c.lineWidth = width;
+          c.stroke();
+        }
+      }
+    }
+  });
 }
 
 function drawRingStudyCurves() {
+  if (isCoupletStudy()) {
+    drawCoupletStudyCurves();
+    return;
+  }
   const pts = state.thicknessStudy?.points ?? [];
   const visible = new Set(state.visibleStudyTris.map((tri) => tri.toPrecision(12)));
   mainAx.clipped((c) => {
@@ -2150,7 +2627,7 @@ function drawAxisLetters(ax) {
     c.lineTo(x0 + 4, b.y + 8);
     c.stroke();
 
-    c.font = 'bold 13.2px Helvetica, Arial, sans-serif';
+    c.font = 'bold 17.2px Helvetica, Arial, sans-serif';
     c.textAlign = 'right';
     c.textBaseline = 'bottom';
     c.fillText('N', b.x + b.w - 10, y0 - 5);
@@ -2159,6 +2636,85 @@ function drawAxisLetters(ax) {
     c.fillText('M', x0 + 6, b.y + 9);
     c.restore();
   });
+}
+
+/**
+ * Why the N-M diagram has nothing to show, in the words that fit the case.
+ *
+ * There are four quite different reasons and they ask for four different things
+ * of the student: build an arch, pick a joint, move the line so it reaches the
+ * joints, or accept that this assembly is not a chain and the diagram is about
+ * chains. Saying "no data" would answer none of them.
+ */
+/** A fragment written to follow a dash, made to stand on its own. */
+function sentence(text) {
+  const said = String(text ?? '').trim();
+  if (!said) return said;
+  return said[0].toUpperCase() + said.slice(1) + (/[.!?]$/.test(said) ? '' : '.');
+}
+
+function heymanUnavailable() {
+  const m = state.model;
+  if (!m?.blocks?.length) {
+    return {
+      head: 'Nothing to section yet',
+      body: 'Trace an arch, or choose an example, and the diagram will follow.',
+    };
+  }
+  if (!m.joints) {
+    // The recovery already worked out what is wrong and what to do about it;
+    // repeating any of it here would only make the notice longer to read.
+    return {
+      head: 'This structure is more than one branch',
+      // The reason was written to follow "no joints for this example --", so
+      // it starts in the middle of a sentence; here it begins one.
+      body: sentence(m.jointRecovery?.reason
+        ?? 'its blocks are not a chain of abutting voussoirs, and the N-M '
+          + 'diagram is drawn at a joint'),
+      status: 'The N-M diagram is drawn at a joint, and this structure has none.',
+    };
+  }
+  if (!state.lot || !state.crossings) {
+    return {
+      head: 'No line of thrust yet',
+      body: 'The diagram reads the force and the eccentricity off the line '
+        + 'where it crosses a joint, so there has to be a line first.',
+    };
+  }
+  if (state.selectedJoint !== null) {
+    return {
+      head: `Joint ${state.selectedJoint} is not crossed`,
+      body: 'The line of thrust does not reach this joint, so there is no '
+        + 'force on it to draw. Move the thrust, or pick another joint.',
+    };
+  }
+  return {
+    head: 'Click a joint on the arch',
+    body: 'Every joint has a point in this plane; the diagram shows the one you '
+      + 'pick, against the wedge the masonry allows it.',
+    status: `Click a joint to show its Heyman N-M diagram. ${heymanSafetyLabel(safety0())}`,
+  };
+}
+
+/** The safety label wants the same points the caller has; recomputed cheaply. */
+function safety0() {
+  return heymanGeometricalSafety(heymanSafetyPoints(allHeymanPoints()));
+}
+
+/** Why the thickness study has nothing to show. */
+function radiusUnavailable() {
+  const said = state.thicknessStudy?.reason;
+  if (said) {
+    return { head: 'The study could not be run', body: said, status: said };
+  }
+  return {
+    head: 'This study is drawn on a parametric ring',
+    body: 'It sweeps the thickness ratio t/ri of a circular ring built from its '
+      + 'numbers — inner radius, ratio, voussoirs — and reports which of the '
+      + 'states it passes through are admissible. Build one under Geometry → '
+      + 'Parametric arch and the curve appears here.',
+    status: 'Generate a circular ring to plot t/ri.',
+  };
 }
 
 function drawHeymanView() {
@@ -2173,9 +2729,9 @@ function drawHeymanView() {
   const safety = heymanGeometricalSafety(heymanSafetyPoints(allPts));
   if (!nm) {
     drawAxisLetters(plotAx);
-    ui.plotStatus.textContent = state.selectedJoint !== null
-      ? `joint ${state.selectedJoint}: joint not crossed`
-      : `Click a joint to show its Heyman N-M diagram. ${heymanSafetyLabel(safety)}`;
+    const why = heymanUnavailable();
+    drawNotice(plotAx, [why.head, ...wrapText(plotAx.ctx, why.body, plotAx.box.w - 40)]);
+    ui.plotStatus.textContent = why.status ?? `${why.head} ${why.body}`;
     plotAx.decorate();
     return;
   }
@@ -2268,40 +2824,62 @@ function drawHeymanView() {
 function drawRadiusView() {
   ensurePlotFit();
   plotAx.begin();
-  plotAx.title = 'Circular ring thickness study';
+  plotAx.title = isCoupletStudy()
+    ? 'Couplet thickness study' : 'Circular ring thickness study';
   plotAx.xlabel = 't/ri';
   plotAx.ylabel = radiusYLabel();
   const pts = state.thicknessStudy?.points ?? [];
-  if (pts.length) {
-    const visible = new Set([
-      ...drawRadiusEnvelope(pts, false),
-      ...drawRadiusEnvelope(pts, true),
-    ]);
-    const shown = pts.filter((p) => visible.has(p));
-    for (const p of shown.filter((q) => !q.midBase)) {
+  const bands = currentBands();
+  if (pts.length || bands) {
+    // THE BANDS FIRST, and behind everything: they are the curve, the states
+    // are where the student has been on it.
+    drawThrustBand(bands, 'free', {
+      fill: 'rgba(46,125,50,0.16)', stroke: 'rgba(46,125,50,0.9)',
+    });
+    drawThrustBand(bands, 'pinned', {
+      fill: 'rgba(0,114,189,0.16)', stroke: 'rgba(0,114,189,0.9)',
+    });
+    if (isCoupletStudy()) {
+      drawBandEdgeMarkers(bands);
+    } else {
+      for (const p of pts.filter((q) => !q.midBase)) {
+        drawMarker(plotAx, [p.plotTri ?? p.tri, radiusYValue(p)],
+          p.admissible ? '#2e7d32' : '#A2142F', p.admissible ? 4.2 : 2.6);
+      }
+    for (const p of pts.filter((q) => q.midBase)) {
       drawMarker(plotAx, [p.plotTri ?? p.tri, radiusYValue(p)],
-        p.admissible ? '#2e7d32' : '#A2142F', p.admissible ? 5 : 2.8);
+        '#0072BD', p.admissible ? 5 : 3.4);
     }
-    for (const p of shown.filter((q) => q.midBase)) {
-      drawMarker(plotAx, [p.plotTri ?? p.tri, radiusYValue(p)],
-        p.admissible ? '#2e7d32' : '#A2142F', p.admissible ? 5.6 : 3.4, '#000');
     }
+    if (bands) drawBandLegend(bands);
     const scaled = state.model?.frame?.coordinates === 'physical';
     const current = pts.find((p) => Math.abs(p.tri - state.ringStudySource?.tri) < 1e-9)
       ?? pts[pts.length - 1];
-    const good = pts.filter((p) => p.admissible).length;
-    const bad = pts.length - good;
     const mode = state.ringStudySource?.poleni ? 'Poleni dome lune' : 'constant thickness';
-    ui.plotStatus.textContent =
-      `${mode} · ${pts.length} states · ${good} admissible · ${bad} not admissible · `
-      + `${shown.length} hull points shown · `
-      + `${pts.filter((p) => p.midBase).length} mid-base · `
-      + `t/ri step ${ui.ringTri.step} · `
-      + `current t/ri = ${current.tri.toPrecision(4)}, ${radiusYLabel()} `
-      + formatRadiusY(radiusYValue(current), scaled);
+    const band = bands
+      ? `band ${bands.rows.length}/${bands.total} thicknesses`
+        + `${bands.running ? ' (running)' : ''} · `
+      : '';
+    if (isCoupletStudy()) {
+      const last = bands?.rows?.find((p) => Math.abs(p.tri - state.ringStudySource?.tri) < 1e-9)
+        ?? bands?.rows?.[bands.rows.length - 1];
+      const span = last?.free && Math.abs(last.free.max - last.free.min) < 1e-5
+        ? 'unique LOT'
+        : last?.free ? `H/W ${last.free.min.toPrecision(4)} - ${last.free.max.toPrecision(4)}`
+          : 'no admissible LOT';
+      ui.plotStatus.textContent = `${mode} · Couplet method · ${band}${span}`;
+    } else {
+      ui.plotStatus.textContent = `${mode} · ${band}`
+        + `${pts.length} states · ${pts.filter((p) => p.admissible).length} admissible · `
+        + (current
+          ? `current t/ri = ${current.tri.toPrecision(4)}, ${radiusYLabel()} `
+            + formatRadiusY(radiusYValue(current), scaled)
+          : `t/ri step ${ui.ringTri.step}`);
+    }
   } else {
-    ui.plotStatus.textContent =
-      state.thicknessStudy?.reason ?? 'Generate a circular ring to plot t/ri.';
+    const why = radiusUnavailable();
+    drawNotice(plotAx, [why.head, ...wrapText(plotAx.ctx, why.body, plotAx.box.w - 40)]);
+    ui.plotStatus.textContent = why.status ?? `${why.head} ${why.body}`;
   }
   plotAx.decorate();
 }
@@ -3475,16 +4053,23 @@ function drawSolidView() {
     poleni: dome.poleni,
     axisX: dome.axisX,
     angleDeg: dome.angleDeg,
-    thickness: m.thickness ?? m.blocks.map(() => 1),
+    thickness: assignedThicknesses(),
     steps: dome.poleni ? Math.max(2, Math.round(dome.angleDeg / 4)) : 1,
+    align: state.solidAlign,
   });
-  const centre3 = solidCentre(rawList);
+  const centre3 = dome.poleni ? structuralSolidCentre(shown) : solidCentre(rawList);
   const list = recenteredSolids(rawList, centre3);
+
+  // THE PARALLELS ARE PART OF THE SUBJECT, not an overlay on it. They reach
+  // right round the axis while the lune is a slice, so they have to be in the
+  // bounds the view is fitted to or they would be framed out of their own
+  // picture.
+  const rings = dome.poleni ? domeParallels(shown, dome.axisX, centre3) : [];
 
   // The projected extent moves with the camera, so it is recomputed every
   // frame and kept for the fit buttons; the view is only re-framed when the
   // SUBJECT changes, or turning the solid would fight the user's zoom.
-  state.solidBounds = projectedBounds(list, f);
+  state.solidBounds = projectedBounds(rings.length ? [...list, rings] : list, f);
   if (state.solidFit !== sideKey() && state.solidBounds) {
     solidAx.fit(state.solidBounds);
     state.solidFit = sideKey();
@@ -3493,14 +4078,27 @@ function drawSolidView() {
 
   // While the mechanism is on show, colour the solids by macro-block too, so
   // the two views agree about which pieces move together.
-  const highlight = ui.showMech.checked && state.mech
+  const mechanismHighlight = ui.showMech.checked && state.mech
     ? m.blocks.map((_, k) => {
       const b = state.mech.bodyOf[k];
       const c = BODY_RGB[b % BODY_RGB.length];
       return b < 0 ? [200, 200, 200] : c;
     })
     : null;
+  const groupHighlight = ui.showGroups.checked && !mechanismHighlight
+    ? m.blockGroups.map((id, i) => {
+      const g = groupForBlock(i, null) ?? m.groups.find((row) => row.id === id);
+      return rgbFromHex(g?.color);
+    })
+    : null;
+  const highlight = mechanismHighlight ?? groupHighlight;
 
+  // UNDER THE MASONRY, not over it. Drawn last, the far half of each circle
+  // crossed the stones in front of it and the solid stopped reading as solid --
+  // the whole isometric effect went with it. Drawn first, the masonry covers
+  // what it stands in front of and the circles pass behind, which is what tells
+  // the eye they are circles at all.
+  drawParallels(solidAx, rings, f);
   drawSolids(solidAx, list, { f, highlight });
   if (dome.poleni) {
     const ys = m.blocks.flatMap((p) => p.y);
@@ -3509,6 +4107,53 @@ function drawSolidView() {
       { depth: -centre3[1] });
   }
   if (state.showSolidAxes) drawReferenceFrame(solidAx, state.solidBounds, f);
+  if (groupHighlight) drawSolidGroupLegend(visibleGroups());
+}
+
+function drawSolidGroupLegend(groups) {
+  if (!groups.length) return;
+  const c = solidAx.ctx;
+  const pad = 8;
+  const swatch = 10;
+  const rowH = 17;
+  const maxRows = Math.min(groups.length, 8);
+  const b = solidAx.box;
+  const x = b.x + 10;
+  const y = b.y + 10;
+  c.save();
+  c.font = '11px Helvetica, Arial, sans-serif';
+  const rows = groups.slice(0, maxRows).map((g, i) => ({
+    label: `${i + 1}. ${g.name} (${g.count})`,
+    color: g.color,
+  }));
+  const more = groups.length > maxRows ? `+${groups.length - maxRows} groups` : null;
+  const width = Math.min(260, Math.max(120,
+    ...rows.map((r) => c.measureText(r.label).width + 34),
+    more ? c.measureText(more).width + 18 : 0));
+  const height = pad * 2 + rows.length * rowH + (more ? rowH : 0);
+  c.fillStyle = 'rgba(255,255,255,0.84)';
+  c.strokeStyle = 'rgba(40,40,40,0.35)';
+  c.lineWidth = 1;
+  c.fillRect(x, y, width, height);
+  c.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+  rows.forEach((r, i) => {
+    const yy = y + pad + i * rowH;
+    c.fillStyle = r.color;
+    c.fillRect(x + pad, yy + 3, swatch, swatch);
+    c.strokeStyle = 'rgba(40,40,40,0.55)';
+    c.strokeRect(x + pad + 0.5, yy + 3.5, swatch - 1, swatch - 1);
+    c.fillStyle = '#262626';
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    c.fillText(r.label, x + pad + swatch + 7, yy + 8);
+  });
+  if (more) {
+    c.fillStyle = '#666';
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    c.fillText(more, x + pad, y + pad + rows.length * rowH + 8);
+  }
+  c.restore();
 }
 
 /** What the solid view is a picture of; a change means refit. */
@@ -3517,6 +4162,7 @@ function sideKey() {
   const d = domeOptions();
   return `${m && m.blocks ? m.blocks.length : 0}:${d.poleni}:`
     + `${d.angleDeg}:${d.axisX}:${state.camera.az}:${state.camera.el}:`
+    + `${state.solidAlign}:`
     + `${m && m.frame ? m.frame.units_per_pixel : 1}`;
 }
 
@@ -3545,7 +4191,7 @@ function resetAxis() {
 function domeOptions() {
   return {
     poleni: ui.poleni.checked,
-    angleDeg: Math.max(0.1, Number(ui.domeAngle.value) || 15),
+    angleDeg: Math.max(0.1, Number(ui.domeAngle.value) || 22.5),
     axisX: Number(ui.domeAxis.value) || 0,
   };
 }
@@ -3563,14 +4209,16 @@ function reweigh() {
   const gamma = Number(ui.gamma.value) || 20;
   const dome = domeOptions();
   ensureGroups();
-  const groupOf = (i) => m.groups.find((g) => g.id === m.blockGroups[i])
-    ?? { gamma, thickness: Math.max(0, Number(ui.thick.value) || 1) };
+  const fallback = { gamma, thickness: Math.max(0, Number(ui.thick.value) || 1) };
+  const groupOf = (i) => groupForBlock(i, fallback);
+  const assigned = assignedThicknesses();
 
   if (dome.poleni) {
-    // W = gamma * A * theta * rbar, by Pappus: exact for a plane region turned
-    // about an axis in its plane, and it needs only the area and the centroid.
+    // Poleni scaling keeps each group's assigned thickness as a meridian datum
+    // and maps it to the local chord of the lune.
     const { weights, widths } = luneWeights(m.blocks, {
       axisX: dome.axisX, angleDeg: dome.angleDeg, specificWeight: 1,
+      thickness: assigned,
     });
     m.weights = weights.map((w, i) => w * (Number(groupOf(i).gamma) || gamma));
     // The out-of-plane dimension is no longer a constant the user typed: it is
@@ -3604,12 +4252,12 @@ function reportDome() {
     ui.domeStatus.textContent = 'needs a traced arch';
     return;
   }
-  const r = widthRange(m.blocks, dome.axisX, dome.angleDeg);
+  const r = widthRange(m.blocks, dome.axisX, dome.angleDeg, assignedThicknesses());
   const scaled = m.frame && m.frame.coordinates === 'physical';
   const show = (v) => (scaled ? format(v, 'length', state.system)
     : `${v.toPrecision(3)} px`);
   ui.domeStatus.textContent =
-    `lune ${show(r.max)} wide at the major parallel, `
+    `scaled chord ${show(r.max)} at the major parallel, `
     + `${show(r.min)} at the crown`;
 }
 
@@ -3683,8 +4331,13 @@ function generateRing(opt = {}) {
   ui.ringStatus.textContent =
     `${n} blocks, ri = ${ri}, ro = ${(ri * (1 + tri)).toPrecision(6)}, `
     + `t/ri = ${tri} · ${state.ringStudySource.poleni ? 'Poleni' : 'barrel'} · `
-    + `${plotted.points.filter((p) => p.admissible).length}/`
-    + `${plotted.points.length} admissible states`;
+    + (isCoupletStudy()
+      ? (plotted.row?.free
+        ? `Couplet H/W ${plotted.row.free.min.toPrecision(4)} - `
+          + `${plotted.row.free.max.toPrecision(4)}`
+        : 'no admissible Couplet line')
+      : `${plotted.points.filter((p) => p.admissible).length}/`
+        + `${plotted.points.length} admissible states`);
   ui.warn.hidden = true;
   ui.meta.textContent = `${n} blocks · circular ring · t/ri = ${tri}`;
   reportBlocks(blocks.length);
@@ -4357,6 +5010,16 @@ for (const row of document.querySelectorAll('.viewtools[data-ax]')) {
 el('solidTools').addEventListener('click', (e) => {
   const which = e.target.dataset.view3d;
   if (!which) return;
+  if (which.startsWith('align')) {
+    state.solidAlign = which === 'alignLeft' ? 'left'
+      : which === 'alignRight' ? 'right'
+        : 'center';
+    updateSolidAlignButtons();
+    state.solidFit = null;
+    appendLog(`Changed 3D Poleni alignment to ${state.solidAlign}`);
+    draw();
+    return;
+  }
   if (which === 'axes') {
     state.showSolidAxes = !state.showSolidAxes;
     el('showSolidAxes').classList.toggle('active', state.showSolidAxes);
@@ -4369,6 +5032,17 @@ el('solidTools').addEventListener('click', (e) => {
   state.solidFit = null;
   draw();
 });
+
+function updateSolidAlignButtons() {
+  for (const [id, align] of [
+    ['solidAlignCenter', 'center'],
+    ['solidAlignLeft', 'left'],
+    ['solidAlignRight', 'right'],
+  ]) {
+    const b = el(id);
+    if (b) b.classList.toggle('active', state.solidAlign === align);
+  }
+}
 
 // -------------------------------------------------- the panel's three tabs --
 
@@ -4494,6 +5168,9 @@ function showSide(which) {
   ui.radiusMetric.hidden = !radius;
   ui.plotStatus.hidden = !heyman && !radius;
   if (table) renderBlockTable();
+  // Coming to the notes shows them as they read, unless they were left open
+  // for writing.
+  if (notes && !state.notesEditing) renderNotes();
   ui.sideCaption.textContent = table
     ? 'The blocks, their groups and their weights'
     : solid
@@ -4508,6 +5185,13 @@ function showSide(which) {
   solidAx.syncSize();
   forceAx.syncSize();
   plotAx.syncSize();
+  // `draw` leaves at once when there is no arch, so on an empty desk these two
+  // would keep whatever was last on them -- or nothing at all, on the first
+  // load. They are the two views that have something to say about being empty.
+  if (!state.model?.blocks?.length) {
+    if (heyman) drawHeymanView();
+    if (radius) drawRadiusView();
+  }
   if (solid) state.solidFit = null;
   if (heyman || radius) state.plotFitKey = null;
   draw();
@@ -4519,16 +5203,58 @@ ui.tableFilter.addEventListener('change', () => {
   state.tableFilter = ui.tableFilter.value;
   renderBlockTable();
 });
+ui.tabSolid.addEventListener('click', () => showSide('solid'));
+ui.tabHeyman.addEventListener('click', () => showSide('heyman'));
+ui.tabRadius.addEventListener('click', () => showSide('radius'));
+ui.tabNotes.addEventListener('click', () => showSide('notes'));
+ui.tabLog.addEventListener('click', () => showSide('log'));
+ui.projectNotes.addEventListener('input', () => {
+  state.notes = ui.projectNotes.value;
+});
+ui.noteBold.addEventListener('click', () => editNotes((t, a, b) => toggleWrap(t, a, b, '**')));
+ui.noteEmph.addEventListener('click', () => editNotes((t, a, b) => toggleWrap(t, a, b, '*')));
+ui.noteUnder.addEventListener('click', () => editNotes((t, a, b) => toggleWrap(t, a, b, '_')));
+ui.noteLink.addEventListener('click', () => editNotes(insertLink));
+ui.noteStyle.addEventListener('change', () => {
+  const prefix = ui.noteStyle.value;
+  editNotes((t, a, b) => setBlockStyle(t, a, b, prefix));
+  // Back to Body, because the menu says what to APPLY, not what the line is:
+  // reading it as a state would need it to follow the cursor around.
+  ui.noteStyle.value = '';
+});
+ui.noteEdit.addEventListener('click', () => showNotesEditing(!state.notesEditing));
+// Clicking into the text is how one starts writing in everything else, and a
+// reading view with nothing in it needs somewhere to click.
+ui.notesRead.addEventListener('dblclick', () => showNotesEditing(true));
 
 function setRadiusMetric(metric) {
   state.radiusMetric = metric;
   ui.radiusByWeight.classList.toggle('active', metric === 'weight');
   ui.radiusByThrust.classList.toggle('active', metric === 'thrust');
+  ui.radiusByThrustRatio.classList.toggle('active', metric === 'ratio');
   state.plotFitKey = null;
   draw();
 }
+
+function setRadiusStudyMethod(method) {
+  state.radiusStudyMethod = method === 'couplet' ? 'couplet' : 'scatter';
+  ui.radiusStudyMethod.value = state.radiusStudyMethod;
+  ui.radiusSampleControls.hidden = isCoupletStudy();
+  if (isCoupletStudy() && state.radiusMetric === 'weight') setRadiusMetric('ratio');
+  refreshRingStudy();
+  state.plotFitKey = null;
+  draw();
+}
+
+setRadiusStudyMethod(state.radiusStudyMethod);
+
+ui.radiusStudyMethod.addEventListener('change', () => {
+  setRadiusStudyMethod(ui.radiusStudyMethod.value);
+});
+
 ui.radiusByWeight.addEventListener('click', () => setRadiusMetric('weight'));
 ui.radiusByThrust.addEventListener('click', () => setRadiusMetric('thrust'));
+ui.radiusByThrustRatio.addEventListener('click', () => setRadiusMetric('ratio'));
 for (const f of [ui.radiusASteps, ui.radiusBSteps, ui.radiusNSteps]) {
   f.addEventListener('change', () => {
     refreshRingStudy();
@@ -4541,6 +5267,15 @@ ui.radiusTriStep.addEventListener('input', () => {
 });
 ui.radiusTriStep.addEventListener('change', () => {
   applyRadiusTriStep({ commit: true });
+  draw();
+});
+ui.radiusBand.addEventListener('click', () => {
+  if (!state.ringStudySource) {
+    ui.plotStatus.textContent = 'the band is a property of the parametric ring: '
+      + 'generate one first.';
+    return;
+  }
+  runBandStudy();
   draw();
 });
 
@@ -4659,6 +5394,7 @@ for (const f of [ui.ringRi, ui.ringN]) {
 }
 ui.addBlock.addEventListener('click', armBlock);
 ui.cableWeights.addEventListener('input', draw);
+ui.thrustWidth.addEventListener('input', draw);
 for (const [b, pick] of [[ui.goHmin, (x) => x.min], [ui.goHmax, (x) => x.max]]) {
   b.addEventListener('click', () => {
     if (!state.band) return;
@@ -4778,6 +5514,8 @@ function openWork(text, { source = null } = {}) {
   ui.poleni.checked = !!data.dome.poleni;
   ui.domeAngle.value = data.dome.angleDeg;
   ui.domeAxis.value = data.dome.axisX;
+  state.solidAlign = data.dome.align ?? 'center';
+  updateSolidAlignButtons();
   state.axisPicked = true;          // the file's axis, not a fresh default
   state.dome = data.dome;
   setThrustSlider(data.controls.thrust);
@@ -4902,6 +5640,10 @@ window.aLOT = {
 
 applyRadiusTriStep({ commit: true });
 reportThreePointRing();
+updateSolidAlignButtons();
+// The notes open on the reading of them. The markup starts that way too, so
+// there is no flash of the other one; this is what makes the two agree.
+showNotesEditing(false);
 loadCatalogue().catch((err) => {
   ui.meta.textContent = `could not load the examples: ${err.message}`;
 });

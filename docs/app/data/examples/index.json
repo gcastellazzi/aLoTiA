@@ -1,6 +1,6 @@
 {
- "generated": "2026-09-01",
- "count": 8,
+ "generated": "2026-09-02",
+ "count": 9,
  "examples": [
   {
    "file": "example_1_circular_arch.json",
@@ -131,6 +131,26 @@
    "loads": 0,
    "kB": 379,
    "about": "A flyer with its pier and pinnacle: three free ends, so no ordering of it is a chain. What branches off loads the arch rather than belonging to it."
+  },
+  {
+   "file": "Example_7_San_Pietro_Giovanni_Poleni.json",
+   "name": "Example 7 San Pietro Giovanni Poleni",
+   "format": "session",
+   "blocks": 83,
+   "joints": null,
+   "groups": [
+    "draw",
+    "hand",
+    "hand",
+    "draw",
+    "hand"
+   ],
+   "units": "SI",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 2,
+   "kB": 106,
+   "about": "Poleni's dome of St Peter's, cut as a lune rather than a barrel: the weights follow the width, and the two idealisations of one drawing part company. Five groups, two applied loads, and not one chain."
   }
  ]
 }

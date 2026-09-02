@@ -222,6 +222,87 @@ main {
   background: #fff;
   color: inherit;
 }
+/* The notes pane is a column: a strip of tools, then the writing or the
+   reading of what was written. */
+.texttab.notes { flex-direction: column; }
+.notetools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+.notetools button {
+  min-width: 26px;
+  padding: 2px 7px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+.notetools button:hover { background: #eee; }
+.notetools select {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+}
+/* The writing tools appear only while writing; the button that turns them on
+   stays at the right-hand end whether they are there or not. */
+.notetools .noteedit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.notetools .noteedit[hidden] { display: none; }
+.notetools .notedone { margin-left: auto; }
+.notetools .notedone.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.notetools .notedone.on:hover { background: #8e1f26; }
+/* Reading is the default, so the reading view has to look like somewhere to
+   click when there is nothing in it yet. */
+.noteread { cursor: text; }
+/* What the markers come out as. Deliberately the same family and rhythm as the
+   rest of the page: notes are notes, not a document. */
+.noteread {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 8px 12px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.noteread[hidden] { display: none; }
+.noteread h1 {
+  font-size: 16px;
+  margin: 10px 0 4px;
+  letter-spacing: 0.2px;
+}
+.noteread h2 {
+  font-size: 13px;
+  margin: 9px 0 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+.noteread h1:first-child, .noteread h2:first-child { margin-top: 0; }
+.noteread p { margin: 0 0 5px; }
+.noteread p.blank { margin: 0; height: 6px; }
+.noteread ul { margin: 0 0 5px; padding-left: 18px; }
+.noteread li { margin: 0 0 2px; }
+.noteread a { color: var(--accent); }
+
 .texttab textarea[readonly] {
   color: #444;
   background: #f7f7f7;

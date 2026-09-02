@@ -54,8 +54,10 @@ const ABOUT = [
   ['example_5_flying_arch.json',
     'A flyer with its pier and pinnacle: three free ends, so no ordering of it '
     + 'is a chain. What branches off loads the arch rather than belonging to it.'],
-  // Poleni's dome is being re-made as a session and will take its place here.
-  // The MATLAB one it replaces is now a test fixture; see tests/fixtures/matlab.
+  ['Example_7_San_Pietro_Giovanni_Poleni.json',
+    "Poleni's dome of St Peter's, cut as a lune rather than a barrel: the "
+    + 'weights follow the width, and the two idealisations of one drawing part '
+    + 'company. Five groups, two applied loads, and not one chain.'],
 ];
 
 /** A title a menu can show, from a file name nobody chose for a menu. */

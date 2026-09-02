@@ -27,6 +27,95 @@ function hslToCss(h, s, l) {
   return `hsl(${h.toFixed(0)} ${(s * 100).toFixed(0)}% ${(l * 100).toFixed(0)}%)`;
 }
 
+/**
+ * A colour with an alpha, from a `#rrggbb`.
+ *
+ * Written out rather than reached for a library: the palette is six hex
+ * strings and this is the one place any of them needs to be made translucent.
+ */
+export function rgba(hex, alpha) {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(String(hex).trim());
+  if (!m) return hex;
+  const [r, g, b] = m.slice(1).map((h) => parseInt(h, 16));
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/**
+ * Say, in the space of a plot, why there is no plot.
+ *
+ * AN EMPTY FRAME IS NOT AN ANSWER. A pair of axes with nothing between them
+ * reads as a fault in the software, and the reason -- that the blocks are not
+ * one chain, or that no joint has been picked, or that this study is only
+ * defined for a ring built from its numbers -- is exactly the thing the student
+ * needs and the one place they are looking. The status line under the plot
+ * carries it too, but the eye is on the empty box.
+ *
+ * @param {object} ax        the Axes to write on
+ * @param {string[]} lines   already broken into lines; the first is the heading
+ */
+export function drawNotice(ax, lines, opt = {}) {
+  const { colour = '#666', headColour = '#262626' } = opt;
+  const b = ax.box;
+  if (!(b.w > 40) || !(b.h > 30) || !lines.length) return;
+  const c = ax.ctx;
+  c.save();
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  const step = 17;
+  const top = b.y + b.h / 2 - ((lines.length - 1) * step) / 2;
+
+  // A panel behind it. The axes and their letters are still drawn, and grey
+  // text over a gridline and an arrowhead is text nobody reads.
+  let wide = 0;
+  lines.forEach((line, i) => {
+    c.font = i === 0
+      ? 'bold 13px Helvetica, Arial, sans-serif'
+      : '12px Helvetica, Arial, sans-serif';
+    wide = Math.max(wide, c.measureText(line).width);
+  });
+  const padX = 14;
+  const padY = 10;
+  c.globalAlpha = 0.9;
+  c.fillStyle = '#ffffff';
+  c.fillRect(b.x + b.w / 2 - wide / 2 - padX, top - step / 2 - padY,
+    wide + 2 * padX, lines.length * step + 2 * padY);
+  c.globalAlpha = 1;
+
+  lines.forEach((line, i) => {
+    c.font = i === 0
+      ? 'bold 13px Helvetica, Arial, sans-serif'
+      : '12px Helvetica, Arial, sans-serif';
+    c.fillStyle = i === 0 ? headColour : colour;
+    c.fillText(line, b.x + b.w / 2, top + i * step);
+  });
+  c.restore();
+}
+
+/**
+ * Break a sentence into lines that fit a width, without cutting a word.
+ *
+ * Canvas has no text wrapping, and a notice that runs off the side of the plot
+ * is worse than no notice.
+ */
+export function wrapText(ctx, text, maxWidth, font = '12px Helvetica, Arial, sans-serif') {
+  ctx.save();
+  ctx.font = font;
+  const out = [];
+  let line = '';
+  for (const word of String(text ?? '').split(/\s+/).filter(Boolean)) {
+    const trial = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(trial).width > maxWidth) {
+      out.push(line);
+      line = word;
+    } else {
+      line = trial;
+    }
+  }
+  if (line) out.push(line);
+  ctx.restore();
+  return out;
+}
+
 /** Outline and fill the voussoirs. */
 export function drawBlocks(ax, polys, opt = {}) {
   const {
@@ -111,17 +200,59 @@ export function drawThrustLine(ax, points, forces, opt = {}) {
 
 /** Hooke's cable, drawn as the mirror of the thrust line. */
 /**
- * Hooke's cable, with the weights it carries.
+ * Hooke's cable, with the force in it and the weights it carries.
+ *
+ * THE CABLE CARRIES THE SAME FORCES AS THE ARCH, which is the whole of Hooke's
+ * sentence -- *ut pendet continuum flexile, sic stabit contiguum rigidum
+ * inversum* -- and until now the drawing did not say so: the arch's line of
+ * thrust was a band whose width was the force in each segment, and the cable
+ * beside it was a wire of one thickness. `forces` is the same list the thrust
+ * line is given, so the two are drawn in the same grammar and the eye can put
+ * them side by side. Only the colour differs, because one is a compression and
+ * the other a tension, and they are not the same thing however equal their
+ * magnitudes.
  *
  * `weights` draws a disc at each vertex whose AREA is proportional to the
- * weight there -- area, not radius, because that is what the eye compares.
- * On a dome lune the springing discs dwarf the crown ones, which is the taper
- * of the lune made visible on the arch itself.
+ * weight there -- area, not radius, because that is what the eye compares. On a
+ * dome lune the springing discs dwarf the crown ones, which is the taper of the
+ * lune made visible on the arch itself.
+ *
+ * THE DISCS SAY WHAT THEY ARE. `kinds` is the tag `blocksLike` already carries
+ * -- 0 for a voussoir, 1 for a load the student applied -- and the two are
+ * drawn in different colours. The construction is deliberately indifferent to
+ * the difference, a load and a weight both being one station on the load line,
+ * and that indifference is worth showing; but a drawing in which a stone and a
+ * cart cannot be told apart is a drawing that has stopped answering the
+ * question it was asked.
  */
 export function drawCable(ax, points, opt = {}) {
-  const { colour = COLOR_ORDER[0], weights = null, weightScale = 0 } = opt;
+  const {
+    colour = COLOR_ORDER[0], weights = null, weightScale = 0,
+    forces = null, widthFactor = 12, kinds = null,
+    blockColour = COLOR_ORDER[0], loadColour = COLOR_ORDER[1],
+  } = opt;
   if (!points || points.length < 2) return;
   ax.clipped((c) => {
+    // The tension, segment by segment, exactly as drawThrustLine draws the
+    // compression: width against the largest, at the same factor.
+    if (forces && forces.length) {
+      const peak = Math.max(...forces.map(Math.abs)) || 1;
+      c.lineCap = 'butt';
+      c.globalAlpha = 0.45;
+      c.strokeStyle = colour;
+      for (let i = 0; i + 1 < points.length; i++) {
+        const f = forces[i] !== undefined ? Math.abs(forces[i]) : peak;
+        const [x0, y0] = ax.toPx(points[i]);
+        const [x1, y1] = ax.toPx(points[i + 1]);
+        c.beginPath();
+        c.moveTo(x0, y0);
+        c.lineTo(x1, y1);
+        c.lineWidth = Math.max(1.5, (f / peak) * widthFactor);
+        c.stroke();
+      }
+      c.globalAlpha = 1;
+    }
+
     c.beginPath();
     points.forEach((p, i) => {
       const [X, Y] = ax.toPx(p);
@@ -141,9 +272,7 @@ export function drawCable(ax, points, opt = {}) {
     if (weights && weightScale > 0) {
       const peak = Math.max(...weights.map(Math.abs), 0);
       if (peak > 0) {
-        c.lineWidth = 1;
-        c.strokeStyle = colour;
-        c.fillStyle = 'rgba(0,114,189,0.16)';
+        c.lineWidth = 1.2;
         weights.forEach((w, i) => {
           // The cable has one more vertex than there are weights: the load at
           // a station sits on the vertex that follows it.
@@ -151,6 +280,9 @@ export function drawCable(ax, points, opt = {}) {
           const [X, Y] = ax.toPx(p);
           const r = weightScale * Math.sqrt(Math.abs(w) / peak);
           if (!(r > 0.5)) return;
+          const tint = kinds && kinds[i] === 1 ? loadColour : blockColour;
+          c.strokeStyle = tint;
+          c.fillStyle = rgba(tint, 0.18);
           c.beginPath();
           c.arc(X, Y, r, 0, 2 * Math.PI);
           c.fill();

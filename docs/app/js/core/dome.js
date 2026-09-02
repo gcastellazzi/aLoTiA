@@ -67,6 +67,45 @@ export function luneWidth(radius, angleDeg) {
   return Math.abs(radius) * toRadians(angleDeg);
 }
 
+export function chordWidth(radius, angleDeg) {
+  return 2 * Math.abs(radius) * Math.sin(toRadians(angleDeg) / 2);
+}
+
+function outerRadius(poly, axisX) {
+  let r = 0;
+  for (const p of piecesOf(poly)) {
+    for (const x of p.x) r = Math.max(r, Math.abs(x - axisX));
+  }
+  return r;
+}
+
+export function scaledChordWidths(polys, opt = {}) {
+  const {
+    axisX = 0, angleDeg = 22.5, thickness = [],
+  } = opt;
+  const assigned = polys.map((_, i) => Math.max(0, Number(thickness[i]) || 0));
+  const maxT = Math.max(...assigned, 0);
+  const radii = polys.map((p) => outerRadius(p, axisX));
+  const chords = radii.map((r) => chordWidth(r, angleDeg));
+  if (!(maxT > 0)) {
+    return {
+      widths: assigned, radii, chords, scales: assigned.map(() => 0), alpha: 1, reference: null,
+    };
+  }
+
+  let ref = null;
+  assigned.forEach((t, i) => {
+    if (Math.abs(t - maxT) > 1e-12) return;
+    if (!ref || chords[i] > ref.chord) ref = { index: i, chord: chords[i] };
+  });
+  const alpha = ref && ref.chord > 0 ? maxT / ref.chord : 1;
+  const scales = assigned.map((t) => alpha * (t / maxT));
+  const widths = chords.map((c, i) => c * scales[i]);
+  return {
+    widths, radii, chords, scales, alpha, reference: ref,
+  };
+}
+
 /**
  * The volume of one voussoir of a lune, by Pappus.
  *
@@ -87,12 +126,18 @@ export function luneVolume(poly, axisX, angleDeg) {
  * a student who sees the width fall from 1.2 m at the springing to 0.1 m at
  * the crown understands the result before seeing the thrust line move.
  *
- * @returns {{weights:number[], widths:number[], radii:number[]}}
+ * @returns {{weights:number[], widths:number[], radii:number[], alpha:number}}
  */
 export function luneWeights(polys, opt = {}) {
-  const { axisX = 0, angleDeg = 15, specificWeight = 20 } = opt;
+  const {
+    axisX = 0, angleDeg = 15, specificWeight = 20, thickness = null,
+  } = opt;
   const theta = toRadians(angleDeg);
   const weights = [];
+  const scaled = Array.isArray(thickness) && thickness.length;
+  const scaledWidths = scaled
+    ? scaledChordWidths(polys, { axisX, angleDeg, thickness })
+    : null;
   const widths = [];
   const radii = [];
   for (const p of polys) {
@@ -100,11 +145,87 @@ export function luneWeights(polys, opt = {}) {
     // it, not where the first of them happens to be.
     const g = blockCentroid(p);
     const r = Math.abs(g[0] - axisX);
+    const i = weights.length;
     radii.push(r);
-    widths.push(r * theta);
-    weights.push(blockArea(p) * theta * r * specificWeight);
+    const width = scaled ? scaledWidths.widths[i] : r * theta;
+    widths.push(width);
+    weights.push(blockArea(p) * width * specificWeight);
   }
-  return { weights, widths, radii };
+  return { weights, widths, radii, alpha: scaledWidths?.alpha ?? 1 };
+}
+
+/**
+ * Where the masonry stands at one height, as distances from the axis.
+ *
+ * The horizontal section at `z`, taken as the crossings of that level with
+ * every edge of every block: for a ring of voussoirs the smallest crossing is
+ * the intrados and the largest the extrados, which is what a parallel wants.
+ *
+ * A SECTION, NOT THE VERTICES AT THAT HEIGHT. At the very bottom of a model the
+ * polygon only touches the level, and its section there is a single point; on a
+ * springing cut on the skew only one corner sits at the extreme at all. Both
+ * would give one radius where two are wanted, so `endParallels` cuts a little
+ * way inside and draws at the face.
+ */
+export function sectionRadii(polys, axisX, z) {
+  const rs = [];
+  for (const block of polys ?? []) {
+    for (const p of piecesOf(block)) {
+      const n = p.x.length;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const a = p.y[i];
+        const b = p.y[j];
+        // One end below the level and the other not: a crossing, counted once.
+        if ((a < z) === (b < z)) continue;
+        const t = (z - a) / (b - a);
+        rs.push(Math.abs(p.x[i] + t * (p.x[j] - p.x[i]) - axisX));
+      }
+    }
+  }
+  return rs;
+}
+
+/**
+ * The parallels at the two ends of the model: the springing's and the crown's.
+ *
+ * TWO CIRCLES AT EACH LEVEL, AND EACH LEVEL ITS OWN. The radii at the bottom
+ * are the intrados and the extrados of whatever stands at the bottom, and those
+ * at the top belong to whatever stands at the top -- on Poleni's dome, the
+ * springing of the lower dome at some 21 and 23 units from the axis, and the
+ * lantern at 3 and 5. Carrying one pair of radii to both levels would draw a
+ * cylinder AROUND the dome instead of the dome's own parallels, and would say
+ * nothing about how a lune narrows, which is the whole of Poleni's argument.
+ *
+ * @param {number} opt.inset  how far inside the model to take the section, as a
+ *   fraction of its height. A thousandth would do on a level base; a hundredth
+ *   also does on a skew one, and is still invisible.
+ * @returns {Array<{z:number, radii:number[]}>} empty when there is nothing to
+ *   measure, and one entry rather than two when only one end has a section.
+ */
+export function endParallels(polys, axisX, opt = {}) {
+  const { inset = 0.01 } = opt;
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (const block of polys ?? []) {
+    for (const p of piecesOf(block)) {
+      for (const y of p.y) {
+        if (y < zMin) zMin = y;
+        if (y > zMax) zMax = y;
+      }
+    }
+  }
+  const height = zMax - zMin;
+  if (!Number.isFinite(height) || height <= 0) return [];
+
+  const d = inset * height;
+  const out = [];
+  for (const [z, cut] of [[zMin, zMin + d], [zMax, zMax - d]]) {
+    const rs = sectionRadii(polys, axisX, cut).filter((r) => r > 1e-9);
+    if (!rs.length) continue;
+    out.push({ z, radii: [Math.min(...rs), Math.max(...rs)] });
+  }
+  return out;
 }
 
 // ------------------------------------------------------------ the 3-D solid --
@@ -121,15 +242,22 @@ export function luneWeights(polys, opt = {}) {
  * @param {number} angleDeg
  * @param {number} steps    angular divisions; 1 gives a flat wedge
  */
-export function revolve(poly, axisX, angleDeg, steps = 6) {
+export function revolve(poly, axisX, angleDeg, steps = 6, opt = {}) {
+  const { align = 'left' } = opt;
+  const scale = Number.isFinite(Number(opt.scale))
+    ? Number(opt.scale)
+    : Number.isFinite(Number(opt.alpha)) ? Number(opt.alpha) : 1;
   const theta = toRadians(angleDeg);
+  const half = Math.asin(Math.max(-1, Math.min(1, scale * Math.sin(theta / 2))));
+  const usedTheta = 2 * half;
   const n = poly.x.length;
   const m = Math.max(1, Math.round(steps));
+  const offset = align === 'left' ? 0 : align === 'right' ? -usedTheta : -usedTheta / 2;
 
   // Every vertex, at every angular station.
   const ring = [];
   for (let j = 0; j <= m; j++) {
-    const t = (theta * j) / m;
+    const t = offset + (usedTheta * j) / m;
     const cos = Math.cos(t);
     const sin = Math.sin(t);
     const row = [];
@@ -185,16 +313,21 @@ export function extrude(poly, thickness) {
  * @param {boolean} opt.poleni      revolve rather than extrude
  * @param {number}  opt.axisX
  * @param {number}  opt.angleDeg
- * @param {number[]} opt.thickness  per block, for the barrel case
+ * @param {number[]} opt.thickness  per block, for the barrel case; assigned
+ *                                  meridian thickness for Poleni scaling
  */
 export function solids(polys, opt = {}) {
   const {
     poleni = false, axisX = 0, angleDeg = 15, thickness = [], steps = 6,
+    align = 'left',
   } = opt;
+  const scaled = poleni && Array.isArray(thickness) && thickness.length
+    ? scaledChordWidths(polys, { axisX, angleDeg, thickness })
+    : null;
   // One solid per PIECE, flattened per block, so a double shell shows as the
   // two rings it is.
   return polys.map((block, k) => piecesOf(block).flatMap((p) => (poleni
-    ? revolve(p, axisX, angleDeg, steps)
+    ? revolve(p, axisX, angleDeg, steps, { scale: scaled?.scales[k] ?? 1, align })
     : extrude(p, thickness[k] ?? 1))));
 }
 
@@ -204,9 +337,9 @@ export function solids(polys, opt = {}) {
  * "The major parallel and the minor parallel at the centre of the dome" in the
  * user's words: the widest block and the narrowest.
  */
-export function widthRange(polys, axisX, angleDeg) {
+export function widthRange(polys, axisX, angleDeg, thickness = null) {
   if (!polys || !polys.length) return null;
-  const { widths, radii } = luneWeights(polys, { axisX, angleDeg });
+  const { widths, radii } = luneWeights(polys, { axisX, angleDeg, thickness });
   return {
     min: Math.min(...widths),
     max: Math.max(...widths),

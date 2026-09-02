@@ -48,6 +48,7 @@ export class Axes {
     this.title = '';
     this.xlabel = '';
     this.ylabel = '';
+    this.fontScale = opt.fontScale ?? 1;
   }
 
   /** Device pixels per CSS pixel, so the drawing is sharp on a retina screen. */
@@ -235,7 +236,10 @@ export class Axes {
 
     c.save();
     c.lineWidth = 0.5;
-    c.font = FONT;
+    const tickFont = `${10 * this.fontScale}px Helvetica, Arial, sans-serif`;
+    const titleFont = `bold ${12 * this.fontScale}px Helvetica, Arial, sans-serif`;
+    const labelFont = `${10 * this.fontScale}px Helvetica, Arial, sans-serif`;
+    c.font = tickFont;
 
     // Grid.
     c.globalAlpha = GRID_ALPHA;
@@ -284,13 +288,14 @@ export class Axes {
 
     // Title and axis labels.
     if (this.title) {
-      c.font = 'bold 12px Helvetica, Arial, sans-serif';
+      c.font = titleFont;
       c.textAlign = 'center';
       c.textBaseline = 'bottom';
       c.fillText(this.title, b.x + b.w / 2, b.y - 4);
-      c.font = FONT;
+      c.font = labelFont;
     }
     if (this.xlabel) {
+      c.font = labelFont;
       c.textAlign = 'center';
       c.textBaseline = 'bottom';
       c.fillText(this.xlabel, b.x + b.w / 2, this.height - 4);
@@ -299,6 +304,7 @@ export class Axes {
       c.save();
       c.translate(11, b.y + b.h / 2);
       c.rotate(-Math.PI / 2);
+      c.font = labelFont;
       c.textAlign = 'center';
       c.textBaseline = 'top';
       c.fillText(this.ylabel, 0, 0);

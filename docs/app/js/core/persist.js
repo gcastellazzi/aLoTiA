@@ -116,8 +116,9 @@ export function serialise(state, controls = {}, imageName = null) {
     // still those of a lune -- consistent numbers, a lying interface.
     dome: {
       poleni: !!(state.dome && state.dome.poleni),
-      angleDeg: Number(state.dome?.angleDeg ?? 15),
+      angleDeg: Number(state.dome?.angleDeg ?? 22.5),
       axisX: Number(state.dome?.axisX ?? 0),
+      align: state.solidAlign ?? state.dome?.align ?? 'center',
     },
     controls: {
       thrust: Number(controls.thrust ?? 50),
@@ -235,7 +236,9 @@ export function deserialise(text) {
     controls: {
       thrust: 50, startPos: 50, split: 50, ...(data.controls ?? {}),
     },
-    dome: { poleni: false, angleDeg: 15, axisX: 0, ...(data.dome ?? {}) },
+    dome: {
+      poleni: false, angleDeg: 22.5, axisX: 0, align: 'center', ...(data.dome ?? {}),
+    },
     imageData: data.image ?? null,
     notes: String(data.notes ?? ''),
     log: (data.log ?? []).map((row) => String(row)),

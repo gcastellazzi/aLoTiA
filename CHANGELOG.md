@@ -7,6 +7,80 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ### Added
 
+- **The admissible thrust band, drawn by the tool that claims to draw it.** The
+  t/ri panel said the published figures were computed on its ring and could be
+  checked there, and they could not: what it drew was the *convex hull of a
+  sampled scatter* — a coarse grid of end points and thrusts, hulled once over
+  the states that stood and once over the states that did not. The second of
+  those is not a region of anything: a state that does not stand says nothing
+  about its neighbours, and the pink polygon it produced claimed a shape the
+  mechanics never asserted. The hull of the admissible states was a crude
+  under-estimate of the real band, and both were drawn only at the thicknesses
+  the student happened to have visited.
+
+  **Admissible band** now scans a range of thicknesses and, at each, computes
+  the least and the greatest thrust that admit *some* line — `collapseRange` at
+  its full accuracy for the free family, and a new `pinnedRange` for the
+  classical construction with both ends at the joint mid-points, bisected by the
+  same scheme rather than sampled. The two bands are drawn as filled regions,
+  the states the student has visited as markers on top of them. Checked against
+  the paper's own data: **both bands agree to 5 × 10⁻⁵**, which is the rounding
+  of the published file.
+
+  A thickness at a time, because a full `collapseRange` is some two hundred
+  milliseconds and twenty-seven of them is six seconds — done in one go the tab
+  would freeze with nothing on screen to say why; done this way the curve draws
+  itself from left to right and the page stays alive. A ring generated in the
+  middle of a run abandons it.
+
+  One trap is now written down where it can be read: the scatter's `midBase`
+  samples are **not** the pinned family. `pointOnJoint` puts the end at the
+  middle of the whole joint; the scatter runs its parameter over the outer half
+  of it, from the springing voussoir's centroid to the extrados, so its middle
+  sits further out. The two look like the same experiment and are not.
+
+- **The parallels, dashed, around the lune.** A lune is drawn as a slice and a
+  slice does not say what it is a slice *of*. Two circles about the axis of
+  revolution at the springing and two more at the crown, and the eye closes the
+  dome around the wedge on the screen. They are the parallels the dome panel
+  already reports in words, and Poleni's whole argument is that the weight of a
+  voussoir follows this radius, so it is worth seeing rather than reading.
+
+  **Each level gets the radii of what actually stands at it** — the intrados and
+  the extrados of the course that is there. On St Peter's that is the springing
+  of the lower dome at some 21 and 23 units from the axis, and the lantern at 3
+  and 5. Carrying one pair of radii to both levels would draw a cylinder *around*
+  the dome instead of the dome's own parallels, and would say nothing about how
+  a lune narrows, which is the whole of the argument. The radii come from a
+  horizontal section rather than from the vertices at that height: at the very
+  bottom the polygon only touches the level, and on a skew springing only one
+  corner sits at the extreme, so both would give one radius where two are
+  wanted. The section is taken a hundredth of the height inside and drawn at the
+  face, which is invisible.
+
+  **Drawn under the masonry, not over it.** Drawn last, the far half of each
+  circle crossed the stones in front of it and the solid stopped reading as
+  solid — the whole isometric effect went with it. Drawn first, the masonry
+  covers what it stands in front of and the circles pass behind, which is what
+  tells the eye they are circles at all.
+
+  They are built apart from the drawing and handed both to the view's bounds and
+  to the pen, because the rings reach right round the axis while the lune is a
+  slice: fitted to the slice alone, they would be framed out of their own
+  picture. A barrel vault has no axis of revolution and is drawn exactly as
+  before, to the pixel.
+
+- **An empty diagram says why it is empty, in its own space.** A pair of axes
+  with nothing between them reads as a fault in the software. The N-M diagram
+  now writes the reason across itself, and there are four quite different ones,
+  asking four different things of the student: build an arch, pick a joint, move
+  the line so it reaches the joints, or accept that *this structure is more than
+  one branch* — in which case the reason the joint recovery already worked out
+  is what is shown, because it names the blocks and says what to do. The
+  thickness study says that it is drawn on a ring built from its numbers, and
+  where to build one. Both keep a short form in the status line under the plot,
+  since the long one belongs where the eye is.
+
 - **A block table, beside Notes and Log.** Everything else in this application
   is a picture, and a picture is the right answer to almost every question it is
   asked. It is the wrong answer to four: which block is the heavy one, where its
@@ -115,6 +189,65 @@ and the project uses [semantic versioning](https://semver.org/).
   panels say so, as they already do for a stored example. The tracer's own
   *Clear* becomes **Clear curves** and now does only that.
 
+- **Hooke's cable carries the force it is under.** The arch's line of thrust has
+  always been drawn as a band whose width is the force in each segment; the
+  cable beside it was a wire of one thickness, which quietly contradicted the
+  sentence the whole drawing exists for — *ut pendet continuum flexile, sic
+  stabit contiguum rigidum inversum*. The cable is the line reflected, so
+  segment *i* of one is segment *i* of the other and carries the same force, and
+  it is now given the same list and drawn in the same grammar, at the same
+  width factor, so the two can be laid side by side. Only the colour differs,
+  because one is a compression and the other a tension.
+
+  The band thickens towards the springings and thins at the lowest point, where
+  the tension is the horizontal thrust and nothing else — measured on a
+  fourteen-voussoir lune as 11 pixels at the haunch against 3 at the bottom.
+
+- **The circles on the cable say what they are**: **blue for a voussoir**,
+  **orange for a load applied by hand**. The tag was already there —
+  `blocksLike` marks every station 0 or 1, because a load and a weight are both
+  one station on the load line and the construction is deliberately indifferent
+  to which. That indifference is worth showing; a drawing in which a stone and a
+  cart cannot be told apart is not.
+
+- **A slider for the thickness of the line of thrust**, beside the three that
+  fix it. The band's width has always been the force in each segment; this says
+  how wide the largest is drawn. At nothing it is a bare line, which is what to
+  use when the band covers the joints it has to be read against — measured from
+  0 pixels at one end of the travel to 16 at the crown and 34 at the haunch at
+  the other, with the middle reproducing what was drawn before.
+
+- **A few formatting tools in the notes**: bold, emphasis, underline, links, and
+  a menu for the line — Title, Heading, Body, Bullet.
+
+  **The notes open on the reading of them, not on the markers.** That is what
+  notes are for most of the time: written once, and read on every reopening, by
+  whoever the file was handed to. *Edit* turns the writing on and brings the
+  tools with it — they are hidden the rest of the time, so the strip is quiet —
+  and *Done* turns it off again. Double-clicking the text starts writing too,
+  which is how one starts writing in everything else, and an empty note says so
+  rather than sitting blank.
+
+  **The stored value is still a plain string.** The markers go in the text
+  (`**bold**`, `*emph*`, `_underline_`, `[what it says](where it goes)`,
+  `# title`), so a session file stays readable in a text editor, diffable, and
+  free of anyone else's markup. `persist.js` is untouched. The one place this
+  notation and markdown disagree is the underscore, which markdown spends on
+  italic and this keeps for the older plain-text meaning, because there were
+  three buttons to find markers for.
+
+  **Nothing renders markup.** `core/notes.js` returns a description — blocks,
+  each holding spans, each a piece of text with flags — and the interface builds
+  elements from it with `textContent`. Untrusted text therefore never becomes
+  markup, which is what makes reading somebody else's notes safe rather than
+  carefully sanitised: a note containing a tag renders as a note containing a
+  tag. The one attribute ever written from a note is a link's address, and only
+  `http:`, `https:` and `mailto:` are followed — a refused address is left on
+  the page exactly as it was typed rather than silently dropped, so the writer
+  can see that it did not become a link. `tests/notes.test.js` pins both, and
+  the browser check confirms that a note carrying an `onerror` image and a
+  `javascript:` link creates no image, no link, and runs nothing.
+
 - **Project notes and a project log**, as two tabs beside the plots and two
   fields in the saved file. The notes are the student's, for what the file
   cannot infer — where the photograph came from, what was assumed. The log is
@@ -168,6 +301,24 @@ and the project uses [semantic versioning](https://semver.org/).
   the article, with `REPRODUCING.md` stating the expected values.
 
 ### Changed
+
+- **The block view is unchanged, and now says why.** Three ways of improving the
+  painter's algorithm it uses were tried against Poleni's dome and none survived
+  contact with it, so the drawing is exactly what it was — proved pixel for
+  pixel — and `visibleFaces` is now an extracted, tested function carrying the
+  record. Culling the faces turned away is half the painting and sound in
+  principle, but only if the outward direction is known: the winding is
+  inconsistent between the two generators, and deducing it from each solid's own
+  centre goes wrong on thin curved pieces, which put **holes in the ribs and
+  shells**. Ordering the blocks first and their faces within is correct for
+  compact separated solids and wrong here, a rib being one long thin solid
+  interleaved with two dozen short ones, so the rib was painted over the shell
+  that covers it. Sorting on the farthest vertex came out between the two.
+
+  Two solids that interleave in depth have no correct order and Canvas has no
+  depth buffer to settle it with; the honest fixes are finer geometry — long
+  solids cut into compact ones — or WebGL, which is a different program. The
+  note in the module says so, so that nobody spends the afternoon again.
 
 - **The examples the application ships are sessions now, not converted MATLAB
   files.** What the menu offers is the very file the Save button writes —
@@ -252,6 +403,49 @@ and the project uses [semantic versioning](https://semver.org/).
   to discard whatever had been entered.
 
 ### Fixed
+
+- **A rib came through the shell that covers it.** On St Peter's dome a violet
+  hairline ran down the middle of the orange vault, along a meridian, and read
+  as a stone behind the vault being drawn in front of it. It was: measured
+  against a software depth buffer at 600 x 600, the painter mis-painted 1010
+  pixels of 127272, and 637 of them were rib.
+
+  The cause is that one depth per face is a fair summary of a small face and an
+  unfair one of a large face held edge-on, and it is the second kind that loses
+  the argument. Such a face — its own vertices differing in depth by more than
+  a thirtieth of the whole scene — is now cut into a 2 x 2 grid, so each quarter
+  carries a depth of its own. Every other face is left alone, each quarter
+  remembers which of its edges it inherited so the voussoir keeps exactly the
+  outline it had, and a budget stops the cutting on a model too large to afford
+  it, spending it on the deepest faces first. Over four viewpoints the
+  mis-painted pixels fall 1010 to 74, 670 to 52, 700 to 65 and 154 to 14, for
+  1718 faces at 3 ms becoming 5090 at 12 ms — still a comfortable drag, on the
+  largest model in the catalogue.
+
+  Culling, ordering by block, and sorting on the farthest vertex had all been
+  tried before and are all worse; the note in `render/solid.js` keeps the record
+  so the afternoon is not spent twice.
+
+- **The 3-D view now has aerial perspective.** The head-on light says which way
+  a face turns but nothing about how far off it is, and on a dome the flat
+  meridian ends of the ribs and of the two shells face the light almost
+  identically. They came out at almost the same brightness, so a rib end
+  standing five units back read as lying on the shell in front of it. Faces are
+  now washed toward the ground colour with distance, outlines included — an
+  outline left at full strength undoes the cue.
+
+- **Blocks, Heyman, t/ri, Notes and Log stopped responding.** Their click
+  listeners sat immediately after a block of code that was cut out, and the cut
+  ran to the wrong anchor and took them with it. Four working panels became
+  unreachable and **every test still passed**, because a tab with no listener
+  does not throw, does not log and does not draw anything wrong — it does
+  nothing at all, and looks exactly as it did.
+
+  `tests/wiring.test.js` now reads the markup and `app.js` as text and checks
+  that they still describe the same page: that every tab has a click listener,
+  that every element the code reaches for by id exists, and that nothing in the
+  markup is left with no code behind it. Both checks were confirmed to fail when
+  the faults they are for are put back.
 
 - **A session with no joints could be saved and then never reopened.** The
   reader demanded `blocks + 1` joints of every file, and the writer put `[]`

@@ -327,7 +327,7 @@ test('on a symmetric line it agrees with the old horizontal reflection', () => {
 
 // ------------------------------------------------- Bow's notation letters --
 
-import { rayLabel, labelStride } from '../docs/app/js/render/draw.js';
+import { rayLabel, labelStride, rgba } from '../docs/app/js/render/draw.js';
 
 test('ray letters cycle the first character fastest, and never repeat', () => {
   // a .. z, then aa, ba, ca .. za, then ab, bb .. zb: bijective base 26
@@ -360,4 +360,17 @@ test('the stride keeps the letter count readable and is shared', () => {
     const shown = Math.ceil(n / k);
     assert.ok(shown <= 18, `${n} blocks would show ${shown} letters`);
   }
+});
+
+test('a palette colour can be made translucent without a library', () => {
+  // The weight circles on Hooke's cable are the app's red at low opacity, and
+  // the palette is six hex strings, so this is the one place any of them needs
+  // an alpha.
+  assert.equal(rgba('#A2142F', 0.18), 'rgba(162,20,47,0.18)');
+  assert.equal(rgba('a2142f', 1), 'rgba(162,20,47,1)');
+  assert.equal(rgba('#0072BD', 0.5), 'rgba(0,114,189,0.5)');
+  // Anything it cannot read is handed back, so a caller passing an rgba() or a
+  // colour name gets what it asked for rather than nothing.
+  assert.equal(rgba('rgba(1,2,3,0.4)', 0.2), 'rgba(1,2,3,0.4)');
+  assert.equal(rgba('red', 0.2), 'red');
 });
