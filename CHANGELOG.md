@@ -7,6 +7,32 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ### Added
 
+- **A block table, beside Notes and Log.** Everything else in this application
+  is a picture, and a picture is the right answer to almost every question it is
+  asked. It is the wrong answer to four: which block is the heavy one, where its
+  centre of gravity actually is, which group a stone ended up in, and how to take
+  one stone out. Those are questions about a list, and the MATLAB application
+  answered them with a list.
+
+  One row per block — number, sides, **G(x, y)**, weight, group, and a cross to
+  delete it — tinted with its group's own colour, well diluted: the same colour
+  the drawing uses under *Group colours*, so a group can be carried from one to
+  the other, and pale enough that the numbers on top of it still read. Clicking
+  a row picks that voussoir out on the drawing, which needed nothing new drawn:
+  `drawBlocks` already took a `highlight`.
+
+  Above the rows the groups themselves, each with **its name in an editable
+  field** and its count, and a button for a new empty one — because a second
+  material inside a single traced ring has no generator to come from. Changing
+  the group on a row moves the block and re-weighs it as that group's material
+  at once, which is what a group is for. A filter shows one group at a time.
+
+  Deleting a single block and clearing a whole group are now the same operation
+  on different indices, through one function: the half-dozen things that have to
+  follow — the joints recovered again, the springings relocated, the weights
+  redone, the collapse band thrown away because it belonged to an arch that no
+  longer exists — are the part that is easy to get half right twice.
+
 - **Block generation is five named tools, not one long panel.** *Draw blocks*,
   *Trace intr/extr*, *3-point arch*, *Parametric arch* and *Trace whole
   profile* are a colour-coded strip, and only the chosen one's controls are on
@@ -142,6 +168,46 @@ and the project uses [semantic versioning](https://semver.org/).
   the article, with `REPRODUCING.md` stating the expected values.
 
 ### Changed
+
+- **The examples the application ships are sessions now, not converted MATLAB
+  files.** What the menu offers is the very file the Save button writes —
+  geometry, joints, scale, units, loads, notes, and the background image
+  embedded — so that nothing is demonstrated that a student could not themselves
+  produce and hand in. `loadExample` reads either format and the file says which
+  it is, so neither has to be guessed at.
+
+  The eight are chosen to show what the application does rather than to fill a
+  menu: the four ways of building geometry, two unit systems, an applied load,
+  arches scaled from a photograph and one left in pixels, natural arches beside
+  built ones, and **two assemblies that are not a chain at all** — a flying
+  buttress cut from a profile, and a flyer with its pier and pinnacle — so that
+  what the audit refuses is as visible as what it accepts.
+
+  Each entry carries a sentence saying what it is for, on the menu item itself,
+  because a list of eight arches with nothing between them is a list nobody can
+  choose from.
+
+- **The catalogue is generated rather than written**, by `node tools/catalogue.js`.
+  Every field but that sentence is read off the examples themselves, so it cannot
+  go stale the first time one is re-saved, and `tests/examples.test.js` fails if
+  the catalogue and the directory disagree — a menu entry that loads nothing is
+  not something to find out from a student.
+
+- **The twelve converted MATLAB examples became a test fixture**,
+  `tests/fixtures/matlab/`, rather than being deleted. They are not what a
+  student should be shown, but they are the only thing that proves the port
+  reproduces the solutions MATLAB computed — block for block and ray for ray —
+  which is the cross-check the paper's verification section rests on and one
+  that cannot be made against files this application wrote itself.
+  `tests/core.test.js`, `convert.test.js` and `joints.test.js` read them from
+  there, as do `tools/reproduce/makeexample.js`, which still recomputes the
+  paper's figure of Poleni's dome to a relative error of 8.0 × 10⁻¹⁶, and
+  `tools/setscale.js`.
+
+  **Poleni's dome is therefore not in the menu at present.** A session version
+  of it is being made and will take its place; until it does, the one example
+  the *Dome slice — Poleni* section of the guide is about cannot be opened from
+  the menu.
 
 - **An image loaded from disk is mirrored on the way in.** The drawing has *y*
   running upward, so pixel row 0 — the top of a photograph — lands at the

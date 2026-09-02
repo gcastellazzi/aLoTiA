@@ -30,7 +30,9 @@ import { fileURLToPath } from 'node:url';
 import { fromExample } from '../docs/app/js/core/model.js';
 import { archDimensions } from '../docs/app/js/core/units.js';
 
-const DIR = fileURLToPath(new URL('../docs/app/data/examples/', import.meta.url));
+// Writes a `_scale` block into a MATLAB example, which now lives with the
+// other test fixtures rather than among the examples the application ships.
+const DIR = fileURLToPath(new URL('../tests/fixtures/matlab/', import.meta.url));
 
 /** The span of an example as it stands in the file, before any scaling. */
 function rawSpan(file) {

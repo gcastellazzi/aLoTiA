@@ -31,7 +31,9 @@ import {
   convertModel, conversionFactors,
 } from './core/units.js';
 
-import { serialise, deserialise, suggestedName } from './core/persist.js';
+import {
+  serialise, deserialise, suggestedName, FORMAT,
+} from './core/persist.js';
 import {
   bestLineForThrust, constrainedLine, collapseRange, analyse, imposedBand,
   displacedConfiguration, displaced, freezeBranch, lineWithFrozenBranch,
@@ -76,6 +78,10 @@ const ui = {
   tabForce: el('tabForce'), tabSolid: el('tabSolid'),
   tabHeyman: el('tabHeyman'), tabRadius: el('tabRadius'),
   tabNotes: el('tabNotes'), tabLog: el('tabLog'),
+  tabBlockTable: el('tabBlockTable'), blockTablePane: el('blockTablePane'),
+  groupList: el('groupList'), addGroup: el('addGroup'),
+  tableFilter: el('tableFilter'), blockTable: el('blockTable'),
+  tableStatus: el('tableStatus'),
   notesPane: el('notesPane'), logPane: el('logPane'),
   projectNotes: el('projectNotes'), projectLog: el('projectLog'),
   radiusMetric: el('radiusMetric'),
@@ -169,6 +175,8 @@ const state = {
   notes: '',
   log: [],
   snap: null,       // the corner a click would land on, while a block is drawn
+  selectedBlock: null,   // the row of the block table the drawing is showing
+  tableFilter: 'all',
   pole: null,
   fp: null,
   lot: null,
@@ -190,6 +198,8 @@ const GROUP_COLOURS = [
 
 function clearPlotState({ keepStudy = false } = {}) {
   state.selectedJoint = null;
+  // The row the table had picked out belonged to the arch that was on screen.
+  state.selectedBlock = null;
   state.frozenBranch = null;
   if (!keepStudy) {
     state.thicknessStudy = null;
@@ -329,6 +339,10 @@ function reportGroups() {
     sel.value = [...sel.options].some((o) => o.value === old) ? old : 'all';
   }
   ui.clearBlocks.disabled = !(m?.blocks?.length);
+  // ONE PLACE THAT KEEPS THE TABLE IN STEP. Every path that changes the blocks,
+  // their groups or their weights already ends here, so hanging the table off
+  // it is what stops a row saying what a block used to weigh.
+  renderBlockTable();
   if (!groups.length) {
     ui.groupStatus.textContent = 'no groups yet';
     return;
@@ -375,18 +389,22 @@ function applyGroupProperty(kind, value) {
  * themselves, and where what is left is not a chain it says so and the panels
  * explain themselves exactly as they do for a stored example.
  */
-function clearBlocks(target) {
+/**
+ * Keep only these blocks, and put the model back together around them.
+ *
+ * ONE PLACE FOR EVERY DELETION. A group cleared from the panel and a single
+ * block struck out of the table are the same operation on different indices,
+ * and the half-dozen things that have to follow -- the joints re-recovered, the
+ * springings relocated, the weights redone, the band and the mechanism thrown
+ * away because they belonged to an arch that no longer exists -- are the part
+ * that is easy to get half right twice.
+ *
+ * @param {number[]} keep   block indices to keep, in their existing order
+ * @param {string} label    what to write in the log
+ */
+function keepOnlyBlocks(keep, label) {
   const m = state.model;
   const had = m?.blocks?.length ?? 0;
-  if (!had) return;
-  ensureGroups();
-
-  const keep = target === 'all'
-    ? []
-    : m.blocks.map((_, i) => i).filter((i) => m.blockGroups[i] !== target);
-  if (keep.length === had) return;              // that group holds nothing
-  const gone = m.groups.find((g) => g.id === target);
-  const label = target === 'all' ? 'all blocks' : (gone?.name ?? `group ${target}`);
   const pick = (a) => (Array.isArray(a) ? keep.map((i) => a[i]) : a);
 
   if (!keep.length) {
@@ -408,7 +426,11 @@ function clearBlocks(target) {
       weights: pick(m.weights),
       thickness: pick(m.thickness),
       blockGroups: keep.map((i) => m.blockGroups[i]),
-      groups: m.groups.filter((g) => g.id !== target),
+      // A group nothing is left in is not a group -- it would sit in three menus
+      // offering a colour that names nothing -- UNLESS it was made empty on
+      // purpose, from the table, to move blocks into.
+      groups: m.groups.filter((g) => g.method === 'hand'
+        || keep.some((i) => m.blockGroups[i] === g.id)),
       // Cleared first, so that recoverJoints cannot mistake the old list for
       // one that still describes what is left.
       joints: null, jointRecovery: null,
@@ -434,11 +456,239 @@ function clearBlocks(target) {
   reportBlocks();
   reportScale();
   reportTrace();
+  renderBlockTable();
   recompute();
   fitViews();
   const gone2 = had - keep.length;
   appendLog(`Cleared ${gone2} block${gone2 === 1 ? '' : 's'} — ${label}`);
   draw();
+}
+
+/** Delete every block of one group, or all of them. */
+function clearBlocks(target) {
+  const m = state.model;
+  const had = m?.blocks?.length ?? 0;
+  if (!had) return;
+  ensureGroups();
+  const keep = target === 'all'
+    ? []
+    : m.blocks.map((_, i) => i).filter((i) => m.blockGroups[i] !== target);
+  if (keep.length === had) return;              // that group holds nothing
+  const gone = m.groups.find((g) => g.id === target);
+  keepOnlyBlocks(keep, target === 'all' ? 'all blocks'
+    : (gone?.name ?? `group ${target}`));
+}
+
+/** Delete one block, from the table. */
+function deleteBlock(i) {
+  const m = state.model;
+  if (!m?.blocks?.length || i < 0 || i >= m.blocks.length) return;
+  ensureGroups();
+  if (state.selectedBlock === i) state.selectedBlock = null;
+  else if (state.selectedBlock > i) state.selectedBlock -= 1;
+  keepOnlyBlocks(m.blocks.map((_, k) => k).filter((k) => k !== i),
+    `block ${i + 1}`);
+}
+
+/* ------------------------------------------------------------ block table -- */
+
+/**
+ * The blocks as a list of numbers rather than as a drawing.
+ *
+ * WHY A TABLE EARNS ITS PLACE. Everything else here is a picture, and a picture
+ * is the right answer to almost every question this application is asked. It is
+ * the wrong answer to four: which block is the heavy one, where exactly its
+ * centre of gravity is, which group a stone ended up in, and how to take one
+ * stone out. Those are questions about a list, and the MATLAB application
+ * answered them with a list.
+ *
+ * The colour of a row is its group's, well diluted. It is the same colour the
+ * drawing uses under "Group colours", so the eye can carry a group from one to
+ * the other, and pale enough that the numbers on top of it still read.
+ */
+function renderBlockTable() {
+  if (!ui.blockTable) return;
+  const m = state.model;
+  const body = ui.blockTable.tBodies[0];
+  body.innerHTML = '';
+  ui.groupList.innerHTML = '';
+
+  if (!m?.blocks?.length) {
+    ui.tableStatus.textContent = 'no blocks yet';
+    ui.tableFilter.innerHTML = '<option value="all">All</option>';
+    ui.addGroup.disabled = true;
+    return;
+  }
+  ensureGroups();
+  ui.addGroup.disabled = false;
+
+  const scaled = m.frame?.coordinates === 'physical';
+  const len = (v) => (scaled ? format(v, 'length', state.system) : `${v.toPrecision(4)} px`);
+  const force = (v) => (scaled ? format(v, 'force', state.system) : v.toPrecision(4));
+  const groupOf = (i) => m.groups.find((g) => g.id === m.blockGroups[i]);
+
+  // ---- the groups, with their names to hand ------------------------------
+  m.groups.forEach((g, gi) => {
+    const li = document.createElement('li');
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = g.color;
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.value = g.name;
+    name.title = 'the name this group is known by, everywhere';
+    name.addEventListener('change', () => {
+      const said = name.value.trim();
+      g.name = said || groupName(g.method ?? 'imported', gi);
+      name.value = g.name;
+      reportGroups();
+      renderBlockTable();
+      appendLog(`Renamed group ${gi + 1} to "${g.name}"`);
+    });
+    const count = document.createElement('span');
+    count.className = 'count';
+    const n = m.blockGroups.filter((id) => id === g.id).length;
+    count.textContent = `${n} block${n === 1 ? '' : 's'}`;
+    li.append(swatch, name, count);
+    ui.groupList.append(li);
+  });
+
+  // ---- what the table is showing -----------------------------------------
+  const before = ui.tableFilter.value || state.tableFilter || 'all';
+  ui.tableFilter.innerHTML = '';
+  const all = document.createElement('option');
+  all.value = 'all';
+  all.textContent = `All (${m.blocks.length})`;
+  ui.tableFilter.append(all);
+  m.groups.forEach((g, gi) => {
+    const o = document.createElement('option');
+    o.value = String(g.id);
+    o.textContent = `${gi + 1}. ${g.name}`;
+    ui.tableFilter.append(o);
+  });
+  ui.tableFilter.value = [...ui.tableFilter.options].some((o) => o.value === before)
+    ? before : 'all';
+  state.tableFilter = ui.tableFilter.value;
+
+  // ---- the rows ----------------------------------------------------------
+  const shown = m.blocks
+    .map((_, i) => i)
+    .filter((i) => state.tableFilter === 'all'
+      || m.blockGroups[i] === Number(state.tableFilter));
+
+  let total = 0;
+  for (const i of shown) {
+    const g = groupOf(i);
+    const tr = document.createElement('tr');
+    if (g) tr.style.background = `${g.color}44`;      // the group's colour, diluted
+    if (state.selectedBlock === i) tr.className = 'picked';
+
+    const sides = piecesOf(m.blocks[i])
+      .reduce((a, p) => a + ((p?.x ?? []).length), 0);
+    const c = m.centroids?.[i] ?? [NaN, NaN];
+    const w = Number(m.weights?.[i]) || 0;
+    total += w;
+
+    const cells = [
+      ['num', String(i + 1)],
+      ['num', String(sides)],
+      ['', `(${len(c[0])}, ${len(c[1])})`],
+      ['num', force(w)],
+    ];
+    for (const [cls, text] of cells) {
+      const td = document.createElement('td');
+      td.className = cls;
+      td.textContent = text;
+      tr.append(td);
+    }
+
+    // The group, as a choice: moving a stone from one material to another is
+    // the whole reason a group exists, and it should not take a detour.
+    const tdG = document.createElement('td');
+    const sel = document.createElement('select');
+    m.groups.forEach((gg, gi) => {
+      const o = document.createElement('option');
+      o.value = String(gg.id);
+      o.textContent = `${gi + 1}. ${gg.name}`;
+      sel.append(o);
+    });
+    sel.value = String(m.blockGroups[i]);
+    sel.addEventListener('click', (e) => e.stopPropagation());
+    sel.addEventListener('change', () => moveBlockToGroup(i, Number(sel.value)));
+    tdG.append(sel);
+    tr.append(tdG);
+
+    const tdX = document.createElement('td');
+    const drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'drop';
+    drop.textContent = '\u00d7';
+    drop.title = `delete block ${i + 1}`;
+    drop.addEventListener('click', (e) => { e.stopPropagation(); deleteBlock(i); });
+    tdX.append(drop);
+    tr.append(tdX);
+
+    // Clicking a row shows which stone it is. The drawing already knows how to
+    // pick one out -- `drawBlocks` takes a `highlight` -- so nothing new is
+    // drawn for it.
+    tr.addEventListener('click', () => {
+      state.selectedBlock = state.selectedBlock === i ? null : i;
+      renderBlockTable();
+      draw();
+    });
+    body.append(tr);
+  }
+
+  ui.tableStatus.textContent = `${shown.length} of ${m.blocks.length} blocks · `
+    + `${shown.length === m.blocks.length ? 'total weight' : 'weight of those shown'} `
+    + `${force(total)}`
+    + (state.selectedBlock !== null ? ` · block ${state.selectedBlock + 1} picked out` : '');
+}
+
+/** Put one block into another group, and re-weigh it as that group's material. */
+function moveBlockToGroup(i, id) {
+  const m = state.model;
+  if (!m?.blockGroups || !m.groups.some((g) => g.id === id)) return;
+  if (m.blockGroups[i] === id) return;
+  const from = m.groups.find((g) => g.id === m.blockGroups[i]);
+  const to = m.groups.find((g) => g.id === id);
+  m.blockGroups = m.blockGroups.map((v, k) => (k === i ? id : v));
+  // The weight follows the material and the thickness of the group it is in
+  // now, which is the point of moving it.
+  reweigh();
+  state.band = null; state.bandKey = null;
+  state.frozenBranch = null;
+  reportGroups();
+  renderBlockTable();
+  recompute();
+  fitForceView();
+  appendLog(`Moved block ${i + 1} from "${from?.name ?? '?'}" to "${to?.name ?? '?'}"`);
+  draw();
+}
+
+/**
+ * An empty group, to move blocks into.
+ *
+ * Every other group is made by a generator and holds what that generator built.
+ * This one is made by hand and holds nothing yet, which is what it is for: a
+ * second material inside one traced ring has no generator to come from.
+ */
+function addEmptyGroup() {
+  const m = state.model;
+  if (!m?.blocks?.length) return;
+  ensureGroups();
+  const id = Math.max(0, ...m.groups.map((g) => Number(g.id) || 0)) + 1;
+  m.groups = [...m.groups, {
+    id,
+    name: `Group ${m.groups.length + 1}`,
+    method: 'hand',
+    gamma: Number(ui.gamma.value) || 20,
+    thickness: Math.max(0, Number(ui.thick.value) || 1),
+    color: groupColour(m.groups.length),
+  }];
+  reportGroups();
+  renderBlockTable();
+  appendLog(`Added an empty group, "Group ${m.groups.length}"`);
 }
 
 function clearThreePointRing() {
@@ -535,7 +785,11 @@ async function loadCatalogue() {
   for (const e of cat.examples) {
     const o = document.createElement('option');
     o.value = e.file;
-    o.textContent = `${e.name.replace(/_/g, ' ')}  (${e.blocks ?? '?'} blocks)`;
+    o.textContent = `${String(e.name).replace(/_/g, ' ')}  (${e.blocks ?? '?'} blocks)`;
+    // What the example is FOR, where a menu can carry it: the set is chosen to
+    // show the different ways of building and reading an arch, and a title
+    // alone does not say which is which.
+    if (e.about) o.title = e.about;
     ui.example.append(o);
   }
   // AN EMPTY DESK TO BEGIN WITH. Opening straight into an example put an arch
@@ -621,13 +875,27 @@ function newWork() {
  * message, because everything on screen is a correct answer to a question
  * nobody asked.
  */
+/**
+ * Open one of the shipped examples.
+ *
+ * TWO FORMATS, ON PURPOSE. The examples that show what the application can do
+ * are SESSIONS -- the very files a student saves, image and notes and all --
+ * so that nothing is demonstrated that a student cannot themselves produce and
+ * hand in. What is left of the MATLAB generation is read the old way, through
+ * `fromExample`. The file says which it is, so neither has to be guessed at.
+ */
 async function loadExample(file) {
   let json;
   let model;
   try {
     const res = await fetch(DATA + file);
     if (!res.ok) throw new Error(`could not be read (HTTP ${res.status})`);
-    json = await res.json();
+    const text = await res.text();
+    json = JSON.parse(text);
+    if (json.format === FORMAT) {
+      openWork(text, { source: file });
+      return;
+    }
     model = fromExample(json);
   } catch (err) {
     ui.warn.hidden = false;
@@ -722,6 +990,13 @@ async function loadExample(file) {
   recompute();
   fitViews();
   reportGroups();
+  // Said here as well as on the session path: without it the previous
+  // example's span, and the previous example's file name, stayed on screen
+  // under an arch that had nothing to do with either.
+  reportScale();
+  reportBlocks();
+  syncProjectText();
+  ui.saveStatus.textContent = `example — ${file}`;
   appendLog(`Loaded example ${file}`);
   draw();
 }
@@ -1473,7 +1748,13 @@ function draw() {
       const colours = ui.showGroups.checked
         ? m.blockGroups.map((id) => m.groups.find((g) => g.id === id)?.color)
         : null;
-      drawBlocks(mainAx, m.blocks, { labels: ui.showLabels.checked, colours });
+      drawBlocks(mainAx, m.blocks, {
+        labels: ui.showLabels.checked,
+        colours,
+        // The row the block table has picked. `drawBlocks` already knows how
+        // to single a voussoir out; nothing new is drawn for it.
+        highlight: state.selectedBlock ?? -1,
+      });
       if (ui.showGroups.checked) drawGroupLabels();
     }
   }
@@ -1537,8 +1818,10 @@ function draw() {
     drawRadiusView();
     return;
   }
-  // Notes and Log put a textarea over the pane; there is no canvas on show.
-  if (sideView() === 'notes' || sideView() === 'log') return;
+  // Notes, Log and the block table put a pane over the canvas; there is no
+  // drawing on show to make.
+  const side = sideView();
+  if (side === 'notes' || side === 'log' || side === 'blocktable') return;
   forceAx.begin();
   forceAx.reequalize();
   if (state.fp) {
@@ -3146,6 +3429,7 @@ function drawProfiles() {
 
 /** Which of the two views the right-hand pane is showing. */
 function sideView() {
+  if (ui.tabBlockTable.classList.contains('active')) return 'blocktable';
   if (ui.tabSolid.classList.contains('active')) return 'solid';
   if (ui.tabHeyman.classList.contains('active')) return 'heyman';
   if (ui.tabRadius.classList.contains('active')) return 'radius';
@@ -4190,22 +4474,29 @@ function showSide(which) {
   const radius = which === 'radius';
   const notes = which === 'notes';
   const log = which === 'log';
+  const table = which === 'blocktable';
+  ui.tabBlockTable.classList.toggle('active', table);
   ui.tabSolid.classList.toggle('active', solid);
   ui.tabHeyman.classList.toggle('active', heyman);
   ui.tabRadius.classList.toggle('active', radius);
   ui.tabNotes.classList.toggle('active', notes);
   ui.tabLog.classList.toggle('active', log);
-  ui.tabForce.classList.toggle('active', !solid && !heyman && !radius && !notes && !log);
+  ui.tabForce.classList.toggle('active',
+    !solid && !heyman && !radius && !notes && !log && !table);
   el('solid').hidden = !solid;
   el('plot').hidden = !heyman && !radius;
-  el('force').hidden = solid || heyman || radius || notes || log;
+  el('force').hidden = solid || heyman || radius || notes || log || table;
+  ui.blockTablePane.hidden = !table;
   ui.notesPane.hidden = !notes;
   ui.logPane.hidden = !log;
-  document.querySelector('.viewtools[data-ax="side"]').hidden = notes || log;
+  document.querySelector('.viewtools[data-ax="side"]').hidden = notes || log || table;
   el('solidTools').hidden = !solid;
   ui.radiusMetric.hidden = !radius;
   ui.plotStatus.hidden = !heyman && !radius;
-  ui.sideCaption.textContent = solid
+  if (table) renderBlockTable();
+  ui.sideCaption.textContent = table
+    ? 'The blocks, their groups and their weights'
+    : solid
     ? (ui.poleni.checked ? 'Blocks — dome lune' : 'Blocks — constant thickness')
     : heyman ? 'Heyman N-M diagram'
       : radius ? 'Thickness study'
@@ -4222,14 +4513,13 @@ function showSide(which) {
   draw();
 }
 ui.tabForce.addEventListener('click', () => showSide('force'));
-ui.tabSolid.addEventListener('click', () => showSide('solid'));
-ui.tabHeyman.addEventListener('click', () => showSide('heyman'));
-ui.tabRadius.addEventListener('click', () => showSide('radius'));
-ui.tabNotes.addEventListener('click', () => showSide('notes'));
-ui.tabLog.addEventListener('click', () => showSide('log'));
-ui.projectNotes.addEventListener('input', () => {
-  state.notes = ui.projectNotes.value;
+ui.tabBlockTable.addEventListener('click', () => showSide('blocktable'));
+ui.addGroup.addEventListener('click', addEmptyGroup);
+ui.tableFilter.addEventListener('change', () => {
+  state.tableFilter = ui.tableFilter.value;
+  renderBlockTable();
 });
+
 function setRadiusMetric(metric) {
   state.radiusMetric = metric;
   ui.radiusByWeight.classList.toggle('active', metric === 'weight');
@@ -4449,12 +4739,18 @@ async function saveWork() {
 }
 
 /** Read a saved session back and put the app into it. */
-function openWork(text) {
+function openWork(text, { source = null } = {}) {
   let data;
   try {
     data = deserialise(text);
   } catch (e) {
-    ui.saveStatus.textContent = `could not open: ${e.message}`;
+    ui.saveStatus.textContent = source
+      ? `${source}: ${e.message}`
+      : `could not open: ${e.message}`;
+    if (source) {
+      ui.warn.hidden = false;
+      ui.warn.textContent = `${source}: ${e.message}`;
+    }
     return;
   }
 
@@ -4473,9 +4769,9 @@ function openWork(text) {
   state.imageData = data.imageData ?? null;
   state.notes = data.notes ?? '';
   state.log = data.log ?? [];
-  appendLog(data.exampleName
-    ? `Opened session ${data.exampleName}`
-    : 'Opened saved session');
+  appendLog(source
+    ? `Loaded example ${source}`
+    : (data.exampleName ? `Opened session ${data.exampleName}` : 'Opened saved session'));
   state.consistent = { ok: true, problems: [] };
 
   ui.system.value = data.system;
@@ -4525,7 +4821,9 @@ function openWork(text) {
   reportBlocks();
   reportScale();
   reportGroups();
-  if (state.imageData?.dataUrl) {
+  if (source) {
+    ui.saveStatus.textContent = `example — ${source}`;
+  } else if (state.imageData?.dataUrl) {
     ui.saveStatus.textContent = `opened with background image (${state.imageData.name ?? 'embedded'})`;
   } else {
     const linkedImage = state.model?.image ?? data.imageName;

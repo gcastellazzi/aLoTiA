@@ -332,12 +332,39 @@
         <button class="tab" id="tabSolid" role="tab">Blocks</button>
         <button class="tab" id="tabHeyman" role="tab">Heyman</button>
         <button class="tab" id="tabRadius" role="tab">t/ri</button>
+        <button class="tab" id="tabBlockTable" role="tab">Block table</button>
         <button class="tab" id="tabNotes" role="tab">Notes</button>
         <button class="tab" id="tabLog" role="tab">Log</button>
       </div>
       <canvas id="force"></canvas>
       <canvas id="solid" hidden></canvas>
       <canvas id="plot" hidden></canvas>
+      <div class="texttab tablepane" id="blockTablePane" hidden>
+        <div class="blocktable">
+          <div class="blockgroups">
+            <h3>Groups</h3>
+            <ul id="groupList"></ul>
+            <button id="addGroup" type="button">New empty group</button>
+          </div>
+          <div class="blockrows">
+            <label class="showing">Showing
+              <select id="tableFilter"></select>
+            </label>
+            <div class="tablescroll">
+              <table id="blockTable">
+                <thead>
+                  <tr>
+                    <th>#</th><th>sides</th><th>G(x, y)</th>
+                    <th>weight</th><th>group</th><th></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p id="tableStatus" class="meta"></p>
+          </div>
+        </div>
+      </div>
       <div class="texttab" id="notesPane" hidden>
         <textarea id="projectNotes" spellcheck="true"
           placeholder="Image credits, assumptions, steps needed to rerun the analysis..."></textarea>

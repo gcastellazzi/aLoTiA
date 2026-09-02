@@ -34,6 +34,7 @@ import {
   forcePolygon, freeThrustLine, funicular, jointCrossings, poleForEnds,
 } from './statics.js';
 import { distance } from './geometry.js';
+import { nullSpace } from './linalg.js';
 
 /** How close to a face counts as touching it, as a fraction of the joint. */
 export const TOUCH = 0.02;
@@ -517,51 +518,12 @@ export function degreesOfFreedom(hingeCount) {
 
 // ---------------------------------------------------------- the kinematics --
 
-/**
- * Solve A x = 0 for a basis of the null space, by elimination with pivoting.
- *
- * Small dense systems only -- three unknowns per body, two equations per hinge.
- * Returns one vector per dimension of the null space, or an empty array when
- * the only solution is the trivial one.
- */
-export function nullSpace(A, nCols, tol = 1e-9) {
-  const M = A.map((row) => row.slice());
-  const rows = M.length;
-  const pivotOf = new Array(nCols).fill(-1);
-  let r = 0;
-
-  for (let c = 0; c < nCols && r < rows; c++) {
-    let best = r;
-    for (let i = r; i < rows; i++) {
-      if (Math.abs(M[i][c]) > Math.abs(M[best][c])) best = i;
-    }
-    if (Math.abs(M[best][c]) < tol) continue;
-    [M[r], M[best]] = [M[best], M[r]];
-    const p = M[r][c];
-    for (let j = c; j < nCols; j++) M[r][j] /= p;
-    for (let i = 0; i < rows; i++) {
-      if (i === r) continue;
-      const f = M[i][c];
-      if (f === 0) continue;
-      for (let j = c; j < nCols; j++) M[i][j] -= f * M[r][j];
-    }
-    pivotOf[c] = r;
-    r++;
-  }
-
-  const free = [];
-  for (let c = 0; c < nCols; c++) if (pivotOf[c] < 0) free.push(c);
-
-  return free.map((fc) => {
-    const v = new Array(nCols).fill(0);
-    v[fc] = 1;
-    for (let c = 0; c < nCols; c++) {
-      if (pivotOf[c] < 0) continue;
-      v[c] = -M[pivotOf[c]][fc];
-    }
-    return v;
-  });
-}
+// `nullSpace` used to be written out here. It is elimination on a matrix and
+// knows nothing about arches -- about hinges, about which body is on which side
+// of one -- so anything else that needed one would have had to import it from a
+// module about collapse. It now lives in core/linalg.js and is re-exported, so
+// every caller and every test that names it here still works.
+export { nullSpace };
 
 /**
  * The velocity field of the chain: one rigid motion per macro-block.

@@ -27,7 +27,12 @@ import { fromExample, poleOf, consistency } from
   '../docs/app/js/core/model.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DATA = join(HERE, '..', 'docs', 'app', 'data', 'examples');
+// THE MATLAB CORPUS IS A TEST FIXTURE, NOT A SHIPPED EXAMPLE. The
+// application offers a student the sessions under docs/app/data/examples
+// -- the very files a student saves. These are the earlier generation,
+// kept because they are what proves this module reproduces the solutions
+// MATLAB stored, block for block and ray for ray.
+const DATA = join(HERE, 'fixtures', 'matlab');
 
 function load(name) {
   return JSON.parse(readFileSync(join(DATA, name), 'utf8'));

@@ -52,6 +52,8 @@ const core = (name) => import(
 const { centroid } = await core('geometry.js');
 const { blocksBetween, weighBlocks } = await core('trace.js');
 const { forcePolygon, funicular, freeThrustLine, jointCrossings, pointOnJoint, } = await core('statics.js');
+const { collapseRange } = await core('mechanism.js');
+const { circularRing } = await core('blocks.js');
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), 'data');
 mkdirSync(OUT, { recursive: true });
@@ -70,18 +72,38 @@ const arc = (r, n = 300) => Array.from({ length: n }, (_, i) => {
 
 /** A ring, weighed and ordered exactly as the application orders it. */
 function ring(ri, ro, n) {
-  const { blocks, joints } = blocksBetween(arc(ri), arc(ro), n);
+  // THE RING THE APPLICATION BUILDS, not one traced over it. `blocksBetween`
+  // resamples two arcs by arc length, which is what a student's traced curve
+  // gives and is very slightly not a circle; `circularRing` is the Circular
+  // ring panel's own function, built from the angles. The figures are meant to
+  // be checkable in that panel, and against the traced ring the band came out
+  // 7e-4 different -- small, but the difference between "reproduces" and
+  // "nearly reproduces".
+  const { blocks, joints } = circularRing({
+    centre: [0, 0], innerRadius: ri, outerRadius: ro,
+    startAngle: 0, endAngle: 180, count: n,
+  });
   const weights = weighBlocks(blocks, { specificWeight: 20, thickness: 1 });
   const centroids = blocks.map(centroid);
   const order = centroids
     .map((c, i) => [c[0], i]).sort((a, b) => b[0] - a[0]).map(([, i]) => i);
   const w = order.map((i) => weights[i]);
   const g = order.map((i) => centroids[i]);
+  // BY POSITION, NOT BY INDEX. The construction walks from the right-hand
+  // springing to the left, taking blocks in order of descending centroid x, so
+  // the ends must be chosen by where they are. Taken by index they came out
+  // swapped the moment the ring stopped being built by tracing two arcs, and
+  // no admissible line could be found on a ring that plainly has one.
+  const midX = (j) => (j.a[0] + j.b[0]) / 2;
+  const first = joints[0];
+  const last = joints[joints.length - 1];
+  const [startJoint, endJoint] = midX(first) >= midX(last)
+    ? [first, last] : [last, first];
   return {
     blocks, joints, w, g,
     total: w.reduce((s, v) => s + v, 0),
-    startJoint: joints[joints.length - 1],
-    endJoint: joints[0],
+    startJoint,
+    endJoint,
   };
 }
 
@@ -176,32 +198,52 @@ const lin = (a, b, m) => Array.from({ length: m }, (_, i) => a + ((b - a) * i) /
 
 function band(tri, freeEnds) {
   const rr = ring(RI, RI * (1 + tri), N);
-  // The grids MUST contain the symmetric state -- s = 1/2, half the load --
-  // or the free search would exclude the pinned family it contains.
-  const starts = freeEnds ? lin(0, 1, 21) : [0.5];
-  const splits = freeEnds ? lin(0.05, 0.95, 37) : [0.5];
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const f of lin(0.05, 0.6, 111)) {
-    let fits = false;
-    for (const s of starts) {
-      for (const sp of splits) {
-        if (freeEnds) {
-          if (line(rr, f, s, sp).admissible) { fits = true; break; }
-        } else {
-          const fp = forcePolygon(rr.w, [rr.total * f, -rr.total / 2]);
-          const lot = funicular(fp, rr.g,
-            pointOnJoint(rr.startJoint, 0.5), pointOnJoint(rr.endJoint, 0.5));
-          if (jointCrossings(lot.points, rr.joints).every((c) => c && c.inside)) {
-            fits = true; break;
-          }
-        }
-      }
-      if (fits) break;
-    }
-    if (fits) { lo = Math.min(lo, f); hi = Math.max(hi, f); }
+
+  // THE FREE FAMILY IS THE APPLICATION'S OWN ANSWER. This used to be a grid --
+  // 111 thrusts by 21 starts by 37 splits -- which is a second implementation
+  // of the physics the application already implements, and it disagreed with
+  // it: the grid quantises the thrust to its step of 0.005, records the last
+  // sample that fits, and so UNDERSTATES the band at both ends. At t/ri = 0.12
+  // it reported a band of width zero where the application finds 0.008. A
+  // figure that a reader cannot reproduce with the tool the paper describes is
+  // worse than no figure, so the figure now calls `collapseRange`.
+  if (freeEnds) {
+    const seq = {
+      centroids: rr.g,
+      weights: rr.w,
+      areas: rr.g.map(() => 0),
+      thickness: rr.g.map(() => 0),
+    };
+    const b = collapseRange(seq, rr.joints);
+    return b ? [b.min, b.max] : null;
   }
-  return Number.isFinite(lo) ? [lo, hi] : null;
+
+  // THE PINNED FAMILY has no counterpart in the application -- it is the
+  // superseded construction, kept because the comparison is the point of the
+  // figure -- so it is bisected here, by the same scheme `collapseRange` uses,
+  // rather than scanned. One parameter: both ends sit at the joint mid-points.
+  const fits = (f) => {
+    const fp = forcePolygon(rr.w, [rr.total * f, -rr.total / 2]);
+    const lot = funicular(fp, rr.g,
+      pointOnJoint(rr.startJoint, 0.5), pointOnJoint(rr.endJoint, 0.5));
+    return jointCrossings(lot.points, rr.joints).every((c) => c && c.inside);
+  };
+  let seed = null;
+  for (let i = 0; i <= 60; i++) {
+    const f = 0.02 + ((1.2 - 0.02) * i) / 60;
+    if (fits(f)) { seed = f; break; }
+  }
+  if (seed === null) return null;
+  const edge = (from, towards) => {
+    let good = from;
+    let bad = towards;
+    for (let i = 0; i < 18; i++) {
+      const m = (good + bad) / 2;
+      if (fits(m)) good = m; else bad = m;
+    }
+    return good;
+  };
+  return [edge(seed, 0.02), edge(seed, 1.2)];
 }
 
 for (const [name, freeEnds] of [['band_pinned.dat', false], ['band_free.dat', true]]) {
@@ -276,7 +318,7 @@ log.push('minthick_table.tex');
 // The five-hinge minimum-thrust mechanism of a semicircular ring, displaced.
 // Generated rather than drawn, so the figure cannot claim a motion the code
 // does not produce -- including that every joint OPENS.
-const { bestLineForThrust, collapseRange, analyse, displacedConfiguration, displaced: displacedBlocks, transformPoint, } = await core('mechanism.js');
+const { bestLineForThrust, analyse, displacedConfiguration, displaced: displacedBlocks, transformPoint, } = await core('mechanism.js');
 
 {
   const RI2 = 1;

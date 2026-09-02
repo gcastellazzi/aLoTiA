@@ -1,114 +1,136 @@
 {
- "generated": "2026-08-28",
- "count": 12,
+ "generated": "2026-09-01",
+ "count": 8,
  "examples": [
   {
-   "name": "Example_1_Circular_arch_comparison",
-   "file": "Example_1_Circular_arch_comparison.json",
-   "image": "Example_1_Circular_arch_comparison.jpg",
-   "blocks": 20,
-   "has_thrust_line": true,
-   "units": "Nmm",
-   "frame": "pixels"
-  },
-  {
-   "name": "Example_3_Heyman_arch",
-   "file": "Example_3_Heyman_arch.json",
-   "image": "Example_3_Heyman_arch.jpg",
-   "blocks": 7,
-   "has_thrust_line": true,
-   "units": "SI",
-   "frame": "pixels"
-  },
-  {
-   "name": "Example_9_Coulomb_arch",
-   "file": "Example_9_Coulomb_arch.json",
-   "image": "Example_9_Coulomb_arch.png",
-   "blocks": 10,
-   "has_thrust_line": true,
-   "units": "SI",
-   "frame": "pixels"
-  },
-  {
-   "name": "Example_6_Pointed_Arch",
-   "file": "Example_6_Pointed_Arch.json",
-   "image": "Example_6_Pointed_Arch.jpg",
-   "blocks": 11,
-   "has_thrust_line": true,
-   "units": null,
-   "frame": "pixels"
-  },
-  {
-   "name": "Example_5_Notre_Dame_de_Paris_Hmin",
-   "file": "Example_5_Notre_Dame_de_Paris_Hmin.json",
-   "image": "Example_5_Notre_Dame_de_Paris_Hmin.jpg",
-   "blocks": 8,
-   "has_thrust_line": true,
-   "units": null,
-   "frame": "pixels"
-  },
-  {
-   "name": "Example_5_Notre_Dame_de_Paris_Hmax",
-   "file": "Example_5_Notre_Dame_de_Paris_Hmax.json",
-   "image": "Example_5_Notre_Dame_de_Paris_Hmax.jpg",
-   "blocks": 8,
-   "has_thrust_line": true,
-   "units": null,
-   "frame": "pixels"
-  },
-  {
-   "name": "Poleni_Example_01",
-   "file": "Poleni_Example_01.json",
-   "image": "Poleni_Example_01.jpg",
-   "blocks": 56,
-   "has_thrust_line": true,
-   "units": "Nmm",
-   "frame": "pixels"
-  },
-  {
-   "name": "Example_0_Landscape_arch",
-   "file": "Example_0_Landscape_arch.json",
-   "image": "Example_0_Landscape_arch.jpg",
-   "blocks": 27,
-   "has_thrust_line": true,
-   "units": "Nmm",
-   "frame": "pixels"
-  },
-  {
-   "name": "Utah_Arch",
-   "file": "Utah_Arch.json",
-   "image": "Utah_Arch.jpg",
-   "blocks": 11,
-   "has_thrust_line": false,
-   "units": "SI",
-   "frame": "pixels"
-  },
-  {
-   "name": "Nervi_Example",
-   "file": "Nervi_Example.json",
-   "image": "Nervi_Example.jpg",
+   "file": "example_1_circular_arch.json",
+   "name": "Example 1 circular arch",
+   "format": "session",
    "blocks": 16,
-   "has_thrust_line": false,
-   "units": "SI",
-   "frame": "physical"
+   "joints": 17,
+   "groups": [
+    "three"
+   ],
+   "units": "kgcm",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 1,
+   "kB": 151,
+   "about": "A laboratory arch traced over its photograph with the three-point tool, in kg-cm, carrying one applied load."
   },
   {
-   "name": "Pippard_Ashby_Example",
-   "file": "Pippard_Ashby_Example.json",
-   "image": "Pippard_Ashby_Example.jpg",
-   "blocks": 23,
-   "has_thrust_line": false,
-   "units": "SI",
-   "frame": "physical"
+   "file": "example_1_circular_arch_minimum_thrust.json",
+   "name": "Example 1 circular arch minimum thrust",
+   "format": "session",
+   "blocks": 24,
+   "joints": 25,
+   "groups": [
+    "three"
+   ],
+   "units": "kgcm",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 0,
+   "kB": 960,
+   "about": "The same arch at its least thrust: the line rides the extrados at the haunches and the intrados at the crown."
   },
   {
-   "name": "Example_7_San_Francesco",
-   "file": "Example_7_San_Francesco.json",
-   "image": "Example_7_San_Francesco.png",
-   "blocks": 49,
-   "has_thrust_line": true,
-   "units": null,
-   "frame": "pixels"
+   "file": "example_1_circular_arch_maximum_thrust.json",
+   "name": "Example 1 circular arch maximum thrust",
+   "format": "session",
+   "blocks": 24,
+   "joints": 25,
+   "groups": [
+    "three"
+   ],
+   "units": "kgcm",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 0,
+   "kB": 933,
+   "about": "And at its greatest, where the pattern inverts. The two together are the admissible band, drawn."
+  },
+  {
+   "file": "Example_2_Heyman_arch.json",
+   "name": "Example 2 Heyman arch",
+   "format": "session",
+   "blocks": 7,
+   "joints": 8,
+   "groups": [
+    "draw"
+   ],
+   "units": "SI",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 0,
+   "kB": 237,
+   "about": "Seven voussoirs drawn corner by corner over a figure, with both ends of the line imposed at the springings."
+  },
+  {
+   "file": "Example_3_Delicate_arch_sunset.json",
+   "name": "Example 3 Delicate arch sunset",
+   "format": "session",
+   "blocks": 8,
+   "joints": 9,
+   "groups": [
+    "draw"
+   ],
+   "units": "SI",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 0,
+   "kB": 1810,
+   "about": "Delicate Arch, Utah: eight blocks drawn over a photograph. A natural arch stands by the same theorem a built one does."
+  },
+  {
+   "file": "Example_4_Landscape_Arch_Utah.json",
+   "name": "Example 4 Landscape Arch Utah",
+   "format": "session",
+   "blocks": 50,
+   "joints": 51,
+   "groups": [
+    "trace"
+   ],
+   "units": "SI",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 0,
+   "kB": 1591,
+   "about": "Landscape Arch, the longest natural span in the world, traced intrados and extrados into fifty voussoirs. Carries its own notes."
+  },
+  {
+   "file": "Example_6_Arc_boutant_Notre_Dame_de_Paris.json",
+   "name": "Example 6 Arc boutant Notre Dame de Paris",
+   "format": "session",
+   "blocks": 34,
+   "joints": null,
+   "groups": [
+    "profile",
+    "draw"
+   ],
+   "units": "SI",
+   "frame": "pixels",
+   "image": "embedded",
+   "loads": 0,
+   "kB": 154,
+   "about": "A flying buttress cut from a traced outline, with blocks added by hand. Not one chain, and the panel says which pair does not touch."
+  },
+  {
+   "file": "example_5_flying_arch.json",
+   "name": "Example 5 flying arch",
+   "format": "session",
+   "blocks": 31,
+   "joints": 0,
+   "groups": [
+    "three",
+    "draw"
+   ],
+   "units": "SI",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 0,
+   "kB": 379,
+   "about": "A flyer with its pier and pinnacle: three free ends, so no ordering of it is a chain. What branches off loads the arch rather than belonging to it."
   }
  ]
 }

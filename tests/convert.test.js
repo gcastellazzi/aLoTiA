@@ -31,7 +31,12 @@ import path from 'node:path';
 import { fromExample, consistency, poleOf } from '../docs/app/js/core/model.js';
 import { poleFromForcePolygon } from '../docs/app/js/core/statics.js';
 
-const EXAMPLES = new URL('../docs/app/data/examples/', import.meta.url).pathname;
+// THE MATLAB CORPUS IS A TEST FIXTURE, NOT A SHIPPED EXAMPLE. What the
+// application offers a student is now the sessions under
+// docs/app/data/examples -- the very files a student saves. These twelve are
+// the earlier generation, kept because they are what proves the reader
+// reproduces the solutions MATLAB stored, which is a claim the paper makes.
+const EXAMPLES = new URL('./fixtures/matlab/', import.meta.url).pathname;
 const readRaw = (f) => JSON.parse(fs.readFileSync(path.join(EXAMPLES, f), 'utf8'));
 
 const KEYS = Object.keys(SYSTEMS);

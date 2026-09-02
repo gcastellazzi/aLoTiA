@@ -19,7 +19,7 @@ them, not that you trust ours.
 | Paper | Script output | Expected |
 |---|---|---|
 | Fig. 1, Poleni's dome recomputed | `Poleni_Example_01_*.dat`, `_meta.tex` | 56 blocks; agreement with the solution MATLAB stored, relative error **8.0 × 10⁻¹⁶** |
-| Fig. 2, admissible thrust band | `band_free.dat`, `band_pinned.dat` | see the table below |
+| Fig. 2, admissible thrust band | `band_free.dat`, `band_pinned.dat` | computed by `collapseRange`, the application's own function: the browser agrees to 5 × 10⁻⁵ |
 | Fig. 3, the collapse mechanism | `mech_rest.dat`, `mech_moved.dat`, `mech_hinges.dat` | **5 hinges, dof 2** at minimum thrust; every joint opening positive |
 | Tab. 4, least admissible *t*/*r*ᵢ | `minthick.dat`, `minthick_table.tex` | at *n* = 16: **0.1984** pinned, **0.1155** free (Heyman's continuous ring: 0.108) |
 
@@ -60,9 +60,16 @@ result Fig. 2 exists to show — so the pinned family survives only in
 
 ## The reduced example set
 
-This repository ships the twelve examples the paper discusses. The full corpus
-of twenty-eight converted files, the MATLAB application they came from, and the
-`.mat` converter live in the development repository,
+**Where they live.** What the application *ships* to a student are the sessions
+under `docs/app/data/examples/` — the very files its Save button writes. The
+twelve converted MATLAB examples the paper's audit discusses are a **test
+fixture**, `tests/fixtures/matlab/`, because that is what they are for: they
+carry the solution MATLAB computed, and the port has to reproduce it from the
+same inputs. `makeexample.js` above reads them from there, which is why Fig. 2
+still recomputes Poleni's dome to a relative error of 8.0 x 10^-16.
+
+The full corpus of twenty-eight converted files, the MATLAB application they
+came from, and the `.mat` converter live in the development repository,
 <https://github.com/gcastellazzi/aLOTofImaginArches>.
 
 The twelve were chosen to cover every case the paper names:

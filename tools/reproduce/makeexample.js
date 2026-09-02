@@ -54,7 +54,11 @@ const { forcePolygon, funicular, poleFromForcePolygon, hookeCable, } = await cor
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, 'data');
-const EXAMPLES = join(REPO, 'docs/app/data/examples');
+// The MATLAB corpus is a test fixture now: what the application ships are
+// sessions, and the figure of Poleni's dome in the paper is computed from
+// the file MATLAB wrote, which is where the stored solution it is checked
+// against lives. See tests/fixtures/matlab.
+const EXAMPLES = join(REPO, 'tests/fixtures/matlab');
 mkdirSync(OUT, { recursive: true });
 
 const NAME = process.argv[2] ?? 'Poleni_Example_01';

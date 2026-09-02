@@ -31,7 +31,8 @@ import { jointCrossings } from '../docs/app/js/core/statics.js';
 import { blocksLike, circularRing } from '../docs/app/js/core/blocks.js';
 import { collapseRange, bestLineForThrust, analyse } from '../docs/app/js/core/mechanism.js';
 
-const EXAMPLES = new URL('../docs/app/data/examples/', import.meta.url).pathname;
+// The earlier MATLAB corpus, kept as a fixture: see tests/fixtures/matlab.
+const EXAMPLES = new URL('./fixtures/matlab/', import.meta.url).pathname;
 
 function arc(r, n = 300) {
   return Array.from({ length: n }, (_, i) => {

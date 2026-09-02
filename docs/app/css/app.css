@@ -226,6 +226,150 @@ main {
   color: #444;
   background: #f7f7f7;
 }
+/* The tab strip over the second plot now carries eight entries; on a narrow
+   window they wrap rather than being squeezed into illegibility. */
+#side .tabs { flex-wrap: wrap; }
+
+/* ---------------------------------------------------------- block table -- */
+/* A pane rather than a canvas: the one place the blocks are a list of numbers
+   instead of a drawing, which is what a table is for. */
+.tablepane { flex-direction: column; overflow: hidden; }
+.blocktable {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  font-size: 12px;
+}
+.blockgroups h3 {
+  margin: 0 0 5px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.blockgroups ul { list-style: none; margin: 0 0 6px; padding: 0; }
+.blockgroups li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.blockgroups .swatch {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(40, 40, 40, 0.45);
+  border-radius: 3px;
+}
+.blockgroups input[type=text] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+  color: inherit;
+}
+.blockgroups .count { color: var(--muted); white-space: nowrap; }
+.blockgroups button {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+}
+.blockgroups button:hover { background: #eee; }
+
+.blockrows {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.blockrows .showing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  color: var(--muted);
+}
+.blockrows .showing select {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+/* The scroll lives on the rows, so the head stays put on a long arch. */
+.tablescroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+}
+table#blockTable {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+#blockTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  padding: 4px 6px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#blockTable td {
+  padding: 2px 6px;
+  border-bottom: 1px solid rgba(214, 214, 214, 0.6);
+  white-space: nowrap;
+}
+#blockTable tbody tr { cursor: pointer; }
+/* The group's own colour, well diluted: enough to sort the eye down the
+   column, not enough to fight the numbers on it. */
+#blockTable tbody tr:hover td { filter: brightness(0.96); }
+#blockTable tbody tr.picked td {
+  outline: 1px solid #EDB120;
+  outline-offset: -1px;
+  font-weight: 600;
+}
+#blockTable td.num { text-align: right; }
+#blockTable select {
+  font: inherit;
+  font-size: 11px;
+  max-width: 130px;
+  padding: 1px 3px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+}
+#blockTable button.drop {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--accent);
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 0 5px;
+}
+#blockTable button.drop:hover { background: #f0e2e3; }
+
 .plot-status {
   min-height: 18px;
   text-align: center;
