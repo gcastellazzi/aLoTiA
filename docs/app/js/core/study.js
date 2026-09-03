@@ -228,25 +228,60 @@ export function ringStudySamples(opt) {
  */
 export function pinnedRange(r, opt = {}) {
   const {
-    lo = 0.02, hi = 1.2, coarse = 60, refine = 18,
+    lo = 0.02, hi = 1.2, coarse = 60, refine = 18, zooms = 3,
   } = opt;
   const { right, left } = springingJoints(r.joints);
   const A = pointOnJoint(right, 0.5);
   const B = pointOnJoint(left, 0.5);
   const total = r.totalWeight;
-  const lineAt = (f) => {
+
+  // HOW FAR INSIDE THE MASONRY THE WORST CROSSING SITS, as a fraction of the
+  // joint, negative when it is outside. `jointCrossings` reports `inside` as
+  // exactly `0 <= s <= 1`, so this is the same test made continuous -- and
+  // continuity is the whole point, see the seeding below.
+  const clearanceAt = (f) => {
     const fp = forcePolygon(r.seq.weights, [total * f, -total / 2]);
     const lot = funicular(fp, r.seq.centroids, A, B);
     const cr = jointCrossings(lot.points, r.joints);
-    const inside = cr.length === r.joints.length && cr.every((c) => c && c.inside);
-    return { fp, lot, crossings: cr, inside };
+    if (cr.length !== r.joints.length) return -Infinity;
+    let worst = Infinity;
+    for (const c of cr) {
+      if (!c) return -Infinity;                  // a joint never crossed
+      worst = Math.min(worst, c.s, 1 - c.s);
+    }
+    return worst;
   };
-  const fits = (f) => lineAt(f).inside;
+  const fits = (f) => clearanceAt(f) >= 0;
 
+  // SEED ON THE CLEARANCE, NOT ON WHETHER IT FITS -- the same correction
+  // `collapseRange` carries, and it is needed here for the same reason and more
+  // sharply. Just above the least thickness the pinned family admits, the band
+  // is very nearly zero wide: at t/ri = 0.20 on a ring of 16 it is narrower
+  // than a sixtieth of the thrust range, so a scan that tests a boolean on a
+  // grid steps straight over it and reports a ring that stands as one that does
+  // not. That is what put the published band's first row at t/ri = 0.24 while
+  // the minimum-thickness table, searched more finely, said 0.198.
   let seed = null;
+  let best = { f: lo, clearance: -Infinity };
   for (let i = 0; i <= coarse; i++) {
     const f = lo + ((hi - lo) * i) / coarse;
-    if (fits(f)) { seed = f; break; }
+    const c = clearanceAt(f);
+    if (c > best.clearance) best = { f, clearance: c };
+    if (c >= 0) { seed = f; break; }
+  }
+  if (seed === null) {
+    let step = (hi - lo) / coarse;
+    for (let z = 0; z < zooms && seed === null; z++) {
+      const from = Math.max(lo, best.f - step);
+      const to = Math.min(hi, best.f + step);
+      for (let i = 0; i <= coarse; i++) {
+        const f = from + ((to - from) * i) / coarse;
+        const c = clearanceAt(f);
+        if (c > best.clearance) best = { f, clearance: c };
+        if (c >= 0) { seed = f; break; }
+      }
+      step = (to - from) / coarse;
+    }
   }
   if (seed === null) return null;
 
@@ -259,28 +294,7 @@ export function pinnedRange(r, opt = {}) {
     }
     return good;
   };
-  const min = edge(seed, lo);
-  const max = edge(seed, hi);
-  return {
-    min,
-    max,
-    minLine: lineAt(min).lot.points.map((p) => p.slice()),
-    maxLine: lineAt(max).lot.points.map((p) => p.slice()),
-  };
-}
-
-function freeBandWithLines(r, band, opt = {}) {
-  if (!band) return null;
-  const search = opt.search ?? {};
-  const lineAt = (f) => bestLineForThrust(r.seq, r.joints, f, search);
-  const min = lineAt(band.min);
-  const max = lineAt(band.max);
-  return {
-    min: band.min,
-    max: band.max,
-    minLine: min?.lot?.points?.map((p) => p.slice()) ?? [],
-    maxLine: max?.lot?.points?.map((p) => p.slice()) ?? [],
-  };
+  return { min: edge(seed, lo), max: edge(seed, hi) };
 }
 
 /**
@@ -296,7 +310,7 @@ export function ringBands(opt) {
   return {
     tri: opt.tri,
     weight: r.totalWeight,
-    free: freeBandWithLines(r, free, opt),
+    free: free ? { min: free.min, max: free.max } : null,
     pinned: pinnedRange(r, opt.pinned ?? {}),
   };
 }

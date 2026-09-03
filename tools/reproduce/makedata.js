@@ -54,6 +54,14 @@ const { blocksBetween, weighBlocks } = await core('trace.js');
 const { forcePolygon, funicular, freeThrustLine, jointCrossings, pointOnJoint, } = await core('statics.js');
 const { collapseRange } = await core('mechanism.js');
 const { circularRing } = await core('blocks.js');
+// THE BANDS COME FROM THE APPLICATION, not from a second implementation here.
+// They used to be scanned locally on a grid of thrusts, and a grid misses a
+// band narrower than its step: near the least admissible thickness the pinned
+// band is a few thousandths wide, so the scan reported no band at all and the
+// published figure began at t/ri = 0.24 while the table beside it, searched
+// four times more finely, said 0.198. `pinnedRange` seeds on the clearance and
+// zooms, as `collapseRange` already did for the free family.
+const { circularRingCase, pinnedRange } = await core('study.js');
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), 'data');
 mkdirSync(OUT, { recursive: true });
@@ -197,53 +205,16 @@ for (const [tag, f, s, split] of family) {
 const lin = (a, b, m) => Array.from({ length: m }, (_, i) => a + ((b - a) * i) / (m - 1));
 
 function band(tri, freeEnds) {
-  const rr = ring(RI, RI * (1 + tri), N);
-
-  // THE FREE FAMILY IS THE APPLICATION'S OWN ANSWER. This used to be a grid --
-  // 111 thrusts by 21 starts by 37 splits -- which is a second implementation
-  // of the physics the application already implements, and it disagreed with
-  // it: the grid quantises the thrust to its step of 0.005, records the last
-  // sample that fits, and so UNDERSTATES the band at both ends. At t/ri = 0.12
-  // it reported a band of width zero where the application finds 0.008. A
-  // figure that a reader cannot reproduce with the tool the paper describes is
-  // worse than no figure, so the figure now calls `collapseRange`.
+  const r = circularRingCase({ ri: RI, n: N, tri, gamma: 20, thickness: 1 });
   if (freeEnds) {
-    const seq = {
-      centroids: rr.g,
-      weights: rr.w,
-      areas: rr.g.map(() => 0),
-      thickness: rr.g.map(() => 0),
-    };
-    const b = collapseRange(seq, rr.joints);
+    const b = collapseRange(r.seq, r.joints);
     return b ? [b.min, b.max] : null;
   }
-
-  // THE PINNED FAMILY has no counterpart in the application -- it is the
-  // superseded construction, kept because the comparison is the point of the
-  // figure -- so it is bisected here, by the same scheme `collapseRange` uses,
-  // rather than scanned. One parameter: both ends sit at the joint mid-points.
-  const fits = (f) => {
-    const fp = forcePolygon(rr.w, [rr.total * f, -rr.total / 2]);
-    const lot = funicular(fp, rr.g,
-      pointOnJoint(rr.startJoint, 0.5), pointOnJoint(rr.endJoint, 0.5));
-    return jointCrossings(lot.points, rr.joints).every((c) => c && c.inside);
-  };
-  let seed = null;
-  for (let i = 0; i <= 60; i++) {
-    const f = 0.02 + ((1.2 - 0.02) * i) / 60;
-    if (fits(f)) { seed = f; break; }
-  }
-  if (seed === null) return null;
-  const edge = (from, towards) => {
-    let good = from;
-    let bad = towards;
-    for (let i = 0; i < 18; i++) {
-      const m = (good + bad) / 2;
-      if (fits(m)) good = m; else bad = m;
-    }
-    return good;
-  };
-  return [edge(seed, 0.02), edge(seed, 1.2)];
+  // THE PINNED FAMILY has no counterpart in the application's own panels -- it
+  // is the superseded construction, kept because the comparison is the point of
+  // the figure -- but it does have one in `study.js`, which the band tool calls.
+  const b = pinnedRange(r);
+  return b ? [b.min, b.max] : null;
 }
 
 for (const [name, freeEnds] of [['band_pinned.dat', false], ['band_free.dat', true]]) {
@@ -257,32 +228,22 @@ for (const [name, freeEnds] of [['band_pinned.dat', false], ['band_free.dat', tr
 
 // ------------------------------------- least admissible thickness against n --
 function minimumThickness(n, freeEnds) {
+  // BISECTED ON WHETHER A BAND EXISTS AT ALL, using the same two searches the
+  // figure uses. The previous version tested a boolean over a grid of thrusts,
+  // starts and splits, which -- exactly as for the band -- steps over a window
+  // narrower than its step and so reports a ring that stands as one that does
+  // not. It overstated every entry of this table, the pinned column by as much
+  // as five per cent.
+  const admits = (tri) => {
+    const r = circularRingCase({ ri: RI, n, tri, gamma: 20, thickness: 1 });
+    return freeEnds ? !!collapseRange(r.seq, r.joints) : !!pinnedRange(r);
+  };
   let lo = 0.02;
   let hi = 0.9;
-  for (let i = 0; i < 13; i++) {
+  if (!admits(hi)) return NaN;
+  for (let i = 0; i < 24; i++) {
     const m = (lo + hi) / 2;
-    const rr = ring(RI, RI * (1 + m), n);
-    const starts = freeEnds ? lin(0, 1, 21) : [0.5];
-    const splits = freeEnds ? lin(0.05, 0.95, 37) : [0.5];
-    let fits = false;
-    outer:
-    for (const f of lin(0.05, 0.6, 111)) {
-      for (const s of starts) {
-        for (const sp of splits) {
-          if (freeEnds) {
-            if (line(rr, f, s, sp).admissible) { fits = true; break outer; }
-          } else {
-            const fp = forcePolygon(rr.w, [rr.total * f, -rr.total / 2]);
-            const lot = funicular(fp, rr.g,
-              pointOnJoint(rr.startJoint, 0.5), pointOnJoint(rr.endJoint, 0.5));
-            if (jointCrossings(lot.points, rr.joints).every((c) => c && c.inside)) {
-              fits = true; break outer;
-            }
-          }
-        }
-      }
-    }
-    if (fits) hi = m; else lo = m;
+    if (admits(m)) hi = m; else lo = m;
   }
   return hi;
 }

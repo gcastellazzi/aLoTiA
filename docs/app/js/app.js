@@ -70,6 +70,7 @@ const ui = {
   showWeights: el('showWeights'), showThrust: el('showThrust'),
   showCable: el('showCable'), showLabels: el('showLabels'),
   showRays: el('showRays'), showReactions: el('showReactions'),
+  showConstruction: el('showConstruction'),
   showMech: el('showMech'),
   showScale: el('showScale'),
   showGroups: el('showGroups'),
@@ -2091,7 +2092,7 @@ function draw() {
     drawThrustLine(mainAx, state.lot.points, state.segForces, {
       widthFactor: (Number(ui.thrustWidth.value) / 100) * 40,
     });
-    if (ui.showRays.checked) {
+    if (ui.showConstruction.checked && ui.showRays.checked) {
       drawThrustLabels(mainAx, state.lot.points, { stride: raysStride() });
     }
   }
@@ -2127,8 +2128,10 @@ function draw() {
     }
     drawHinges(mainAx, a.hinges);
   }
-  if (state.ends.construction) {
-    drawPreliminary(mainAx, state.ends.construction.preliminary.points);
+  if (ui.showConstruction.checked && state.ends.construction) {
+    const preliminary = state.ends.construction.preliminary.points;
+    drawPreliminary(mainAx, preliminary);
+    drawThrustConstructionNote(preliminary);
   }
   if (state.ends.A || state.ends.B) drawEnds(mainAx, state.ends.A, state.ends.B);
   drawSupports(mainAx, m.pointA, m.pointB);
@@ -2166,6 +2169,7 @@ function draw() {
       reactions: ui.showReactions.checked,
       reactionLabels: reactionLabels(),
       construction: state.ends.construction,
+      constructionLines: ui.showConstruction.checked,
     });
   }
   forceAx.decorate();
@@ -2282,6 +2286,33 @@ function drawSupportReactions() {
   };
   drawOne(pts[0], pts[1], 'R_B', r.RB, 'left');
   drawOne(pts[pts.length - 1], pts[pts.length - 2], 'R_A', r.RA, 'right');
+}
+
+function drawThrustConstructionNote(points, text = 'trial line of thrust') {
+  const pts = points;
+  if (!pts || pts.length < 2) return;
+  const i = Math.max(0, Math.floor((pts.length - 1) / 2));
+  const a = pts[i];
+  const b = pts[Math.min(i + 1, pts.length - 1)];
+  mainAx.clipped((c) => {
+    const [x0, y0] = mainAx.toPx(a);
+    const [x1, y1] = mainAx.toPx(b);
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.hypot(dx, dy) || 1;
+    let angle = Math.atan2(dy, dx);
+    if (angle > Math.PI / 2) angle -= Math.PI;
+    if (angle < -Math.PI / 2) angle += Math.PI;
+    c.save();
+    c.translate((x0 + x1) / 2 - (dy / len) * 10, (y0 + y1) / 2 + (dx / len) * 10);
+    c.rotate(angle);
+    c.font = '11px Helvetica, Arial, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'bottom';
+    c.fillStyle = '#666';
+    c.fillText(text, 0, 0);
+    c.restore();
+  });
 }
 
 function reactionLabels() {
@@ -5585,8 +5616,8 @@ ui.stateFile.addEventListener('change', (e) => {
   e.target.value = '';
 });
 for (const k of ['showImage', 'showBlocks', 'showWeights', 'showThrust',
-  'showCable', 'showLabels', 'showJoints', 'showRays', 'showReactions',
-  'showScale']) {
+  'showCable', 'showLabels', 'showJoints', 'showConstruction', 'showRays',
+  'showReactions', 'showScale']) {
   ui[k].addEventListener('change', draw);
 }
 // SHOWING THE MECHANISM CHANGES THE LINE, not only what is drawn of it: with

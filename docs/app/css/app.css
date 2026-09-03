@@ -22,11 +22,11 @@ body {
 }
 
 header {
-  padding: 14px 20px 10px;
+  padding: 6px 16px 5px;
   border-bottom: 1px solid var(--line);
 }
-header h1 { margin: 0; font-size: 19px; letter-spacing: 0.2px; }
-header .sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+header h1 { margin: 0; font-size: 16px; line-height: 1.15; letter-spacing: 0.2px; }
+header .sub { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.2; }
 a { color: var(--accent); }
 
 /* The page fills the window and never scrolls as a whole: the control panel
@@ -553,11 +553,13 @@ canvas {
 canvas:active { cursor: grabbing; }
 
 footer {
-  padding: 9px 20px;
+  padding: 3px 16px;
   border-top: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1.15;
   color: var(--muted);
 }
+footer p { margin: 0; }
 
 /* The toolbar: units and what to draw, under the view and always in reach,
    so that neither is buried in the scrolling panel. */

@@ -445,15 +445,15 @@ export function labelStride(count, most = 18) {
 export function drawForcePolygon(ax, fp, opt = {}) {
   const {
     labels = true, rayLabels = false, stride = 1, construction = null,
+    constructionLines = true,
     reactions = false, reactionLabels = null,
   } = opt;
   const { stations, pole } = fp;
   const c = ax.ctx;
 
   ax.clipped(() => {
-    // The rays, pole to every division. Dashed, so that they read as
-    // construction lines rather than as forces: the only full lines in this
-    // drawing are the load line and the polygon itself.
+    // The definitive rays, pole to every division. These are the actual force
+    // polygon and stay visible; the toggle below only hides the trial rays.
     c.strokeStyle = '#555';
     c.lineWidth = 0.9;
     c.setLineDash([4, 3]);
@@ -536,6 +536,19 @@ export function drawForcePolygon(ax, fp, opt = {}) {
     // that the thrust is not what changed.
     if (construction && construction.trial) {
       const [tx, ty] = ax.toPx(construction.trial);
+      if (constructionLines) {
+        c.setLineDash([3, 4]);
+        c.strokeStyle = 'rgba(162,20,47,0.45)';
+        c.lineWidth = 0.9;
+        for (const s of stations) {
+          const [x1, y1] = ax.toPx([0, s]);
+          c.beginPath();
+          c.moveTo(tx, ty);
+          c.lineTo(x1, y1);
+          c.stroke();
+        }
+        c.setLineDash([]);
+      }
       c.setLineDash([4, 3]);
       c.strokeStyle = '#A2142F';
       c.lineWidth = 1.4;
@@ -553,9 +566,9 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.strokeStyle = '#A2142F';
       c.stroke();
       if (labels) {
-        c.fillStyle = '#A2142F';
-        c.font = 'bold 12px Helvetica, Arial, sans-serif';
-        c.fillText("O'", tx + 7, ty);
+        c.fillStyle = '#666';
+        c.font = '12px Helvetica, Arial, sans-serif';
+        c.fillText("O' trial pole", tx + 7, ty);
       }
     }
   });

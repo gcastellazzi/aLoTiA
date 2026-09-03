@@ -184,11 +184,12 @@ test('the pinned band is the published one, and starts later', () => {
   // The classical construction -- both ends at the joint mid-points -- rejects
   // rings that plainly stand. That it has NO band at t/ri = 0.15 while the free
   // family has one is the whole point of drawing the two together.
-  for (const tri of [0.12, 0.15, 0.22]) {
+  for (const tri of [0.12, 0.15]) {
     assert.equal(ringBands({ ...RING, tri }).pinned, null);
     assert.ok(ringBands({ ...RING, tri }).free, 'the free family stands there');
   }
   for (const [tri, lo, hi] of [
+    [0.22, 0.1653, 0.1751],
     [0.24, 0.1639, 0.1798],
     [0.32, 0.1588, 0.1972],
     [0.60, 0.1439, 0.2302],
@@ -232,4 +233,28 @@ test('the thicknesses of a scan are evenly spaced and include both ends', () => 
   near(got[4], 0.5, 1e-12);
   for (let i = 1; i < got.length; i++) near(got[i] - got[i - 1], 0.1, 1e-12);
   assert.equal(thicknesses({ from: 0.2, to: 0.2, steps: 1 }).length, 2);
+});
+
+test('the pinned band is found where it is only thousandths wide', () => {
+  // THE REGRESSION THIS PINS. Just above the least thickness the pinned family
+  // admits, its band is narrower than any reasonable grid step: at t/ri = 0.19
+  // it is 6e-4 of H/W. A search that tests admissibility on a grid of thrusts
+  // steps straight over it and reports a ring that stands as one that does not,
+  // which is what put the published figure's first pinned row at t/ri = 0.24
+  // while the table beside it said 0.188.
+  const at = (tri) => ringBands({ ...RING, tri }).pinned;
+  assert.equal(at(0.185), null, 'below the limit there is genuinely nothing');
+  const narrow = at(0.19);
+  assert.ok(narrow, 'a band this narrow must still be found');
+  assert.ok(narrow.max - narrow.min < 2e-3, 'and it is indeed very narrow');
+  assert.ok(narrow.max - narrow.min > 0);
+
+  // Where it opens, by bisection: the value the minimum-thickness table quotes.
+  let lo = 0.15;
+  let hi = 0.25;
+  for (let i = 0; i < 20; i++) {
+    const m = (lo + hi) / 2;
+    if (at(m)) hi = m; else lo = m;
+  }
+  near(hi, 0.1880, 1e-3);
 });
