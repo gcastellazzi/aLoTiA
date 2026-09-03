@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-02",
+ "generated": "2026-09-03",
  "count": 9,
  "examples": [
   {
@@ -15,7 +15,7 @@
    "frame": "physical",
    "image": "embedded",
    "loads": 1,
-   "kB": 151,
+   "kB": 149,
    "about": "A laboratory arch traced over its photograph with the three-point tool, in kg-cm, carrying one applied load."
   },
   {
@@ -31,7 +31,7 @@
    "frame": "physical",
    "image": "embedded",
    "loads": 0,
-   "kB": 960,
+   "kB": 957,
    "about": "The same arch at its least thrust: the line rides the extrados at the haunches and the intrados at the crown."
   },
   {
@@ -47,7 +47,7 @@
    "frame": "physical",
    "image": "embedded",
    "loads": 0,
-   "kB": 933,
+   "kB": 930,
    "about": "And at its greatest, where the pattern inverts. The two together are the admissible band, drawn."
   },
   {
@@ -79,7 +79,7 @@
    "frame": "physical",
    "image": "embedded",
    "loads": 0,
-   "kB": 1810,
+   "kB": 1809,
    "about": "Delicate Arch, Utah: eight blocks drawn over a photograph. A natural arch stands by the same theorem a built one does."
   },
   {
@@ -95,7 +95,7 @@
    "frame": "physical",
    "image": "embedded",
    "loads": 0,
-   "kB": 1591,
+   "kB": 1584,
    "about": "Landscape Arch, the longest natural span in the world, traced intrados and extrados into fifty voussoirs. Carries its own notes."
   },
   {
@@ -112,7 +112,7 @@
    "frame": "pixels",
    "image": "embedded",
    "loads": 0,
-   "kB": 154,
+   "kB": 151,
    "about": "A flying buttress cut from a traced outline, with blocks added by hand. Not one chain, and the panel says which pair does not touch."
   },
   {
@@ -129,7 +129,7 @@
    "frame": "physical",
    "image": "embedded",
    "loads": 0,
-   "kB": 379,
+   "kB": 377,
    "about": "A flyer with its pier and pinnacle: three free ends, so no ordering of it is a chain. What branches off loads the arch rather than belonging to it."
   },
   {
@@ -149,7 +149,7 @@
    "frame": "physical",
    "image": "embedded",
    "loads": 2,
-   "kB": 106,
+   "kB": 98,
    "about": "Poleni's dome of St Peter's, cut as a lune rather than a barrel: the weights follow the width, and the two idealisations of one drawing part company. Five groups, two applied loads, and not one chain."
   }
  ]
