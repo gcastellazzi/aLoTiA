@@ -15,6 +15,7 @@
  */
 
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
 import {
@@ -36,7 +37,11 @@ import { poleFromForcePolygon } from '../docs/app/js/core/statics.js';
 // docs/app/data/examples -- the very files a student saves. These twelve are
 // the earlier generation, kept because they are what proves the reader
 // reproduces the solutions MATLAB stored, which is a claim the paper makes.
-const EXAMPLES = new URL('./fixtures/matlab/', import.meta.url).pathname;
+// `fileURLToPath`, NOT `URL.pathname`. On Windows the pathname of a file URL
+// is `/C:/...` -- a leading slash the filesystem does not want -- and any
+// space in the path arrives percent-encoded. The tests passed on macOS and
+// Linux and failed on all three Windows runners for exactly this.
+const EXAMPLES = fileURLToPath(new URL('./fixtures/matlab/', import.meta.url));
 const readRaw = (f) => JSON.parse(fs.readFileSync(path.join(EXAMPLES, f), 'utf8'));
 
 const KEYS = Object.keys(SYSTEMS);

@@ -1,0 +1,21 @@
+# Line endings are LF everywhere, on every platform.
+#
+# WHY THIS FILE EXISTS. The test suite runs on Windows as well as macOS and
+# Linux, and several tests read the application's own source and data as text.
+# Left to itself git would check those files out with CRLF on Windows, so a
+# parser that splits on "\n", or an assertion that compares against a literal
+# written here, would see something different from what the other two runners
+# see -- a failure that cannot be reproduced anywhere but on the runner.
+#
+# The application is served as static files, so what is committed is what is
+# published: normalising here also keeps the bytes a student downloads the same
+# whoever committed them.
+
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.ico binary

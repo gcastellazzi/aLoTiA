@@ -30,13 +30,19 @@
   },
   "scripts": {
     "start": "node tools/serve.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test"
   },
   "comment": [
     "There are no dependencies and there is no build step, on purpose.",
     "docs/app is plain ES modules, served as-is by GitHub Pages, so the",
     "source a student reads is the source that runs. This file exists only",
     "so that Node knows the .js files are modules, to name the test command,",
-    "and to offer `npm start`, which is node:http and nothing else."
+    "and to offer `npm start`, which is node:http and nothing else.",
+    "The test script passes no path on purpose. `node --test tests/*.test.js`",
+    "relies on the SHELL to expand the glob, which cmd.exe does not do, so",
+    "every Windows runner received the pattern as a literal filename and the",
+    "job failed while macOS and Linux passed. With no path Node walks the",
+    "working directory for its own naming conventions, and `tests/*.test.js`",
+    "is one of them."
   ]
 }

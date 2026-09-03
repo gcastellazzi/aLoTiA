@@ -17,6 +17,7 @@
  */
 
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,7 +33,11 @@ import { blocksLike, circularRing } from '../docs/app/js/core/blocks.js';
 import { collapseRange, bestLineForThrust, analyse } from '../docs/app/js/core/mechanism.js';
 
 // The earlier MATLAB corpus, kept as a fixture: see tests/fixtures/matlab.
-const EXAMPLES = new URL('./fixtures/matlab/', import.meta.url).pathname;
+// `fileURLToPath`, NOT `URL.pathname`. On Windows the pathname of a file URL
+// is `/C:/...` -- a leading slash the filesystem does not want -- and any
+// space in the path arrives percent-encoded. The tests passed on macOS and
+// Linux and failed on all three Windows runners for exactly this.
+const EXAMPLES = fileURLToPath(new URL('./fixtures/matlab/', import.meta.url));
 
 function arc(r, n = 300) {
   return Array.from({ length: n }, (_, i) => {

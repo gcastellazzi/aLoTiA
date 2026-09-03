@@ -412,6 +412,7 @@
       <a href="#bow">Reading both drawings</a>
       <a href="#ends">Fixing both ends</a>
       <a href="#profile">Whole profiles</a>
+      <a href="#thickness">Minimum thickness</a>
       <a href="#dome">Poleni's dome</a>
       <a href="#mechanism">Mechanism</a>
       <a href="#cable">Hooke's cable</a>
@@ -596,41 +597,104 @@
         <span><i class="i-cable"></i> Hooke's cable</span>
         <span><i class="i-load"></i> applied loads and reactions</span>
       </div>
+      <figure>
+        <img src="images/interface.png"
+             alt="The application running, with the tool panel on the left, the arch in the middle
+                  and the second view on the right">
+        <figcaption>
+          The interface, in five regions. <strong>(1)</strong> the tool panel, in three tabs:
+          <em>Geometry</em> brings the structure into being &mdash; five generators, groups and
+          materials, the scale; <em>LoT</em> moves the line of thrust and judges it;
+          <em>Mechanism</em> pushes it until the arch stops standing. <strong>(2)</strong> the arch,
+          its line of thrust and its loads, drawn over the photograph that was traced.
+          <strong>(3)</strong> the second view, tabbed between the force polygon, the voussoirs as
+          solids, Heyman's <em>N&ndash;M</em> diagram, the <em>t/r<sub>i</sub></em> study, the block
+          table, notes and log. <strong>(4)</strong> the horizontal thrust, repeated under the drawing
+          so the parameter you move continuously is never off screen. <strong>(5)</strong> units, what
+          to draw, and the view.
+        </figcaption>
+      </figure>
       <p>
-        The window has a control panel on the left and two plots: the <strong>arch and line of thrust</strong>,
-        and the <strong>force polygon</strong>. The graphics keep the idiom of classical graphical statics —
-        boxed axes with inward ticks, a pale grid, translucent force bands — so that the pictures in the
-        course slides and the pictures on screen mean the same thing.
+        The graphics keep the idiom of classical graphical statics &mdash; boxed axes with inward
+        ticks, a pale grid, translucent force bands &mdash; so that the pictures in the course slides
+        and the pictures on screen mean the same thing.
       </p>
       <p>
-        The control panel is in three tabs. <strong>Geometry</strong> is everything that defines the
-        section; <strong>LoT</strong> everything that moves the line of thrust; <strong>Mechanism</strong>
-        everything about collapse. A few controls appear in more than one tab &mdash; the thrust
-        slider, the choice of A and B &mdash; so the mechanism can be driven without leaving it; they
-        are the same control, not a copy, and moving either moves both.
+        A few controls appear in more than one tab &mdash; the thrust slider, the choice of A and B
+        &mdash; so the mechanism can be driven without leaving it; they are the same control, not a
+        copy, and moving either moves both.
       </p>
       <p>
         Under each plot sits a row of view tools: <em>fit</em>, <em>fit the width</em>, <em>fit the
         height</em>, and zoom. Dragging pans, as before &mdash; except on the 3-D block view, where
         dragging turns the solid and shift-dragging pans it.
       </p>
+      <h3>What is in the panel</h3>
       <table>
         <thead>
-          <tr><th>Panel section</th><th>What it does</th></tr>
+          <tr><th>Tab</th><th>Panel section</th><th>What it does</th></tr>
         </thead>
         <tbody>
-          <tr><td><strong>Example</strong></td><td>Load one of the stored examples.</td></tr>
-          <tr><td><strong>Trace your own</strong></td><td>Load an image, trace intrados and extrados, generate blocks.</td></tr>
-          <tr><td><strong>Trace a whole profile</strong></td><td>Trace closed outlines instead, and cut them into blocks with radial cuts.</td></tr>
-          <tr><td><strong>Add a block</strong></td><td>Draw a single block of N sides.</td></tr>
-          <tr><td><strong>Points A and B</strong></td><td>Fix where the line of thrust starts and ends.</td></tr>
+          <tr><td rowspan="7"><strong>Geometry</strong></td>
+              <td><strong>Example</strong></td><td>Load one of the nine stored sessions.</td></tr>
+          <tr><td><strong>Draw blocks</strong></td><td>Draw a voussoir corner by corner. Clicks snap to
+              the corners and edges of blocks already placed, so shared faces are shared exactly and
+              the joints between neighbours are found.</td></tr>
+          <tr><td><strong>Trace intr/extr</strong></td><td>Load an image, trace the intrados and the
+              extrados, and cut the ring into voussoirs.</td></tr>
+          <tr><td><strong>3-point arch</strong></td><td>Three clicks on the intrados and three on the
+              extrados fix two circles exactly &mdash; the right tool for a ring photographed square
+              to the camera.</td></tr>
+          <tr><td><strong>Parametric arch</strong></td><td>An exact ring from its numbers alone:
+              inner radius, thickness ratio, number of voussoirs.</td></tr>
+          <tr><td><strong>Trace whole profile</strong></td><td>Trace closed outlines instead, for
+              sections the two faces cannot describe, and cut them with radial cuts.</td></tr>
+          <tr><td><strong>Groups, scale and units</strong></td><td>Give blocks a group with its own
+              material and thickness; turn pixels into metres; choose the unit system.</td></tr>
+          <tr><td rowspan="4"><strong>LoT</strong></td>
+              <td><strong>Points A and B</strong></td><td>Fix where the line of thrust starts and
+              ends, and impose both by the classical trial-pole construction.</td></tr>
           <tr><td><strong>Applied forces</strong></td><td>Add point loads by clicking.</td></tr>
-          <tr><td><strong>Scale and units</strong></td><td>Turn pixels into metres; choose the unit system.</td></tr>
-          <tr><td><strong>Equilibrium state</strong></td><td>The three sliders that move the line of thrust.</td></tr>
-          <tr><td><strong>Dome slice &mdash; Poleni</strong></td><td>Treat the arch as a lune of a dome: the weights follow the width.</td></tr>
-          <tr><td><strong>Mechanism</strong></td><td>Hinges, macro-blocks, the degree of freedom, and the collapse states.</td></tr>
-          <tr><td><strong>Admissibility</strong></td><td>The verdict: does the line stay inside the ring?</td></tr>
-          <tr><td><strong>Save and reopen</strong></td><td>Write the whole session to a JSON file, and read it back.</td></tr>
+          <tr><td><strong>Equilibrium state</strong></td><td>The three sliders that move the line of
+              thrust, and the thickness with which it is drawn.</td></tr>
+          <tr><td><strong>Dome slice &mdash; Poleni</strong></td><td>Treat the arch as a lune of a
+              dome: the weights follow the width.</td></tr>
+          <tr><td rowspan="2"><strong>Mechanism</strong></td>
+              <td><strong>Hinges and bodies</strong></td><td>Hinges, macro-blocks, the degree of
+              freedom, and the two collapse states.</td></tr>
+          <tr><td><strong>Amplitude</strong></td><td>Animate the collapse motion.</td></tr>
+          <tr><td colspan="2"><strong>Always visible</strong></td>
+              <td>The admissibility verdict, the horizontal thrust, and <strong>Save</strong> /
+              <strong>Open</strong>, which write and read the whole session as one JSON file.</td></tr>
+        </tbody>
+      </table>
+      <h3>The second view</h3>
+      <p>
+        The right-hand plot is tabbed, and each tab asks a different question of the same blocks.
+      </p>
+      <table>
+        <thead><tr><th>Tab</th><th>What it shows</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Force polygon</strong></td><td>The same statics as forces alone: the load
+              line divided by the weights, the pole, and the rays lettered after Bow, with the same
+              letters on the segments of the line so a stone can be followed from one drawing to the
+              other by eye.</td></tr>
+          <tr><td><strong>Blocks</strong></td><td>The voussoirs as solids, given the out-of-plane
+              thickness that until then was a number in a field. Drag to turn. On a dome the
+              parallels are drawn dashed around the lune, so the slice reads as a slice
+              <em>of</em> something.</td></tr>
+          <tr><td><strong>Heyman</strong></td><td>Every joint as a point in the <em>N&ndash;M</em>
+              plane, inside Heyman's no-tension wedge, with the middle third drawn inside it and the
+              geometrical factor of safety reported.</td></tr>
+          <tr><td><strong>t/r<sub>i</sub></strong></td><td>The thickness study: for a parametric ring,
+              the band of thrust that admits some line, against the thickness ratio.</td></tr>
+          <tr><td><strong>Blocks table</strong></td><td>One row per block &mdash; number, sides,
+              centre of gravity, weight, group, and a cross to delete it &mdash; tinted by group.
+              Clicking a row picks that voussoir out on the drawing.</td></tr>
+          <tr><td><strong>Notes</strong></td><td>Project notes, with bold, emphasis, underline,
+              headings and links. They travel inside the session file.</td></tr>
+          <tr><td><strong>Log</strong></td><td>An append-only record of what was done, written as you
+              work.</td></tr>
         </tbody>
       </table>
       <h3>The scale bar</h3>
@@ -690,45 +754,74 @@
     <section id="examples">
       <h2>Stored examples</h2>
       <p>
-        Twelve worked examples come with the application. Pick one from the
-        <strong>Example</strong> menu; the background image, the blocks,
-        the weights and the stored solution all come with it.
+        Nine worked sessions come with the application. Pick one from the <strong>Example</strong>
+        menu; the background image, the blocks, the groups, the weights, the notes and the stored
+        state all come with it. <strong>They are sessions, not a special format</strong> &mdash; each
+        is the very file the <em>Save</em> button writes, so nothing is demonstrated that you could
+        not produce and hand in yourself. Each one carries its own description in the
+        <strong>Notes</strong> tab, saying what it is for and which tools it exercises.
       </p>
-      <p>They are not all alike, and the application tells you which kind you have opened:</p>
+      <p>Between them they exercise every capability described in this guide.</p>
       <table>
         <thead>
-          <tr><th>Kind</th><th>How many</th><th>What happens</th></tr>
+          <tr><th>Example</th><th>What it is for</th></tr>
         </thead>
         <tbody>
-          <tr>
-            <td>Complete and reproducible</td><td>15</td>
-            <td>The force polygon and the thrust line are <em>recomputed from the geometry</em> and agree
-                with the stored solution to machine precision. The thrust slider is live.</td>
-          </tr>
-          <tr>
-            <td>No stored solution</td><td>6</td>
-            <td>Geometry only; the solution is computed fresh.</td>
-          </tr>
-          <tr>
-            <td>Internally inconsistent</td><td>6</td>
-            <td>The stored solution does not correspond to the stored geometry — usually because loads
-                were applied but never written to the file, or blocks were added afterwards. A warning
-                appears and the <em>stored</em> line is drawn, because the application will not
-                manufacture one it cannot justify.</td>
-          </tr>
+          <tr><td><strong>Circular arch</strong><br><small>16 blocks, kg&ndash;cm</small></td>
+              <td>A laboratory arch traced with the <em>three-point</em> tool, carrying one applied
+                  load, with both ends imposed. Image calibration, a unit system that is not SI, and
+                  Bow's notation.</td></tr>
+          <tr><td><strong>&hellip; at minimum thrust</strong></td>
+              <td>The same ring driven to its least admissible thrust: the line rides the extrados at
+                  the haunches and the intrados at the crown. Nobody supplied that pattern.</td></tr>
+          <tr><td><strong>&hellip; at maximum thrust</strong></td>
+              <td>And the greatest, where the pattern inverts. Open the two together and the
+                  admissible band is the difference between them.</td></tr>
+          <tr><td><strong>Heyman arch</strong><br><small>7 blocks</small></td>
+              <td>Drawn corner by corner with snapping, with both ends imposed. Few large blocks, so
+                  the funicular polygon is visibly a polygon and the trial-pole construction is easy
+                  to follow.</td></tr>
+          <tr><td><strong>Delicate Arch</strong><br><small>8 blocks</small></td>
+              <td>A natural arch, drawn over a photograph with no plan behind it. It stands by the
+                  same theorem a built one does.</td></tr>
+          <tr><td><strong>Landscape Arch</strong><br><small>50 blocks</small></td>
+              <td>The longest natural span in the world, traced intrados and extrados. Many small
+                  blocks, a very slender profile, and little room to spare &mdash; worth reading joint
+                  by joint.</td></tr>
+          <tr><td><strong>Arc-boutant, Notre-Dame</strong><br><small>34 blocks, 2 groups</small></td>
+              <td>Cut from a traced outline and then extended with blocks added by hand: the two ways
+                  of making geometry in one model, with the block table managing the groups.</td></tr>
+          <tr><td><strong>Flying arch</strong><br><small>31 blocks, 2 groups</small></td>
+              <td>A flyer with its pier and pinnacle. It has three free ends, so it is not one chain,
+                  and the panel says which members load the arch rather than belonging to the sequence
+                  that carries the line.</td></tr>
+          <tr><td><strong>St Peter's dome</strong><br><small>83 blocks, 5 groups</small></td>
+              <td>Poleni's plate of 1748, cut as a lune: the dome mode, groups with different
+                  thicknesses, two loads for the lantern, and Hooke's cable &mdash; the analogy this
+                  very plate introduced.</td></tr>
         </tbody>
       </table>
       <figure>
-        <img src="images/poleni_dome.png"
-             alt="The application running: Poleni's plate with the line of thrust, two applied loads,
-                  and the voussoirs revolved as lunes">
+        <img src="images/example_arch.png"
+             alt="The circular arch example: the arch with its line of thrust, and the force polygon">
         <figcaption>
-          Poleni's plate of 1748 for the dome of St Peter's — the drawing in which the hanging-chain
-          analogy was first put to a real structure, and the founding example of this method. Here it
-          is traced into 56 voussoirs, with two loads on the haunches and Hooke's cable hanging below.
-          Both ends of the line are pinned at A and B and the construction closes to machine precision;
-          the panel on the left is where the three degrees of freedom are moved. On the right the same
-          voussoirs turned about the axis: broad at the springing, closing to nothing at the crown.
+          The first example, in two of the four views the application keeps of it. On the left the arch
+          carries the construction, with both ends imposed at the springings and the reactions named on
+          the drawing; on the right the same statics as forces alone, the load line divided by the
+          sixteen weights and the rays lettered after Bow.
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="images/poleni_lune.png"
+             alt="Poleni's plate of St Peter's dome with the line of thrust, and the voussoirs revolved
+                  as lunes">
+        <figcaption>
+          Poleni's plate of 1748 for the dome of St Peter's &mdash; the drawing in which the
+          hanging-chain analogy was first put to a real structure, and the founding example of this
+          method. It is traced into 83 voussoirs in five groups: the lower dome, the two shells of the
+          upper dome, the rib between them, and the lantern, which enters as two loads at the crown.
+          The groups are a mechanical statement and not a label &mdash; the rib is 3.8&nbsp;m wide out
+          of plane against 16.3&nbsp;m for the shells, so it weighs what a rib weighs.
         </figcaption>
       </figure>
     </section>
@@ -977,6 +1070,57 @@
       </div>
     </section>
 
+    <section id="thickness">
+      <h2>The parametric ring, and how thin an arch can be</h2>
+      <div class="seebook">
+        <b>The limit arch.</b> Heyman's geometrical factor of safety is the ratio of the thickness of
+        an arch to that of the <em>limit arch</em> &mdash; the thinnest ring of the same shape in
+        which any line can still be drawn. It is discussed in G. Castellazzi and A. Taliercio,
+        <em>Principles and Analysis of Historical Masonry Structures</em> (Cambridge Scholars, 2025),
+        Chapter&nbsp;6.
+      </div>
+      <p>
+        <strong>Parametric arch</strong> builds an exact ring from three numbers &mdash; inner radius,
+        thickness ratio <em>t/r<sub>i</sub></em>, and how many voussoirs &mdash; with no image behind
+        it. It is the arch on which the classical results are stated, and the one to check them on.
+      </p>
+      <p>
+        Open the <strong>t/r<sub>i</sub></strong> tab in the second view and press
+        <strong>Admissible band</strong>. For each thickness in the range the software finds the least
+        and the greatest horizontal thrust at which <em>some</em> admissible line exists, and draws the
+        two curves as a band. It runs one thickness at a time, so the curve fills in from the left
+        while the page stays alive.
+      </p>
+      <figure>
+        <img src="images/thrust_band.png"
+             alt="Two bands of admissible horizontal thrust against thickness ratio: a wide one for
+                  free ends and a narrow one for pinned ends">
+        <figcaption>
+          The safe theorem, drawn. The horizontal thrust that admits an admissible line, as a fraction
+          of the total weight, against the thickness ratio. The wide band is the family with
+          <strong>free ends</strong>, where the line may begin and end anywhere on the springing
+          joints; the narrow one is the classical construction with the <strong>ends pinned</strong> at
+          the joint mid-points. Freeing the ends both lowers the thickness at which the band opens and
+          widens it everywhere.
+        </figcaption>
+      </figure>
+      <div class="callout">
+        <strong>What this shows, and why it matters.</strong> Pinned at the joint mid-points &mdash;
+        the one-parameter family in which the construction is often first taught &mdash; a ring of 16
+        voussoirs admits no line at all until <em>t/r<sub>i</sub></em>&nbsp;=&nbsp;0.188. Free the two
+        ends and the same ring stands from 0.115, close to the 0.1136 of a continuous ring with radial
+        joints. <em>Applied with the ends pinned, the criterion condemns arches that stand.</em> That
+        is the whole case for the three degrees of freedom.
+      </div>
+      <p>
+        Note which radius a thickness is measured against. The classical values &mdash; Couplet's
+        0.101, Heyman's 0.1060, Milankovitch's 0.1075 &mdash; are quoted against the <em>mean</em>
+        radius <em>R</em>, while this application works in <em>t/r<sub>i</sub></em>, against the
+        intrados radius. Since <em>R</em>&nbsp;=&nbsp;<em>r<sub>i</sub></em>&nbsp;+&nbsp;<em>t</em>/2
+        the two differ by about six per cent, which is more than the effect being discussed.
+      </p>
+    </section>
+
     <section id="dome">
       <h2>Poleni's dome</h2>
       <p>
@@ -1014,20 +1158,34 @@
 
       <h3>Seeing the blocks</h3>
       <p>
-        The right-hand pane carries two tabs. <strong>Force polygon</strong> is the construction;
-        <strong>Blocks</strong> shows the voussoirs as solids in three dimensions &mdash; straight
-        prisms of the thickness you set, or, with Poleni on, the revolved lune with the axis marked.
-        Drag to turn nothing: the viewpoint is fixed, but you can
-        pan and zoom as in the other plots.
+        The <strong>Blocks</strong> tab of the second view shows the voussoirs as solids in three
+        dimensions &mdash; straight prisms of the thickness you set, or, with Poleni on, the revolved
+        lune with the axis of revolution marked. <strong>Drag to turn it</strong>, shift-drag to pan.
+      </p>
+      <p>
+        With the dome mode on, the <strong>parallels</strong> are drawn as dashed circles about the
+        axis: two at the springing and two at the crown, through the intrados and the extrados of
+        whatever stands at each level. They pass behind the masonry, so the slice reads as a slice
+        <em>of</em> something rather than as a wedge floating on its own, and the narrowing of the
+        lune from one level to the other can be seen rather than inferred.
+      </p>
+      <p>
+        Colouring by <strong>group</strong> carries the materials into the solid: on St Peter's dome
+        the two shells, the rib between them, the lower dome and the lantern each take their own
+        colour, and the rib is visibly the narrow blade its thickness says it is.
       </p>
     </section>
 
     <section id="mechanism">
       <h2>Mechanism and collapse</h2>
       <div class="seebook">
-        <b>The kinematic route.</b> This panel is the upper-bound theorem at work; the virtual-work
-        statement behind it is in <a href="#theory">The theory</a>, and its treatment for masonry
-        arches in G. Castellazzi and A. Taliercio, <em>Principles and Analysis of Historical Masonry Structures</em> (Cambridge Scholars, 2025).
+        <b>Read off, not assumed.</b> This software works the <em>static</em> side of limit analysis.
+        It computes no collapse multiplier and assumes no mechanism: the line of thrust is driven, and
+        where it touches a face a hinge is recorded. When enough of them have accumulated the arch has
+        become a mechanism, and the panel says so. The kinematic theorem and the virtual-work
+        statement behind it are in <a href="#theory">The theory</a>, and their treatment for masonry
+        arches in G. Castellazzi and A. Taliercio, <em>Principles and Analysis of Historical Masonry
+        Structures</em> (Cambridge Scholars, 2025).
       </div>
       <p>
         The line of thrust cannot leave the thickness of the arch. Where it would, it stays
@@ -1037,6 +1195,19 @@
         state is not determined. Each face the line touches divides the arch into one more rigid
         macro-block.
       </p>
+      <figure>
+        <img src="images/mechanism.png"
+             alt="The mechanism panel: four hinges, three macro-blocks, and the displaced arch drawn
+                  pale over the arch at rest">
+        <figcaption>
+          A circular ring carrying one point load on the haunch, with both ends of the line imposed at
+          the springings. The hinges are read off the line, not prescribed: the panel counts
+          <em>4 hinges (A support, B intrados, C extrados, D support), 3 bodies, constraint
+          multiplicity 8</em>, so 3&times;3&minus;8&nbsp;=&nbsp;1 degree of freedom, and animates it.
+          The displaced macro-blocks are drawn pale over the arch at rest, each turning about its own
+          instantaneous centre; the same three bodies are coloured in the block view on the right.
+        </figcaption>
+      </figure>
       <div class="keyidea">
         <strong>The line is held inside the masonry, and so is the slider.</strong> With
         <em>Drive from the thrust</em> on, the slider's travel spans the admissible band and nothing
@@ -1079,13 +1250,15 @@
       <p>
         Everything in this section needs the <strong>joints</strong>: the cuts between the
         voussoirs, which is where the software asks whether the line has left the masonry. An arch
-        you trace yourself has them by construction. A <em>stored example</em> holds its blocks and
-        not its cuts, so the software recovers them from the blocks: two voussoirs abut along one
-        face, and that face is the joint. Nine of the twelve examples come back as a whole chain and
-        open the whole analysis. Where the blocks are not a chain &mdash; a dome whose two shells
-        interleave, a section carrying detached members, an arch with a real gap between two blocks
-        &mdash; the panel says so and names the reason rather than inventing cuts and drawing a
-        verdict on them. Those are cut properly by
+        you trace yourself has them by construction, and so does one you draw block by block, because
+        clicks snap to the corners and edges already there. Where a session holds blocks but no cuts,
+        the software recovers them: two voussoirs abut along one face, and that face is the joint.
+        <strong>Six of the nine stored examples</strong> come back as a whole chain and open the whole
+        analysis. The other three are not chains and were never meant to be &mdash; two flying
+        buttresses, each with a pier or a pinnacle branching off, and Poleni's dome, whose two shells
+        run either side of a rib. A chain has two free ends; these have more, so the panel names the
+        extra ends and says which members load the arch rather than inventing cuts and drawing a
+        verdict on them. Such a section is cut properly by
         <a href="#profile">tracing the whole profile</a> instead.
       </p>
 
@@ -1187,13 +1360,13 @@
             just resized the window and something looks wrong, press <strong>Reset view</strong>.</li>
         <li><strong>The forces are absurdly large or small.</strong> Almost always the scale or the
             out-of-plane thickness. Check the reported span first.</li>
-        <li><strong>&ldquo;No joints for this example&rdquo;.</strong> The stored files hold the
-            voussoirs but never held the cuts between them, so the software recovers the joints from
-            the blocks themselves &mdash; and refuses where the blocks are not a chain of abutting
-            voussoirs. Nine of the twelve examples open the whole analysis; of the rest, a dome
-            interleaves its two shells, a section carries detached members, and one arch has a real
-            gap between two blocks. The message says which case you are in. Any of them can be cut
-            properly with <a href="#profile">trace a whole profile</a>.</li>
+        <li><strong>&ldquo;No joints for this example&rdquo;.</strong> The session holds the
+            voussoirs but not the cuts between them, so the software recovers the joints from the
+            blocks themselves &mdash; and refuses where the blocks are not a chain of abutting
+            voussoirs. Six of the nine examples open the whole analysis; the other three branch, and
+            the message names the extra free ends. That is a statement about the structure, not a
+            fault: a flying buttress with its pinnacle genuinely is not one chain. Such a section can
+            be cut properly with <a href="#profile">trace a whole profile</a>.</li>
         <li><strong>&ldquo;Stored solution not recomputable&rdquo;.</strong> The example carries a saved
             solution that does not correspond to its saved geometry &mdash; loads were applied and never
             written to the file &mdash; so the line shown is the one stored rather than a recomputed one.</li>
@@ -1292,8 +1465,9 @@
         </div>
         <div>
           <h4>The tests</h4>
-          180 tests on Node's built-in runner (<code>node --test</code>), no framework, run on three
-          operating systems and three versions of Node at every change.
+          281 tests on Node's built-in runner (<code>node --test</code>), no framework, run on three
+          operating systems and three versions of Node at every change. Where a closed form exists the
+          implementation is measured against it rather than against itself.
         </div>
         <div>
           <h4>Hosting</h4>
