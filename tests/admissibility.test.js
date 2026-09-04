@@ -9,6 +9,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { jointOpening } from '../docs/app/js/render/draw.js';
+import { heymanPoint } from '../docs/app/js/core/study.js';
 import { centroid } from '../docs/app/js/core/geometry.js';
 import { blocksBetween, weighBlocks, springings } from
   '../docs/app/js/core/trace.js';
@@ -297,4 +299,42 @@ test('the limit line touches the extrados at both springings', () => {
   assert.ok(best.end > 0.9, `and arrive at it, s = ${best.end}`);
   // And the thrust it needs is Heyman\'s, about a fifth of the total weight.
   assert.ok(best.f > 0.17 && best.f < 0.24, `thrust ${best.f} of the weight`);
+});
+
+// ------------------------------------------------- the elementary cell --
+
+test('a joint opens on the side away from the thrust, and not before', () => {
+  // The rule the Heyman panel draws beside the N-M point. Getting the SIDE
+  // wrong would be invisible in any number the software reports and obvious in
+  // the picture, which is exactly the kind of error a test should hold.
+  const t = 2;                       // faces at e = +-1
+
+  for (const e of [0, 0.5, -0.5, 0.999, -0.999, 1, -1]) {
+    const got = jointOpening(e, t);
+    assert.equal(got.open, false, `e = ${e} is inside the section`);
+    assert.equal(got.holds, null);
+  }
+
+  // Past a face it hinges THERE and gapes at the other one.
+  assert.deepEqual(jointOpening(1.2, t), { r: 1.2, open: true, holds: 'plus' });
+  assert.deepEqual(jointOpening(-1.2, t), { r: -1.2, open: true, holds: 'minus' });
+
+  // The eccentricity is read in half-depths, so the same absolute eccentricity
+  // opens a thin joint and not a thick one.
+  assert.equal(jointOpening(0.8, 1).open, true);
+  assert.equal(jointOpening(0.8, 4).open, false);
+
+  // Nothing to draw rather than something wrong.
+  assert.equal(jointOpening(Number.NaN, 2).open, false);
+  assert.equal(jointOpening(5, 0).open, false);
+});
+
+test('the cell agrees with the N-M point it is drawn beside', () => {
+  // Both read the same crossing, so they must never disagree about the verdict.
+  const joint = { a: [0, 0], b: [0, 2] };
+  for (const s of [0, 0.25, 0.5, 0.75, 1, -0.3, 1.4]) {
+    const p = heymanPoint(joint, { s, inside: s >= 0 && s <= 1, segment: 0 }, 10);
+    assert.equal(jointOpening(p.ecc, p.thickness).open, !p.inside,
+      `s = ${s}: the picture and the point disagree`);
+  }
 });

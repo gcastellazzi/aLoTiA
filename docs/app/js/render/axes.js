@@ -41,7 +41,9 @@ export class Axes {
   constructor(canvas, opt = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.margin = opt.margin ?? [52, 18, 18, 40];
+    // The top margin carries the title, which is drawn ABOVE the box: at 18 a
+    // 12 px title reached the very top of the canvas and was clipped there.
+    this.margin = opt.margin ?? [52, 26, 18, 40];
     this.equal = opt.equal ?? true;
     this.yUp = opt.yUp ?? true;
     this.view = { xmin: 0, xmax: 1, ymin: 0, ymax: 1 };
@@ -291,7 +293,7 @@ export class Axes {
       c.font = titleFont;
       c.textAlign = 'center';
       c.textBaseline = 'bottom';
-      c.fillText(this.title, b.x + b.w / 2, b.y - 4);
+      c.fillText(this.title, b.x + b.w / 2, b.y - 7);
       c.font = labelFont;
     }
     if (this.xlabel) {

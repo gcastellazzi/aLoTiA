@@ -12,6 +12,7 @@ import {
   drawForcePolygon, drawArrow, drawReactionLabel, drawThrustLabels, labelStride,
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary, drawNotice, wrapText,
+  drawJointCell,
 } from './render/draw.js';
 import { bounds, area as signedAreaOf, piecesOf } from './core/geometry.js';
 import {
@@ -2803,7 +2804,10 @@ function drawHeymanView() {
     }
     c.setLineDash([]);
 
-    c.font = '10px Helvetica, Arial, sans-serif';
+    // The labels on the diagram are set 30 per cent larger than the tick text:
+    // they name the three lines a student is being asked to compare, and at the
+    // size of an axis number they read as part of the furniture.
+    c.font = '13px Helvetica, Arial, sans-serif';
     c.fillStyle = '#2e7d32';
     c.textAlign = 'left';
     let [lx, ly] = plotAx.toPx([d[1].N, d[1].M]);
@@ -2825,23 +2829,25 @@ function drawHeymanView() {
       safety.factor >= 1 ? '#2e7d32' : '#A2142F');
   }
   drawMarker(plotAx, [nm.N, nm.M], nm.inside ? '#2e7d32' : '#A2142F');
+  // The same verdict as the point, said in masonry rather than in coordinates.
+  drawJointCell(plotAx, nm);
   plotAx.clipped((c) => {
     const [X, Y] = plotAx.toPx([nm.N, nm.M]);
-    c.font = 'bold 10px Helvetica, Arial, sans-serif';
+    c.font = 'bold 13px Helvetica, Arial, sans-serif';
     c.fillStyle = nm.inside ? '#2e7d32' : '#A2142F';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
     c.fillText('current', X + 6, Y - 5);
 
-    c.font = 'bold 12px Helvetica, Arial, sans-serif';
+    c.font = 'bold 16px Helvetica, Arial, sans-serif';
     c.fillStyle = safety?.factor >= 1 ? '#2e7d32' : '#A2142F';
     c.textAlign = 'left';
     c.textBaseline = 'top';
     c.fillText(heymanSafetyLabel(safety), plotAx.box.x + 10, plotAx.box.y + 10);
     if (safety?.point?.joint !== undefined) {
-      c.font = '10px Helvetica, Arial, sans-serif';
+      c.font = '13px Helvetica, Arial, sans-serif';
       c.fillText(`critical joint ${safety.point.joint}`,
-        plotAx.box.x + 10, plotAx.box.y + 27);
+        plotAx.box.x + 10, plotAx.box.y + 32);
     }
   });
   const scaled = state.model?.frame?.coordinates === 'physical';

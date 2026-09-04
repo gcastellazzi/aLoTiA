@@ -92,6 +92,273 @@ export function drawNotice(ax, lines, opt = {}) {
 }
 
 /**
+ * The elementary cell: one joint, drawn as the two stones that meet at it.
+ *
+ * WHY A PICTURE OF THE JOINT BESIDE A DIAGRAM OF IT. The $N$--$M$ point says
+ * whether the resultant falls inside the section, and a student who has just
+ * met the no-tension wedge can read that point correctly and still not picture
+ * what it means for the masonry. This says it in the other language: two blocks
+ * meeting at a joint of depth `h`, the resultant crossing it at its
+ * eccentricity `e`, and the joint either
+ *
+ *   - CLOSED, in contact over its whole depth, while the resultant lies within
+ *     the section; or
+ *   - OPEN, hinged at the face the resultant has passed and gaping on the far
+ *     side, once it lies outside. A no-tension joint cannot pull the two stones
+ *     together, so the side away from the thrust is the side that lets go.
+ *
+ * The eccentricity is dimensioned from the centre line, so the number in the
+ * status line and the gap on the drawing are visibly the same quantity.
+ *
+ * Drawn in the corner of the plot in PIXELS, not in data coordinates: it is a
+ * legend, not a plotted quantity, and it must keep its proportions whatever the
+ * axes are scaled to.
+ *
+ * @param {object} ax
+ * @param {object} cell  {ecc, thickness, inside} -- one `heymanPoint`
+ * @param {object} opt   `corner`, and `size` in pixels
+ */
+/**
+ * Where a joint opens, given the eccentricity of the force it carries.
+ *
+ * The whole rule, in one place so that it can be tested and so that the drawing
+ * cannot quietly disagree with the diagram beside it. A no-tension joint carries
+ * compression and nothing else, so:
+ *
+ *   - while the resultant falls INSIDE the section the joint is in contact over
+ *     its whole depth and there is nothing to see;
+ *   - once it falls outside, the joint hinges at the face the resultant has
+ *     passed and gapes at the OTHER one. It cannot do the reverse: that would
+ *     need the two stones to pull each other together.
+ *
+ * `r` is the eccentricity in half-depths, so |r| = 1 is a face. Positive is the
+ * direction of increasing y, which is downward in the drawing and is the second
+ * end of the joint as `jointCrossings` measures it.
+ *
+ * @returns {{r:number, open:boolean, holds:('plus'|'minus'|null)}} `holds` names
+ *   the face that stays in contact -- the one the resultant went past -- so the
+ *   joint gapes at the other. It is null while the joint is closed.
+ */
+export function jointOpening(ecc, thickness) {
+  if (!Number.isFinite(ecc) || !(thickness > 0)) return { r: 0, open: false, holds: null };
+  const r = ecc / (thickness / 2);
+  if (Math.abs(r) <= 1) return { r, open: false, holds: null };
+  return { r, open: true, holds: r > 0 ? 'plus' : 'minus' };
+}
+
+export function drawJointCell(ax, cell, opt = {}) {
+  const {
+    corner = 'bottom-right', scale = 1.5, margin = 12,
+  } = opt;
+  if (!cell || !Number.isFinite(cell.ecc) || !(cell.thickness > 0)) return;
+
+  // ONE SCALE FOR THE WHOLE PICTURE. Every length below is in the units the
+  // drawing was laid out in and multiplied by `k`, so resizing it is one
+  // number and nothing can come adrift from anything else.
+  const k = scale;
+  const width = 172 * k;
+  const height = 170 * k;
+  const b = ax.box;
+  if (!(b.w > width + 2 * margin) || !(b.h > height + 2 * margin)) return;
+
+  const c = ax.ctx;
+  const x0 = corner.includes('right') ? b.x + b.w - width - margin : b.x + margin;
+  const y0 = corner.includes('bottom') ? b.y + b.h - height - margin : b.y + margin;
+
+  const t = cell.thickness;
+  const { r, open, holds } = jointOpening(cell.ecc, t);
+  const ink = (open || cell.inside === false) ? '#A2142F' : '#2e7d32';
+
+  // FOUR LANES ACROSS THE PICTURE, so that nothing has to share a column with
+  // anything else: the depth, the eccentricity, the thrust arriving from the
+  // left, the stones, and the thrust arriving from the right.
+  const hx = x0 + 18 * k;                 // the depth dimension
+  const ex = x0 + 40 * k;                 // the eccentricity dimension
+  const cx = x0 + 100 * k;                // the joint
+  const bw = 20 * k;                      // the width of each stone
+  const arm = 24 * k;                     // how far out the thrust is drawn
+  const top = y0 + 26 * k;
+  // The stones stop well short of the captions: when the joint has opened, the
+  // resultant is BEYOND the section and is drawn there, so the room below the
+  // stones has to hold it as well as the two lines of text.
+  const bot = y0 + height - 62 * k;
+  const h = bot - top;
+  const mid = (top + bot) / 2;
+
+  c.save();
+  c.globalAlpha = 0.94;
+  c.fillStyle = '#ffffff';
+  c.fillRect(x0, y0, width, height);
+  c.globalAlpha = 1;
+  c.strokeStyle = 'rgba(0,0,0,0.18)';
+  c.lineWidth = 1;
+  c.strokeRect(x0 + 0.5, y0 + 0.5, width - 1, height - 1);
+
+  // WHERE THE RESULTANT CROSSES. Held a little inside the panel so that a line
+  // far outside the section still shows which way it went, and still fits.
+  const reach = 1.25;
+  const yF = mid + Math.max(-reach, Math.min(reach, r)) * (h / 2);
+
+  // THE FAR STONE TURNS, IT DOES NOT STRETCH. It used to be drawn as a
+  // parallelogram, which opens the joint by shearing the block -- a picture of
+  // masonry doing something masonry cannot do, in a panel whose whole subject
+  // is what masonry cannot do. It is now a rigid rotation about the hinge: the
+  // stone keeps its shape and its size, and only its position changes.
+  const gap = open ? Math.min(11 * k, (4 + 6 * (Math.min(Math.abs(r), 1.8) - 1)) * k) : 0;
+  const hinge = holds === 'plus' ? [cx, bot] : [cx, top];
+  const sense = holds === 'plus' ? 1 : -1;
+  const theta = h > 0 ? sense * Math.asin(Math.min(1, gap / h)) : 0;
+  const turn = ([px, py]) => {
+    const dx = px - hinge[0];
+    const dy = py - hinge[1];
+    return [
+      hinge[0] + dx * Math.cos(theta) - dy * Math.sin(theta),
+      hinge[1] + dx * Math.sin(theta) + dy * Math.cos(theta),
+    ];
+  };
+
+  c.fillStyle = 'rgba(196,156,110,0.9)';
+  c.strokeStyle = '#333';
+  c.lineWidth = 1.1;
+  c.beginPath();
+  c.rect(cx - bw, top, bw, h);
+  c.fill();
+  c.stroke();
+
+  c.beginPath();
+  [[cx, top], [cx + bw, top], [cx + bw, bot], [cx, bot]]
+    .map(turn)
+    .forEach(([px, py], i) => { if (i === 0) c.moveTo(px, py); else c.lineTo(px, py); });
+  c.closePath();
+  c.fill();
+  c.stroke();
+
+  const small = `italic ${14 * k}px Georgia, serif`;
+  const dot = (x, y, colour) => {
+    c.beginPath();
+    c.arc(x, y, 2.4 * k, 0, 2 * Math.PI);
+    c.fillStyle = colour;
+    c.fill();
+  };
+  // Witness lines: thin, pale, and carrying the dimension out to where it is
+  // read, as a drawing office would. They are deliberately fainter than
+  // anything they measure.
+  const witness = (xa, xb, y) => {
+    c.save();
+    c.strokeStyle = 'rgba(0,0,0,0.35)';
+    c.lineWidth = 0.6;
+    c.beginPath();
+    c.moveTo(xa, y);
+    c.lineTo(xb, y);
+    c.stroke();
+    c.restore();
+  };
+
+  // The depth of the section, carried out from the near stone.
+  witness(hx, cx - bw, top);
+  witness(hx, cx - bw, bot);
+  c.strokeStyle = '#333';
+  c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(hx, top);
+  c.lineTo(hx, bot);
+  c.stroke();
+  dot(hx, top, '#333');
+  dot(hx, bot, '#333');
+  c.font = small;
+  c.fillStyle = '#333';
+  c.textAlign = 'right';
+  c.textBaseline = 'middle';
+  c.fillText('h', hx - 5 * k, mid);
+
+  // The centre line the eccentricity is measured from.
+  c.setLineDash([5 * k, 3 * k, 1 * k, 3 * k]);
+  c.strokeStyle = 'rgba(0,0,0,0.5)';
+  c.beginPath();
+  c.moveTo(x0 + 28 * k, mid);
+  c.lineTo(x0 + width - 8 * k, mid);
+  c.stroke();
+  c.setLineDash([]);
+
+  // The eccentricity, dimensioned from the centre line to the resultant, with
+  // its own witness line carrying the level of the thrust across.
+  if (Math.abs(r) > 0.03) {
+    witness(ex, cx - bw - arm, yF);
+    c.strokeStyle = ink;
+    c.lineWidth = 1.2;
+    c.beginPath();
+    c.moveTo(ex, mid);
+    c.lineTo(ex, yF);
+    c.stroke();
+    dot(ex, mid, ink);
+    dot(ex, yF, ink);
+    c.font = small;
+    c.fillStyle = ink;
+    c.textAlign = 'right';
+    c.textBaseline = 'middle';
+    c.fillText('e', ex - 5 * k, (mid + yF) / 2);
+  }
+
+  // THE THRUST ARRIVES FROM OUTSIDE THE STONES, as it is drawn on a free body:
+  // the arrow stops at the face it pushes on rather than running across the
+  // joint. Drawn over the joint it looked like a force applied AT the hinge,
+  // which is the one place it is not.
+  c.strokeStyle = ink;
+  c.lineWidth = 1.8;
+  c.fillStyle = ink;
+  for (const side of [-1, 1]) {
+    const face = cx + side * bw;
+    const from = face + side * arm;
+    c.beginPath();
+    c.moveTo(from, yF);
+    c.lineTo(face, yF);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(face, yF);
+    c.lineTo(face + side * 6 * k, yF - 3.2 * k);
+    c.lineTo(face + side * 6 * k, yF + 3.2 * k);
+    c.closePath();
+    c.fill();
+  }
+  // `N` keeps the size it has on the axes; only the annotations grew.
+  c.font = 'italic 11px Georgia, serif';
+  c.textAlign = 'left';
+  c.textBaseline = yF < mid ? 'top' : 'bottom';
+  c.fillText('N', cx + bw + arm + 3 * k, yF + (yF < mid ? 4 : -4));
+
+  // THE HINGE, once there is one. A circle is what a hinge is drawn as, and it
+  // is the thing the picture is really about: the joint has stopped being a
+  // face in contact and become a point to turn about.
+  if (open) {
+    c.beginPath();
+    c.arc(hinge[0], hinge[1], 4 * k, 0, 2 * Math.PI);
+    c.fillStyle = '#fff';
+    c.fill();
+    c.strokeStyle = ink;
+    c.lineWidth = 1.8;
+    c.stroke();
+  }
+
+  // THE GEOMETRICAL FACTOR OF SAFETY OF THIS JOINT, which is the same ratio the
+  // drawing is: how many times the eccentricity would fit into the half depth,
+  // and so how far the ring could be thinned about its centre before this line
+  // touched a face. It is 1 exactly when the joint is on the point of opening.
+  const gsf = Math.abs(cell.ecc) <= 1e-12 ? Infinity : (t / 2) / Math.abs(cell.ecc);
+  c.font = `bold ${13 * k}px Helvetica, Arial, sans-serif`;
+  c.fillStyle = ink;
+  c.textAlign = 'center';
+  c.textBaseline = 'bottom';
+  c.fillText(open ? 'joint opens' : 'joint closed', x0 + width / 2, y0 + height - 24 * k);
+  // NAMED, because the panel already reports a GSF in its other corner and that
+  // one is the ARCH's -- the worst joint of all of them. This is this joint's,
+  // and two bare numbers differing by a factor of two would read as a fault.
+  c.font = `${11 * k}px Helvetica, Arial, sans-serif`;
+  c.fillText(`GSF = ${Number.isFinite(gsf) ? gsf.toPrecision(3) : '\u221e'} (this joint)`,
+    x0 + width / 2, y0 + height - 7 * k);
+  c.restore();
+}
+
+/**
  * Break a sentence into lines that fit a width, without cutting a word.
  *
  * Canvas has no text wrapping, and a notice that runs off the side of the plot
