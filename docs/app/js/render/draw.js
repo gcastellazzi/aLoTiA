@@ -712,27 +712,42 @@ export function labelStride(count, most = 18) {
 export function drawForcePolygon(ax, fp, opt = {}) {
   const {
     labels = true, rayLabels = false, stride = 1, construction = null,
-    constructionLines = true,
+    constructionLines = true, constructionStep = null,
     reactions = false, reactionLabels = null,
   } = opt;
   const { stations, pole } = fp;
   const c = ax.ctx;
+  const stepped = constructionStep && construction && construction.trial;
+  const nRays = stations.length;
+  const step = stepped
+    ? Math.max(0, Math.min(Number(constructionStep.step) || 0,
+      Number(constructionStep.max) || 0))
+    : null;
+  const trialRayCount = stepped ? Math.min(step, nRays) : 0;
+  const correctionStep = stepped ? nRays + 1 : 0;
+  const correctionVisible = stepped && step >= correctionStep;
+  const finalRayCount = stepped
+    ? Math.max(0, Math.min(nRays, step - correctionStep))
+    : nRays;
 
   ax.clipped(() => {
     // The definitive rays, pole to every division. These are the actual force
     // polygon and stay visible; the toggle below only hides the trial rays.
-    c.strokeStyle = '#555';
-    c.lineWidth = 0.9;
-    c.setLineDash([4, 3]);
-    for (const s of stations) {
-      const [x0, y0] = ax.toPx(pole);
-      const [x1, y1] = ax.toPx([0, s]);
-      c.beginPath();
-      c.moveTo(x0, y0);
-      c.lineTo(x1, y1);
-      c.stroke();
+    if (!stepped || finalRayCount > 0) {
+      c.strokeStyle = '#555';
+      c.lineWidth = 0.9;
+      c.setLineDash([4, 3]);
+      const upto = stepped ? finalRayCount : stations.length;
+      for (const s of stations.slice(0, upto)) {
+        const [x0, y0] = ax.toPx(pole);
+        const [x1, y1] = ax.toPx([0, s]);
+        c.beginPath();
+        c.moveTo(x0, y0);
+        c.lineTo(x1, y1);
+        c.stroke();
+      }
+      c.setLineDash([]);
     }
-    c.setLineDash([]);
 
     if (rayLabels) {
       // At the load-line end of each ray, pushed clear of the load line on the
@@ -742,13 +757,14 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.fillStyle = '#333';
       c.textAlign = side < 0 ? 'right' : 'left';
       c.textBaseline = 'middle';
-      stations.forEach((s, j) => {
+      const upto = stepped ? finalRayCount : stations.length;
+      stations.slice(0, upto).forEach((s, j) => {
         if (j % stride) return;
         const [X, Y] = ax.toPx([0, s]);
         c.fillText(rayLabel(j), X + side * 6, Y);
       });
     }
-    if (reactions && stations.length >= 2) {
+    if (reactions && stations.length >= 2 && (!stepped || finalRayCount >= nRays)) {
       const top = [0, stations[0]];
       const bottom = [0, stations[stations.length - 1]];
       const drawRay = (p, name, side) => {
@@ -785,17 +801,20 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.lineTo(x1, y1);
       c.stroke();
     }
-    // The pole.
+    // The corrected pole is introduced only after the ordinate correction when
+    // the construction slider is stepping through the drawing.
     const [px, py] = ax.toPx(pole);
-    c.beginPath();
-    c.arc(px, py, 3.5, 0, 2 * Math.PI);
-    c.fillStyle = '#111';
-    c.fill();
-    if (labels) {
-      c.font = 'bold 12px Helvetica, Arial, sans-serif';
-      c.textAlign = 'left';
-      c.textBaseline = 'middle';
-      c.fillText('O', px + 7, py);
+    if (!stepped || correctionVisible) {
+      c.beginPath();
+      c.arc(px, py, 3.5, 0, 2 * Math.PI);
+      c.fillStyle = '#111';
+      c.fill();
+      if (labels) {
+        c.font = 'bold 12px Helvetica, Arial, sans-serif';
+        c.textAlign = 'left';
+        c.textBaseline = 'middle';
+        c.fillText('O', px + 7, py);
+      }
     }
 
     // THE CORRECTION, SHOWN. A trial pole at the same thrust, and the step
@@ -807,7 +826,8 @@ export function drawForcePolygon(ax, fp, opt = {}) {
         c.setLineDash([3, 4]);
         c.strokeStyle = 'rgba(162,20,47,0.45)';
         c.lineWidth = 0.9;
-        for (const s of stations) {
+        const upto = stepped ? trialRayCount : stations.length;
+        for (const s of stations.slice(0, upto)) {
           const [x1, y1] = ax.toPx([0, s]);
           c.beginPath();
           c.moveTo(tx, ty);
@@ -816,14 +836,16 @@ export function drawForcePolygon(ax, fp, opt = {}) {
         }
         c.setLineDash([]);
       }
-      c.setLineDash([4, 3]);
-      c.strokeStyle = '#A2142F';
-      c.lineWidth = 1.4;
-      c.beginPath();
-      c.moveTo(tx, ty);
-      c.lineTo(px, py);
-      c.stroke();
-      c.setLineDash([]);
+      if (!stepped || correctionVisible) {
+        c.setLineDash([4, 3]);
+        c.strokeStyle = '#A2142F';
+        c.lineWidth = 1.4;
+        c.beginPath();
+        c.moveTo(tx, ty);
+        c.lineTo(px, py);
+        c.stroke();
+        c.setLineDash([]);
+      }
 
       c.beginPath();
       c.arc(tx, ty, 3, 0, 2 * Math.PI);
@@ -866,14 +888,17 @@ export function drawEnds(ax, A, B, opt = {}) {
 
 /** The preliminary funicular: where the trial pole would have taken the line. */
 export function drawPreliminary(ax, points, opt = {}) {
-  const { colour = 'rgba(120,120,120,0.9)' } = opt;
+  const { colour = 'rgba(120,120,120,0.9)', segments = null } = opt;
   if (!points || points.length < 2) return;
+  const n = segments === null ? points.length - 1
+    : Math.max(0, Math.min(segments, points.length - 1));
+  if (n < 1) return;
   ax.clipped((c) => {
     c.setLineDash([6, 4]);
     c.strokeStyle = colour;
     c.lineWidth = 1.2;
     c.beginPath();
-    points.forEach((p, i) => {
+    points.slice(0, n + 1).forEach((p, i) => {
       const [X, Y] = ax.toPx(p);
       if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
     });

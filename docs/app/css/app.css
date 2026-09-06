@@ -723,8 +723,32 @@ ul.forces button:hover { background: #f0e2e3; }
 }
 .plotthrust input:disabled { opacity: 0.4; }
 
+.plotbuild {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.plotbuild[hidden] { display: none; }
+.plotbuild label { white-space: nowrap; }
+.plotbuild input[type="range"] { flex: 1 1 auto; min-width: 80px; }
+.plotbuild .reading {
+  min-width: 148px;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plotbuild input:disabled { opacity: 0.4; }
+
 /* Narrow enough and the label is the first thing to go: "Horizontal thrust" is
    already written above the slider in the panel, and the slider is not. */
 @media (max-width: 620px) {
   .plotthrust label { display: none; }
+  .plotbuild label { display: none; }
+  .plotbuild .reading { min-width: 110px; }
 }

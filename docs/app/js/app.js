@@ -108,6 +108,9 @@ const ui = {
   paneGeom: el('paneGeom'), paneLot: el('paneLot'), paneMech: el('paneMech'),
   thrustM: el('thrustM'), thrustValueM: el('thrustValueM'),
   thrustP: el('thrustP'), thrustValueP: el('thrustValueP'),
+  forceConstruction: el('forceConstruction'),
+  forceConstructionStep: el('forceConstructionStep'),
+  forceConstructionStatus: el('forceConstructionStatus'),
   showCable2: el('showCable2'), cableWeights: el('cableWeights'),
   thrustWidth: el('thrustWidth'),
   imposeEnds: el('imposeEnds'), pickA: el('pickA'), pickB: el('pickB'),
@@ -181,6 +184,8 @@ const state = {
   spanKept: null,   // which blocks the imposed ends leave carrying the line
   imposedRange: null,  // the thrust band of the imposed-ends family
   imposedKey: null,
+  constructionStep: 0,
+  constructionKey: null,
   selectedJoint: null,
   thicknessStudy: null,
   ringStudySource: null,
@@ -1840,6 +1845,12 @@ function recompute() {
       state.fp = solved.fp;
       state.lot = solved.lot;
       state.ends.construction = solved.g;
+      const constructionKey = `imposed:${span.kept.join(',')}:`
+        + `${P.map((v) => v.toPrecision(12))}:${Q.map((v) => v.toPrecision(12))}`;
+      if (state.constructionKey !== constructionKey) {
+        state.constructionKey = constructionKey;
+        state.constructionStep = 2 * state.fp.stations.length + 1;
+      }
       state.startFraction = null;
       state.endFraction = null;
       state.segForces = state.fp.magnitudes.map((r) => r[2]);
@@ -1852,6 +1863,7 @@ function recompute() {
     }
   }
   state.ends.construction = null;
+  state.constructionKey = null;
 
   state.fp = forcePolygon(seq.weights, pole);
   if (ends) {
@@ -2001,10 +2013,57 @@ function fitForceView() {
   forceAx.syncSize();
   const xs = [0, state.fp.pole[0]];
   const ys = [...state.fp.stations, state.fp.pole[1]];
+  if (state.ends.construction?.trial) {
+    xs.push(state.ends.construction.trial[0]);
+    ys.push(state.ends.construction.trial[1]);
+  }
   forceAx.fit({
     xmin: Math.min(...xs), xmax: Math.max(...xs),
     ymin: Math.min(...ys), ymax: Math.max(...ys),
   }, 0.12);
+}
+
+function constructionProgress() {
+  const g = state.ends.construction;
+  const n = state.fp?.stations?.length ?? 0;
+  if (!g || !g.trial || !g.preliminary || !state.lot || n < 1) return null;
+  const max = 2 * n + 1;
+  const step = Math.max(0, Math.min(state.constructionStep, max));
+  const correctionStep = n + 1;
+  return {
+    step,
+    max,
+    n,
+    trialSegments: Math.min(step, n),
+    correctionVisible: step >= correctionStep,
+    finalSegments: Math.max(0, Math.min(n, step - correctionStep)),
+  };
+}
+
+function constructionStatus(progress) {
+  if (!progress) return 'impose A and B';
+  const { step, max, n } = progress;
+  if (step === 0) return "trial pole O'";
+  if (step <= n) return `trial ray ${step}/${n}`;
+  if (step === n + 1) return 'pole correction';
+  return `corrected ray ${step - n - 1}/${n}`;
+}
+
+function syncConstructionSlider() {
+  const progress = constructionProgress();
+  const visible = sideView() === 'force';
+  ui.forceConstruction.hidden = !visible;
+  if (!visible) return;
+  const enabled = Boolean(progress) && ui.showConstruction.checked;
+  ui.forceConstructionStep.disabled = !enabled;
+  ui.forceConstructionStep.max = progress ? String(progress.max) : '1';
+  if (progress && state.constructionStep > progress.max) {
+    state.constructionStep = progress.max;
+  }
+  ui.forceConstructionStep.value = progress ? String(progress.step) : '0';
+  ui.forceConstructionStatus.textContent = ui.showConstruction.checked
+    ? constructionStatus(progress)
+    : 'construction hidden';
 }
 
 /**
@@ -2031,6 +2090,9 @@ function barUnits() {
 function draw() {
   const m = state.model;
   if (!m) return;
+  syncConstructionSlider();
+  const progress = ui.showConstruction.checked ? constructionProgress() : null;
+  const constructing = progress && progress.step < progress.max;
 
   mainAx.begin();
   mainAx.reequalize();
@@ -2086,7 +2148,7 @@ function draw() {
     drawWeights(mainAx, m.centroids, m.weights);
   }
   if (sideView() === 'radius' && state.ringAuto) drawRingStudyCurves();
-  if (ui.showThrust.checked && state.lot) {
+  if (ui.showThrust.checked && state.lot && !constructing) {
     // The band's width is the force in each segment; the slider says how wide
     // the largest is drawn. At nothing it is a bare line, which is what a
     // student wants when the band would cover the joints it is read against.
@@ -2131,8 +2193,22 @@ function draw() {
   }
   if (ui.showConstruction.checked && state.ends.construction) {
     const preliminary = state.ends.construction.preliminary.points;
-    drawPreliminary(mainAx, preliminary);
-    drawThrustConstructionNote(preliminary);
+    if (progress) {
+      drawPreliminary(mainAx, preliminary, {
+        segments: progress.trialSegments,
+      });
+      if (progress.finalSegments > 0 && state.lot) {
+        drawThrustLine(mainAx, state.lot.points.slice(0, progress.finalSegments + 1),
+          state.segForces?.slice(0, progress.finalSegments), {
+            widthFactor: (Number(ui.thrustWidth.value) / 100) * 40,
+          });
+      }
+    } else {
+      drawPreliminary(mainAx, preliminary);
+    }
+    if (!progress || progress.trialSegments > 0) {
+      drawThrustConstructionNote(preliminary);
+    }
   }
   if (state.ends.A || state.ends.B) drawEnds(mainAx, state.ends.A, state.ends.B);
   drawSupports(mainAx, m.pointA, m.pointB);
@@ -2171,6 +2247,7 @@ function draw() {
       reactionLabels: reactionLabels(),
       construction: state.ends.construction,
       constructionLines: ui.showConstruction.checked,
+      constructionStep: progress,
     });
   }
   forceAx.decorate();
@@ -5007,6 +5084,10 @@ function contentBounds(ax) {
     if (!state.fp) return null;
     const xs = [0, state.fp.pole[0]];
     const ys = [...state.fp.stations, state.fp.pole[1]];
+    if (state.ends.construction?.trial) {
+      xs.push(state.ends.construction.trial[0]);
+      ys.push(state.ends.construction.trial[1]);
+    }
     return {
       xmin: Math.min(...xs), xmax: Math.max(...xs),
       ymin: Math.min(...ys), ymax: Math.max(...ys),
@@ -5432,6 +5513,10 @@ for (const f of [ui.ringRi, ui.ringN]) {
 ui.addBlock.addEventListener('click', armBlock);
 ui.cableWeights.addEventListener('input', draw);
 ui.thrustWidth.addEventListener('input', draw);
+ui.forceConstructionStep.addEventListener('input', () => {
+  state.constructionStep = Number(ui.forceConstructionStep.value) || 0;
+  draw();
+});
 for (const [b, pick] of [[ui.goHmin, (x) => x.min], [ui.goHmax, (x) => x.max]]) {
   b.addEventListener('click', () => {
     if (!state.band) return;

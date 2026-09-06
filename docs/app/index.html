@@ -350,6 +350,11 @@
         <button class="tab" id="tabLog" role="tab">Log</button>
       </div>
       <canvas id="force"></canvas>
+      <div class="plotbuild" id="forceConstruction" hidden>
+        <label for="forceConstructionStep">Construction</label>
+        <input id="forceConstructionStep" type="range" min="0" max="1" step="1" value="0" disabled>
+        <span id="forceConstructionStatus" class="reading">&mdash;</span>
+      </div>
       <canvas id="solid" hidden></canvas>
       <canvas id="plot" hidden></canvas>
       <div class="texttab tablepane" id="blockTablePane" hidden>
