@@ -45,6 +45,13 @@
         <input type="checkbox" id="imageAspectLocked" checked>
       </label>
       <button id="applyImageSize" disabled>Apply image size</button>
+      <label class="inline image-perspective">Vertical perspective
+        <input id="imagePerspectiveV" type="range" min="-45" max="45" step="0.5" value="0">
+      </label>
+      <label class="inline image-perspective">Horizontal perspective
+        <input id="imagePerspectiveH" type="range" min="-45" max="45" step="0.5" value="0">
+      </label>
+      <button id="resetImagePerspective" type="button">Reset perspective</button>
       <button id="pickImageRef">Pick known distance</button>
       <label class="inline">Distance
         <input type="number" id="imageRefLength" min="0" step="0.1" value="10">

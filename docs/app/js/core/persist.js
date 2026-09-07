@@ -74,6 +74,10 @@ export function serialise(state, controls = {}, imageName = null) {
         dataUrl: state.imageData.dataUrl,
       }
       : null,
+    imagePerspective: {
+      vertical: Number(state.imagePerspective?.vertical ?? 0),
+      horizontal: Number(state.imagePerspective?.horizontal ?? 0),
+    },
     system: state.system ?? 'SI',
     trace: state.trace
       ? { inner: points(state.trace.inner), outer: points(state.trace.outer) }
@@ -249,6 +253,10 @@ export function deserialise(text) {
       poleni: false, angleDeg: 22.5, axisX: 0, align: 'center', ...(data.dome ?? {}),
     },
     imageData: data.image ?? null,
+    imagePerspective: {
+      vertical: Number(data.imagePerspective?.vertical ?? 0),
+      horizontal: Number(data.imagePerspective?.horizontal ?? 0),
+    },
     notes: String(data.notes ?? ''),
     log: (data.log ?? []).map((row) => String(row)),
   };

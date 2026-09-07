@@ -131,6 +131,8 @@ const ui = {
   imageAspectLocked: el('imageAspectLocked'), imageLockIcon: el('imageLockIcon'),
   applyImageSize: el('applyImageSize'), pickImageRef: el('pickImageRef'),
   imageRefLength: el('imageRefLength'), applyImageRefScale: el('applyImageRefScale'),
+  imagePerspectiveV: el('imagePerspectiveV'), imagePerspectiveH: el('imagePerspectiveH'),
+  resetImagePerspective: el('resetImagePerspective'),
   traceOuter: el('traceOuter'), traceHint: el('traceHint'),
   nBlocks: el('nBlocks'), gamma: el('gamma'), thick: el('thick'),
   ringRi: el('ringRi'), ringTri: el('ringTri'), ringN: el('ringN'),
@@ -174,6 +176,7 @@ const state = {
   image: null,
   imageData: null,
   fitAfterImageLoad: false,
+  imagePerspective: { vertical: 0, horizontal: 0 },
   basePole: null,   // the pole as saved: thrust slider is relative to it
   mech: null,       // the hinge analysis, when the mechanism tab is driving
   band: null,       // the two collapse thrusts, once computed
@@ -1149,6 +1152,7 @@ function newWork() {
   state.model = null;
   state.image = null;
   state.imageData = null;
+  setImagePerspective(0, 0);
   state.exampleName = null;
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   clearThreePointRing();
@@ -1255,6 +1259,7 @@ async function loadExample(file) {
     state.log = [];
     state.image = null;
     state.imageData = null;
+    setImagePerspective(0, 0);
     state.trace = { inner: [], outer: [], armed: null, cursor: null };
     clearThreePointRing();
     state.forces = { points: [], magnitudes: [], bases: [], placing: false };
@@ -1315,6 +1320,7 @@ async function loadExample(file) {
   state.crossings = null;
   state.image = null;
   state.imageData = null;
+  setImagePerspective(0, 0);
   if (model.image) {
     const img = new Image();
     img.onload = () => { state.image = img; draw(); };
@@ -2171,6 +2177,94 @@ function barUnits() {
   };
 }
 
+function imagePerspectiveValues() {
+  return {
+    vertical: Number(state.imagePerspective?.vertical) || 0,
+    horizontal: Number(state.imagePerspective?.horizontal) || 0,
+  };
+}
+
+function setImagePerspective(vertical = 0, horizontal = 0) {
+  const values = {
+    vertical: Number(vertical) || 0,
+    horizontal: Number(horizontal) || 0,
+  };
+  state.imagePerspective = values;
+  ui.imagePerspectiveV.value = String(values.vertical);
+  ui.imagePerspectiveH.value = String(values.horizontal);
+}
+
+function lerpPoint(a, b, t) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+
+function imagePerspectiveCorners(x, y, w, h) {
+  const { vertical, horizontal } = imagePerspectiveValues();
+  const v = Math.max(-0.55, Math.min(0.55, Math.tan((vertical * Math.PI) / 180) * 0.48));
+  const u = Math.max(-0.55, Math.min(0.55, Math.tan((horizontal * Math.PI) / 180) * 0.48));
+  const svL = Math.max(0.45, 1 - v);
+  const svR = Math.max(0.45, 1 + v);
+  const shT = Math.max(0.45, 1 - u);
+  const shB = Math.max(0.45, 1 + u);
+  const sideNorm = Math.max(svL, svR, 1);
+  const widthNorm = Math.max(shT, shB, 1);
+  const leftH = h * svL / sideNorm;
+  const rightH = h * svR / sideNorm;
+  const topW = w * shT / widthNorm;
+  const bottomW = w * shB / widthNorm;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  return {
+    tl: [cx - topW / 2, cy - leftH / 2],
+    tr: [cx + topW / 2, cy - rightH / 2],
+    br: [cx + bottomW / 2, cy + rightH / 2],
+    bl: [cx - bottomW / 2, cy + leftH / 2],
+  };
+}
+
+function drawImageQuad(ctx, img, corners, alpha = 0.85) {
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  if (!(iw > 0) || !(ih > 0)) return;
+  const strips = Math.max(24, Math.min(180, Math.round(ih / 8)));
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  for (let i = 0; i < strips; i++) {
+    const t0 = i / strips;
+    const t1 = (i + 1) / strips;
+    const a = lerpPoint(corners.tl, corners.bl, t0);
+    const b = lerpPoint(corners.tr, corners.br, t0);
+    const d = lerpPoint(corners.tl, corners.bl, t1);
+    const sy = t0 * ih;
+    const sh = Math.max(1, (t1 - t0) * ih + 1);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const hx = d[0] - a[0];
+    const hy = d[1] - a[1];
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(a[0], a[1]);
+    ctx.lineTo(b[0], b[1]);
+    const c = lerpPoint(corners.tr, corners.br, t1);
+    ctx.lineTo(c[0], c[1]);
+    ctx.lineTo(d[0], d[1]);
+    ctx.closePath();
+    ctx.clip();
+    const base = ctx.getTransform();
+    ctx.setTransform(
+      base.a * dx / iw,
+      base.a * dy / iw,
+      base.d * hx / sh,
+      base.d * hy / sh,
+      base.a * a[0],
+      base.d * a[1],
+    );
+    ctx.drawImage(img, 0, sy, iw, sh, 0, 0, iw, sh);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function draw() {
   const m = state.model;
   if (!m) return;
@@ -2194,18 +2288,12 @@ function draw() {
       const y = Math.min(ya, yb);
       const w = Math.abs(xb - xa);
       const h = Math.abs(yb - ya);
-      c.save();
-      c.globalAlpha = 0.85;
-      // Row 0 of a photograph is its TOP, which in the pixel frame is y = 0.
-      // With the axis running upward, y = 0 is at the bottom of the box, so
-      // the image has to be reflected about its own rectangle or it comes out
-      // upside down -- the whole figure, lettering included.
-      if (mainAx.yUp) {
-        c.translate(0, 2 * y + h);
-        c.scale(1, -1);
-      }
-      c.drawImage(state.image, x, y, w, h);
-      c.restore();
+      const q = imagePerspectiveCorners(x, y, w, h);
+      // Same vertical reflection as the old rectangular drawImage path: the
+      // source top row lands on the lower edge of the model frame.
+      drawImageQuad(c, state.image, {
+        tl: q.bl, tr: q.br, br: q.tr, bl: q.tl,
+      });
     });
   }
   if (ui.showBlocks.checked) {
@@ -5153,6 +5241,16 @@ ui.imageAspectLocked.addEventListener('change', () => {
 });
 ui.imageRealWidth.addEventListener('input', () => syncImageSizeField('width'));
 ui.imageRealHeight.addEventListener('input', () => syncImageSizeField('height'));
+function updateImagePerspective() {
+  setImagePerspective(ui.imagePerspectiveV.value, ui.imagePerspectiveH.value);
+  draw();
+}
+ui.imagePerspectiveV.addEventListener('input', updateImagePerspective);
+ui.imagePerspectiveH.addEventListener('input', updateImagePerspective);
+ui.resetImagePerspective.addEventListener('click', () => {
+  setImagePerspective(0, 0);
+  draw();
+});
 /**
  * Change the system of units, and CARRY EVERY QUANTITY WITH IT.
  *
@@ -5327,6 +5425,7 @@ ui.imageFile.addEventListener('change', (e) => {
       // file; see mirroredImage. Everything below works with the copy.
       const shown = mirroredImage(img, file.type || '');
       state.image = shown.canvas;
+      setImagePerspective(0, 0);
       state.imageData = {
         name: file.name,
         type: shown.type,
@@ -5981,6 +6080,10 @@ function openWork(text, { source = null } = {}) {
   state.exampleName = data.exampleName;
   state.image = null;
   state.imageData = data.imageData ?? null;
+  state.imagePerspective = {
+    vertical: Number(data.imagePerspective?.vertical) || 0,
+    horizontal: Number(data.imagePerspective?.horizontal) || 0,
+  };
   state.notes = data.notes ?? '';
   state.log = data.log ?? [];
   appendLog(source
@@ -5989,6 +6092,7 @@ function openWork(text, { source = null } = {}) {
   state.consistent = { ok: true, problems: [] };
 
   ui.system.value = data.system;
+  setImagePerspective(state.imagePerspective.vertical, state.imagePerspective.horizontal);
   ui.poleni.checked = !!data.dome.poleni;
   ui.domeAngle.value = data.dome.angleDeg;
   ui.domeAxis.value = data.dome.axisX;

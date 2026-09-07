@@ -640,6 +640,10 @@ footer p { margin: 0; }
 }
 #panel label.inline input { width: 76px; padding: 3px 5px; font: inherit;
   border: 1px solid var(--line); border-radius: 3px; }
+#panel label.image-perspective input[type=range] {
+  width: 128px;
+  padding: 0;
+}
 #panel label.image-lock {
   justify-content: flex-start;
   color: var(--muted);
