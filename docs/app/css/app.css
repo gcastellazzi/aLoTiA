@@ -665,9 +665,25 @@ footer p { margin: 0; }
 
 ul.forces { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; }
 ul.forces li {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; flex-direction: column;
   gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--line);
   color: var(--muted);
+}
+ul.forces .force-row,
+ul.forces .force-scale {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 6px;
+}
+ul.forces .force-row span { min-width: 0; }
+ul.forces .force-scale input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 90px;
+}
+ul.forces .force-scale output {
+  min-width: 38px;
+  text-align: right;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 ul.forces button {
   width: auto; padding: 0 6px; line-height: 1.4; font-size: 11px;

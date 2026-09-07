@@ -721,6 +721,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
     labels = true, rayLabels = false, stride = 1, construction = null,
     constructionLines = true, constructionStep = null,
     reactions = false, reactionLabels = null, loadKinds = null,
+    equilibrium = null,
   } = opt;
   const { stations, pole } = fp;
   const c = ax.ctx;
@@ -797,11 +798,10 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.textBaseline = 'bottom';
       c.fillText(reactionLabels?.H ?? 'H', (hx0 + hx1) / 2, hy0 - 5);
     }
-    // The load line, one arrow per vertical load. In Bow's lettering the load
-    // named by the adjacent bays appears one interval earlier than the station
-    // index used for the rays, so the colour is intentionally read from j+1.
+    // The load line, one arrow per vertical load. `loadKinds` is already cut
+    // to the same span as this force polygon, so load j colours segment j.
     for (let j = 0; j < fp.magnitudes.length; j++) {
-      const colour = loadKinds && loadKinds[j + 1] === 1
+      const colour = loadKinds && loadKinds[j] === 1
         ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
       drawArrow(ax, [0, stations[j]], [0, stations[j + 1]], colour, 8, 3);
     }
@@ -863,6 +863,18 @@ export function drawForcePolygon(ax, fp, opt = {}) {
         c.font = '12px Helvetica, Arial, sans-serif';
         c.fillText("O' trial pole", tx + 7, ty);
       }
+    }
+    if (equilibrium) {
+      drawEquilibriumTriangle(ax, fp, {
+        ...equilibrium,
+        loadKinds,
+        construction,
+      });
+      drawEquilibriumConcurrency(ax, fp, {
+        ...equilibrium,
+        loadKinds,
+        construction,
+      });
     }
   });
 }
@@ -969,46 +981,119 @@ export function drawThrustLabels(ax, points, opt = {}) {
 export function drawEquilibriumTriangle(ax, fp, opt = {}) {
   const {
     block = 0, construction = null, trial = false,
-    loadKinds = null, title = 'Equilibrium',
+    loadKinds = null,
   } = opt;
   if (!fp || !fp.stations || !fp.pole || block < 0 || block + 1 >= fp.stations.length) return;
   const pole = trial && construction?.trial ? construction.trial : fp.pole;
   const a = [0, fp.stations[block]];
   const b = [0, fp.stations[block + 1]];
   const O = pole;
-  const loadColour = loadKinds && loadKinds[block + 1] === 1
+  const loadColour = loadKinds && loadKinds[block] === 1
     ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
 
-  const bx = ax.box.x + 12;
-  const by = ax.box.y + 12;
-  const bw = Math.min(190, Math.max(136, ax.box.w * 0.28));
-  const bh = Math.min(150, Math.max(112, ax.box.h * 0.24));
-  if (!(ax.box.w > bw + 28) || !(ax.box.h > bh + 28)) return;
+  const c = ax.ctx;
+  const poleName = trial ? "O'" : 'O';
+  drawArrow(ax, O, a, '#111', 12, 2.8);
+  drawArrow(ax, a, b, loadColour, 12, 3.2);
+  drawArrow(ax, b, O, '#111', 12, 2.8);
 
-  const xs = [O[0], a[0], b[0]];
-  const ys = [O[1], a[1], b[1]];
-  const dx = Math.max(...xs) - Math.min(...xs) || 1;
-  const dy = Math.max(...ys) - Math.min(...ys) || 1;
-  const s = Math.min((bw - 44) / dx, (bh - 46) / dy);
-  const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
-  const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
-  const map = ([x, y]) => [
-    bx + bw / 2 + (x - cx) * s,
-    by + bh / 2 - (y - cy) * s + 8,
-  ];
+  const label = (text, p0, p1, colour = '#111') => {
+    const [x0, y0] = ax.toPx(p0);
+    const [x1, y1] = ax.toPx(p1);
+    const mx = (x0 + x1) / 2;
+    const my = (y0 + y1) / 2;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.hypot(dx, dy) || 1;
+    c.save();
+    c.font = 'bold 11px Helvetica, Arial, sans-serif';
+    c.fillStyle = colour;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    const X = mx - (dy / len) * 10;
+    const Y = my + (dx / len) * 10;
+    c.lineWidth = 3;
+    c.strokeStyle = 'rgba(255,255,255,0.9)';
+    c.strokeText(text, X, Y);
+    c.fillText(text, X, Y);
+    c.restore();
+  };
+  label(`${poleName}${rayLabel(block)}`, O, a);
+  label(`${rayLabel(block)}${rayLabel(block + 1)}`, a, b, loadColour);
+  label(`${rayLabel(block + 1)}${poleName}`, b, O);
+}
 
-  const drawPxArrow = (c, p, q, colour) => {
-    const dxp = q[0] - p[0];
-    const dyp = q[1] - p[1];
-    const len = Math.hypot(dxp, dyp);
+export function drawEquilibriumConcurrency(ax, fp, opt = {}) {
+  const {
+    block = 0, construction = null, trial = false,
+    loadKinds = null, title = null,
+  } = opt;
+  if (!fp || !fp.stations || !fp.pole || block < 0 || block + 1 >= fp.stations.length) return;
+
+  const pole = trial && construction?.trial ? construction.trial : fp.pole;
+  const a = [0, fp.stations[block]];
+  const b = [0, fp.stations[block + 1]];
+  const loadColour = loadKinds && loadKinds[block] === 1
+    ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
+  const vectors = [
+    { d: [a[0] - pole[0], a[1] - pole[1]], colour: '#111',
+      label: `${trial ? "O'" : 'O'}${rayLabel(block)}` },
+    { d: [b[0] - a[0], b[1] - a[1]], colour: loadColour,
+      label: `${rayLabel(block)}${rayLabel(block + 1)}` },
+    { d: [pole[0] - b[0], pole[1] - b[1]], colour: '#111',
+      label: `${rayLabel(block + 1)}${trial ? "O'" : 'O'}` },
+  ].filter((v) => Math.hypot(v.d[0], v.d[1]) > 1e-9);
+  if (vectors.length < 3) return;
+
+  const c = ax.ctx;
+  const box = ax.box;
+  const w = Math.min(420, Math.max(300, box.w * 0.68));
+  const h = Math.min(316, Math.max(236, box.h * 0.56));
+  if (!(box.w > w + 28) || !(box.h > h + 28)) return;
+  const x = box.x + box.w - w - 12;
+  const y = box.y + 12;
+  const K = [x + w * 0.52, y + h * 0.54];
+  const inset = 14;
+  const rect = {
+    xmin: x + inset, xmax: x + w - inset,
+    ymin: y + 26, ymax: y + h - inset,
+  };
+
+  const unit = (d) => {
+    const n = Math.hypot(d[0], d[1]) || 1;
+    // Force-plane y is mathematical upward; canvas y is downward.
+    return [d[0] / n, -d[1] / n];
+  };
+  const lineThroughRect = (p, u) => {
+    const ts = [];
+    if (Math.abs(u[0]) > 1e-9) {
+      ts.push((rect.xmin - p[0]) / u[0]);
+      ts.push((rect.xmax - p[0]) / u[0]);
+    }
+    if (Math.abs(u[1]) > 1e-9) {
+      ts.push((rect.ymin - p[1]) / u[1]);
+      ts.push((rect.ymax - p[1]) / u[1]);
+    }
+    const pts = ts
+      .map((t) => [p[0] + u[0] * t, p[1] + u[1] * t, t])
+      .filter((q) => q[0] >= rect.xmin - 1e-6 && q[0] <= rect.xmax + 1e-6
+        && q[1] >= rect.ymin - 1e-6 && q[1] <= rect.ymax + 1e-6)
+      .sort((a, b) => a[2] - b[2]);
+    if (pts.length < 2) return [p, p];
+    return [pts[0], pts[pts.length - 1]];
+  };
+  const pxArrow = (p, q, colour) => {
+    const dx = q[0] - p[0];
+    const dy = q[1] - p[1];
+    const len = Math.hypot(dx, dy);
     if (len < 1e-6) return;
-    const ux = dxp / len;
-    const uy = dyp / len;
-    const head = Math.min(9, len * 0.35);
+    const ux = dx / len;
+    const uy = dy / len;
+    const head = Math.min(9, len * 0.4);
     const base = [q[0] - ux * head, q[1] - uy * head];
     c.strokeStyle = colour;
     c.fillStyle = colour;
-    c.lineWidth = 2;
+    c.lineWidth = 2.2;
     c.beginPath();
     c.moveTo(p[0], p[1]);
     c.lineTo(base[0], base[1]);
@@ -1021,39 +1106,324 @@ export function drawEquilibriumTriangle(ax, fp, opt = {}) {
     c.fill();
   };
 
-  const c = ax.ctx;
   c.save();
   c.globalAlpha = 0.94;
   c.fillStyle = '#fff';
-  c.fillRect(bx, by, bw, bh);
+  c.fillRect(x, y, w, h);
   c.globalAlpha = 1;
   c.strokeStyle = 'rgba(0,0,0,0.18)';
   c.lineWidth = 1;
-  c.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
-
-  const pO = map(O);
-  const pa = map(a);
-  const pb = map(b);
-  drawPxArrow(c, pO, pa, '#333');
-  drawPxArrow(c, pa, pb, loadColour);
-  drawPxArrow(c, pb, pO, '#333');
+  c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
   c.font = 'bold 11px Helvetica, Arial, sans-serif';
   c.fillStyle = '#333';
   c.textAlign = 'left';
   c.textBaseline = 'top';
-  c.fillText(title, bx + 8, by + 6);
+  c.fillText(title ?? `Block #${block + 1}`, x + 8, y + 6);
 
-  c.font = '10px Helvetica, Arial, sans-serif';
-  const label = (text, p, dx = 5, dy = -5, colour = '#333') => {
-    c.fillStyle = colour;
-    c.fillText(text, p[0] + dx, p[1] + dy);
+  vectors.forEach((v, i) => {
+    const u = unit(v.d);
+    const [p0, p1] = lineThroughRect(K, u);
+    c.save();
+    c.setLineDash([5, 4]);
+    c.strokeStyle = 'rgba(0,0,0,0.35)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(p0[0], p0[1]);
+    c.lineTo(p1[0], p1[1]);
+    c.stroke();
+    c.setLineDash([]);
+    c.restore();
+
+    const normal = [-u[1], u[0]];
+    const roomBehind = Math.hypot(K[0] - p0[0], K[1] - p0[1]);
+    const arrowLen = Math.min(roomBehind * 0.72, Math.max(42, Math.min(w, h) * 0.28));
+    const q0 = [K[0] - u[0] * arrowLen, K[1] - u[1] * arrowLen];
+    const q1 = K;
+    pxArrow(q0, q1, v.colour);
+
+    c.font = '10px Helvetica, Arial, sans-serif';
+    c.fillStyle = v.colour;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    const lx = (q0[0] + q1[0]) / 2 + normal[0] * (i === 1 ? -13 : 13);
+    const ly = (q0[1] + q1[1]) / 2 + normal[1] * (i === 1 ? -13 : 13);
+    c.lineWidth = 3;
+    c.strokeStyle = 'rgba(255,255,255,0.9)';
+    c.strokeText(v.label, lx, ly);
+    c.fillText(v.label, lx, ly);
+  });
+
+  c.beginPath();
+  c.arc(K[0], K[1], 3.2, 0, 2 * Math.PI);
+  c.fillStyle = '#111';
+  c.fill();
+  c.font = 'bold 11px Helvetica, Arial, sans-serif';
+  c.textAlign = 'left';
+  c.textBaseline = 'bottom';
+  c.fillText('K', K[0] + 6, K[1] - 4);
+  c.restore();
+}
+
+function pixelArrow(ctx, p, q, colour, opt = {}) {
+  const { headPx = 10, lineWidth = 2.2 } = opt;
+  const dx = q[0] - p[0];
+  const dy = q[1] - p[1];
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return;
+  const ux = dx / len;
+  const uy = dy / len;
+  const head = Math.min(headPx, len * 0.4);
+  const base = [q[0] - ux * head, q[1] - uy * head];
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.fillStyle = colour;
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.moveTo(p[0], p[1]);
+  ctx.lineTo(base[0], base[1]);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(q[0], q[1]);
+  ctx.lineTo(base[0] - uy * head * 0.42, base[1] + ux * head * 0.42);
+  ctx.lineTo(base[0] + uy * head * 0.42, base[1] - ux * head * 0.42);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function lineHit(p, d, q, e) {
+  const det = d[0] * e[1] - d[1] * e[0];
+  if (Math.abs(det) < 1e-12) return null;
+  const rx = q[0] - p[0];
+  const ry = q[1] - p[1];
+  const t = (rx * e[1] - ry * e[0]) / det;
+  return [p[0] + t * d[0], p[1] + t * d[1]];
+}
+
+function niceForce(raw) {
+  if (!(raw > 0) || !isFinite(raw)) return null;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const step = norm >= 5 ? 5 : norm >= 2 ? 2 : 1;
+  return step * mag;
+}
+
+export function drawBlockEquilibrium(ax, block, opt = {}) {
+  const {
+    title = 'Block', centroid = null, pressure = null, fp = null,
+    loadIndex = 0, loadKind = 0, corner = 'top-right', forceUnit = '',
+  } = opt;
+  if (!block || !centroid || !pressure || !fp?.rays || loadIndex < 0
+      || loadIndex + 1 >= fp.rays.length) return;
+
+  const pieces = piecesOf(block);
+  const xs = pieces.flatMap((p) => p.x);
+  const ys = pieces.flatMap((p) => p.y);
+  if (!xs.length || !ys.length) return;
+
+  const p0 = pressure[0] ?? null;
+  const p1 = pressure[1] ?? null;
+  const r0 = fp.rays[loadIndex];
+  const r1 = fp.rays[loadIndex + 1];
+  const stations = fp.stations ?? [];
+  const a = [0, stations[loadIndex]];
+  const b = [0, stations[loadIndex + 1]];
+  const pole = fp.pole;
+  let K = p1 ? lineHit(p1, r0, centroid, [0, 1]) : null;
+  if (!K && p0) K = lineHit(p0, r1, centroid, [0, 1]);
+  if (!K) K = centroid;
+
+  const c = ax.ctx;
+  const box = ax.box;
+  const w = Math.min(360, Math.max(250, box.w * 0.34));
+  const h = Math.min(300, Math.max(220, box.h * 0.34));
+  if (!(box.w > w + 28) || !(box.h > h + 28)) return;
+  const x = corner.includes('right') ? box.x + box.w - w - 12 : box.x + 12;
+  const y = corner.includes('bottom') ? box.y + box.h - h - 12 : box.y + 12;
+  const pad = 26;
+  const topPad = 34;
+
+  const rawYmin = Math.min(...ys, centroid[1], p0?.[1] ?? centroid[1],
+    p1?.[1] ?? centroid[1], K[1]);
+  const rawYmax = Math.max(...ys, centroid[1], p0?.[1] ?? centroid[1],
+    p1?.[1] ?? centroid[1], K[1]);
+  const weightStart = [centroid[0], K[1] - Math.max(1e-9, rawYmax - rawYmin) * 0.28];
+  const xmin = Math.min(...xs, centroid[0], p0?.[0] ?? centroid[0],
+    p1?.[0] ?? centroid[0], K[0], weightStart[0]);
+  const xmax = Math.max(...xs, centroid[0], p0?.[0] ?? centroid[0],
+    p1?.[0] ?? centroid[0], K[0], weightStart[0]);
+  const ymin = Math.min(rawYmin, weightStart[1]);
+  const ymax = Math.max(rawYmax, weightStart[1]);
+  const sx = (w - 2 * pad) / Math.max(1e-9, xmax - xmin);
+  const sy = (h - topPad - pad) / Math.max(1e-9, ymax - ymin);
+  const s = Math.min(sx, sy);
+  const cx = (xmin + xmax) / 2;
+  const cy = (ymin + ymax) / 2;
+  const mid = [x + w / 2, y + topPad + (h - topPad - pad) / 2];
+  const toPanel = (p) => [mid[0] + (p[0] - cx) * s, mid[1] - (p[1] - cy) * s];
+  const toPanelVector = (d) => [d[0], -d[1]];
+  const rect = {
+    xmin: x + 12, xmax: x + w - 12,
+    ymin: y + topPad - 5, ymax: y + h - 12,
   };
-  label(`${trial ? "O'" : 'O'}${rayLabel(block)}`, [(pO[0] + pa[0]) / 2, (pO[1] + pa[1]) / 2]);
-  label(`${rayLabel(block)}${rayLabel(block + 1)}`,
-    [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], 5, -3, loadColour);
-  label(`${rayLabel(block + 1)}${trial ? "O'" : 'O'}`,
-    [(pb[0] + pO[0]) / 2, (pb[1] + pO[1]) / 2]);
+  const lineThroughPanel = (p, q) => {
+    const u = [q[0] - p[0], q[1] - p[1]];
+    const ts = [];
+    if (Math.abs(u[0]) > 1e-9) {
+      ts.push((rect.xmin - p[0]) / u[0]);
+      ts.push((rect.xmax - p[0]) / u[0]);
+    }
+    if (Math.abs(u[1]) > 1e-9) {
+      ts.push((rect.ymin - p[1]) / u[1]);
+      ts.push((rect.ymax - p[1]) / u[1]);
+    }
+    const hits = ts
+      .map((t) => [p[0] + u[0] * t, p[1] + u[1] * t, t])
+      .filter((v) => v[0] >= rect.xmin - 1e-6 && v[0] <= rect.xmax + 1e-6
+        && v[1] >= rect.ymin - 1e-6 && v[1] <= rect.ymax + 1e-6)
+      .sort((a, b) => a[2] - b[2]);
+    if (hits.length < 2) return [p, q];
+    return [hits[0], hits[hits.length - 1]];
+  };
+  const arrowEndingAt = (target, direction, arrowLen) => {
+    const d = toPanelVector(direction);
+    const len = Math.hypot(d[0], d[1]);
+    if (len < 1e-6) return [target, target];
+    const u = [d[0] / len, d[1] / len];
+    const full = lineThroughPanel(target, [target[0] + u[0], target[1] + u[1]]);
+    const behind = full
+      .map((q) => ({ q, d: (target[0] - q[0]) * u[0] + (target[1] - q[1]) * u[1] }))
+      .filter((q) => q.d > 1e-6)
+      .sort((a, b) => b.d - a.d)[0];
+    const maxLen = behind ? behind.d * 0.84 : arrowLen;
+    const L = Math.max(10, Math.min(arrowLen, maxLen));
+    return [[target[0] - u[0] * L, target[1] - u[1] * L], target];
+  };
+
+  const loadColour = loadKind === 1 ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
+  const forceVectors = [
+    [a[0] - pole[0], a[1] - pole[1]],
+    [b[0] - a[0], b[1] - a[1]],
+    [pole[0] - b[0], pole[1] - b[1]],
+  ];
+  const forceLengths = forceVectors.map((d) => Math.hypot(d[0], d[1]));
+  const peak = Math.max(...forceLengths, 1e-9);
+  const forceScalePx = (Math.min(w, h) * 0.26) / peak;
+  const lineData = [
+    { p: p1, q: p1 ? [p1[0] + r0[0], p1[1] + r0[1]] : null,
+      target: p1, d: forceVectors[0], mag: forceLengths[0],
+      colour: '#111', label: `O${rayLabel(loadIndex)}` },
+    { p: weightStart, q: K, target: K, colour: loadColour,
+      d: forceVectors[1], mag: forceLengths[1],
+      label: `${rayLabel(loadIndex)}${rayLabel(loadIndex + 1)}` },
+    { p: p0, q: p0 ? [p0[0] + r1[0], p0[1] + r1[1]] : null,
+      target: p0, d: forceVectors[2], mag: forceLengths[2],
+      colour: '#111', label: `${rayLabel(loadIndex + 1)}O` },
+  ].filter((v) => v.p && v.q);
+
+  c.save();
+  c.globalAlpha = 0.94;
+  c.fillStyle = '#fff';
+  c.fillRect(x, y, w, h);
+  c.globalAlpha = 1;
+  c.strokeStyle = 'rgba(0,0,0,0.18)';
+  c.lineWidth = 1;
+  c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+  c.font = 'bold 12px Helvetica, Arial, sans-serif';
+  c.fillStyle = '#333';
+  c.textAlign = 'left';
+  c.textBaseline = 'top';
+  c.fillText(title, x + 8, y + 7);
+
+  for (const p of pieces) {
+    c.beginPath();
+    for (let i = 0; i < p.x.length; i++) {
+      const [X, Y] = toPanel([p.x[i], p.y[i]]);
+      if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
+    }
+    c.closePath();
+    c.fillStyle = 'rgba(255,210,127,0.72)';
+    c.fill();
+    c.strokeStyle = 'rgba(40,40,40,0.75)';
+    c.lineWidth = 1.1;
+    c.stroke();
+  }
+
+  lineData.forEach((v, i) => {
+    const P = toPanel(v.p);
+    const Q = toPanel(v.q);
+    const T = toPanel(v.target);
+    const [L0, L1] = lineThroughPanel(P, Q);
+    c.save();
+    c.setLineDash([5, 4]);
+    c.strokeStyle = 'rgba(0,0,0,0.35)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(L0[0], L0[1]);
+    c.lineTo(L1[0], L1[1]);
+    c.stroke();
+    c.restore();
+
+    const [A0, A1] = arrowEndingAt(T, v.d, v.mag * forceScalePx);
+    pixelArrow(c, A0, A1, v.colour, { headPx: 10, lineWidth: i === 1 ? 2.7 : 2.2 });
+    const dx = A1[0] - A0[0];
+    const dy = A1[1] - A0[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const lx = (A0[0] + A1[0]) / 2 - (dy / len) * 11;
+    const ly = (A0[1] + A1[1]) / 2 + (dx / len) * 11;
+    c.font = '10px Helvetica, Arial, sans-serif';
+    c.fillStyle = v.colour;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.lineWidth = 3;
+    c.strokeStyle = 'rgba(255,255,255,0.9)';
+    c.strokeText(v.label, lx, ly);
+    c.fillText(v.label, lx, ly);
+  });
+
+  const scaleValue = niceForce(peak * 0.55);
+  if (scaleValue) {
+    const sx0 = x + 14;
+    const sy0 = y + h - 14;
+    const sw = scaleValue * forceScalePx;
+    c.strokeStyle = '#111';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(sx0, sy0);
+    c.lineTo(sx0 + sw, sy0);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(sx0, sy0 - 4);
+    c.lineTo(sx0, sy0 + 4);
+    c.moveTo(sx0 + sw, sy0 - 4);
+    c.lineTo(sx0 + sw, sy0 + 4);
+    c.stroke();
+    c.font = '10px Helvetica, Arial, sans-serif';
+    c.fillStyle = '#111';
+    c.textAlign = 'left';
+    c.textBaseline = 'bottom';
+    c.fillText(`${Number(scaleValue.toPrecision(3))}${forceUnit ? ` ${forceUnit}` : ''}`,
+      sx0, sy0 - 6);
+  }
+
+  for (const p of [p0, p1].filter(Boolean)) {
+    const [X, Y] = toPanel(p);
+    c.beginPath();
+    c.arc(X, Y, 3.2, 0, 2 * Math.PI);
+    c.fillStyle = '#2e7d32';
+    c.fill();
+  }
+  const [Kx, Ky] = toPanel(K);
+  c.beginPath();
+  c.arc(Kx, Ky, 3.2, 0, 2 * Math.PI);
+  c.fillStyle = '#111';
+  c.fill();
+  c.font = 'bold 11px Helvetica, Arial, sans-serif';
+  c.textAlign = 'left';
+  c.textBaseline = 'bottom';
+  c.fillText('K', Kx + 6, Ky - 4);
   c.restore();
 }
 

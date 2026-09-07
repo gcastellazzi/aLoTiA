@@ -45,6 +45,16 @@ const numbers = (a) => Array.from(a ?? [], Number);
  */
 export function serialise(state, controls = {}, imageName = null) {
   const m = state.model ?? {};
+  const forceBases = state.forces?.bases;
+  const forceMagnitudes = state.forces?.magnitudes ?? [];
+  const forces = state.forces
+    ? {
+      points: points(state.forces.points),
+      magnitudes: numbers(forceMagnitudes),
+      ...(forceBases?.length === forceMagnitudes.length && forceBases.length
+        ? { bases: numbers(forceBases) } : {}),
+    }
+    : null;
   return {
     format: FORMAT,
     version: VERSION,
@@ -104,12 +114,7 @@ export function serialise(state, controls = {}, imageName = null) {
         imposed: !!controls.imposeEnds,
       }
       : null,
-    forces: state.forces
-      ? {
-        points: points(state.forces.points),
-        magnitudes: numbers(state.forces.magnitudes),
-      }
-      : null,
+    forces,
     basePole: state.basePole ? [...state.basePole] : null,
     // The dome settings belong with the weights they produced. Without them a
     // reopened lune would show its panel switched off while its weights were
@@ -205,6 +210,10 @@ export function deserialise(text) {
   const f = data.forces;
   if (f && (f.points ?? []).length !== (f.magnitudes ?? []).length) {
     throw new Error('the file has a force without a magnitude, or the reverse');
+  }
+  if (Array.isArray(f?.bases) && f.bases.length
+    && f.bases.length !== (f.magnitudes ?? []).length) {
+    throw new Error('the file has a force base without a magnitude, or the reverse');
   }
   if (data.log && !Array.isArray(data.log)) {
     throw new Error('the file has a malformed project log');

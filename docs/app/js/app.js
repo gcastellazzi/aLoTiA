@@ -12,9 +12,11 @@ import {
   drawForcePolygon, drawArrow, drawReactionLabel, drawThrustLabels, labelStride,
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary, drawNotice, wrapText,
-  drawJointCell, drawEquilibriumTriangle, APPLIED_FORCE_COLOUR,
+  drawJointCell, drawBlockEquilibrium, APPLIED_FORCE_COLOUR,
 } from './render/draw.js';
-import { bounds, area as signedAreaOf, piecesOf } from './core/geometry.js';
+import {
+  bounds, area as signedAreaOf, piecesOf, pointInPolygon,
+} from './core/geometry.js';
 import {
   forcePolygon, funicular, poleFromForcePolygon, hangingCable, jointCrossings,
   freeThrustLine, poleForEnds,
@@ -35,6 +37,7 @@ import {
 import {
   serialise, deserialise, suggestedName, FORMAT,
 } from './core/persist.js';
+import { abaqusInput } from './core/abaqus.js';
 import {
   parseNotes, toggleWrap, setBlockStyle, insertLink,
 } from './core/notes.js';
@@ -146,6 +149,7 @@ const ui = {
   forceMag: el('forceMag'), forceLabel: el('forceLabel'),
   addForce: el('addForce'), clearForces: el('clearForces'),
   forceList: el('forceList'),
+  exportAbaqus: el('exportAbaqus'),
   system: el('system'), pickRef: el('pickRef'), refLength: el('refLength'),
   applyScale: el('applyScale'), scaleStatus: el('scaleStatus'),
 };
@@ -183,11 +187,13 @@ const state = {
   bandKey: null,    // what the band was computed for
   beyondBand: 0,    // +1 held at H max, -1 at H min, 0 inside the band
   spanKept: null,   // which blocks the imposed ends leave carrying the line
+  fpKinds: null,    // the same load kinds as the force polygon now being drawn
   imposedRange: null,  // the thrust band of the imposed-ends family
   imposedKey: null,
   constructionStep: 0,
   constructionKey: null,
   selectedJoint: null,
+  selectedEquilibriumBlock: null,
   thicknessStudy: null,
   ringStudySource: null,
   // The two admissible bands against thickness -- the published figure, run by
@@ -218,7 +224,7 @@ const state = {
   ref: { points: [], picking: false },
   system: 'SI',
   // Applied point loads: where they act, how big, and whether we are placing.
-  forces: { points: [], magnitudes: [], placing: false },
+  forces: { points: [], magnitudes: [], bases: [], placing: false },
 };
 
 const GROUP_COLOURS = [
@@ -230,6 +236,7 @@ function clearPlotState({ keepStudy = false } = {}) {
   state.selectedJoint = null;
   // The row the table had picked out belonged to the arch that was on screen.
   state.selectedBlock = null;
+  state.selectedEquilibriumBlock = null;
   state.frozenBranch = null;
   if (!keepStudy) {
     state.thicknessStudy = null;
@@ -1146,7 +1153,7 @@ function newWork() {
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   clearThreePointRing();
   state.profiles = { list: [], current: null, centre: null, picking: false };
-  state.forces = { points: [], magnitudes: [], placing: false };
+  state.forces = { points: [], magnitudes: [], bases: [], placing: false };
   state.ends = { A: null, B: null, picking: null, construction: null };
   state.ref = { points: [], picking: false };
   state.newBlock = null;
@@ -1250,7 +1257,7 @@ async function loadExample(file) {
     state.imageData = null;
     state.trace = { inner: [], outer: [], armed: null, cursor: null };
     clearThreePointRing();
-    state.forces = { points: [], magnitudes: [], placing: false };
+    state.forces = { points: [], magnitudes: [], bases: [], placing: false };
     appendLog(`Failed to load example ${file}: ${err.message}`);
     assessAdmissibility();
     reportMechanism();
@@ -1289,7 +1296,7 @@ async function loadExample(file) {
 
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   clearThreePointRing();
-  state.forces = { points: [], magnitudes: [], placing: false };
+  state.forces = { points: [], magnitudes: [], bases: [], placing: false };
   // The collapse band belongs to the arch that was on screen, not to this one.
   // The signature guard recomputes it for another arch WITH joints, but an
   // arch without them never reaches that branch and inherited the last band
@@ -1617,6 +1624,7 @@ function recompute() {
   const m = state.model;
   state.fp = null;
   state.lot = null;
+  state.fpKinds = null;
   if (!m || !m.blocks || !m.blocks.length || !state.basePole) {
     state.seq = null;
     state.pole = null;
@@ -1738,6 +1746,7 @@ function recompute() {
         }
         state.pole = best.fp.pole;
         state.fp = best.fp;
+        state.fpKinds = seq.kind;
         state.lot = best.lot;
         state.startFraction = best.s;
         state.endFraction = best.lot.endFraction;
@@ -1844,6 +1853,7 @@ function recompute() {
     if (solved) {
       state.pole = solved.g.pole;
       state.fp = solved.fp;
+      state.fpKinds = span.kind ?? null;
       state.lot = solved.lot;
       state.ends.construction = solved.g;
       const constructionKey = `imposed:${span.kept.join(',')}:`
@@ -1867,6 +1877,7 @@ function recompute() {
   state.constructionKey = null;
 
   state.fp = forcePolygon(seq.weights, pole);
+  state.fpKinds = seq.kind;
   if (ends) {
     // BOTH ENDS FREE. The line starts at a chosen fraction of one springing
     // joint and its last segment is carried on until it meets the other. The
@@ -2022,6 +2033,11 @@ function fitForceView() {
     xmin: Math.min(...xs), xmax: Math.max(...xs),
     ymin: Math.min(...ys), ymax: Math.max(...ys),
   }, 0.12);
+  panForcePolygonLeft();
+}
+
+function panForcePolygonLeft() {
+  forceAx.pan(-forceAx.box.w * 0.30, 0);
 }
 
 function constructionProgress() {
@@ -2048,6 +2064,73 @@ function constructionStatus(progress) {
   if (step <= n) return `trial ray ${step}/${n}`;
   if (step === n + 1) return 'pole correction';
   return `corrected ray ${step - n - 1}/${n}`;
+}
+
+function constructionEquilibrium(progress) {
+  const loads = state.fp?.magnitudes?.length ?? 0;
+  if (!progress || loads < 1) return null;
+  if (!ui.showConstruction.checked || !ui.showEquilibrium.checked) return null;
+  if (!progress.correctionVisible) {
+    if (progress.trialSegments < 2) return null;
+    const block = Math.min(loads - 1, progress.trialSegments - 2);
+    return {
+      block,
+      trial: true,
+      title: loadTitle(block),
+    };
+  }
+  if (progress.finalSegments < 2) return null;
+  const block = Math.min(loads - 1, progress.finalSegments - 2);
+  return {
+    block,
+    trial: false,
+    title: loadTitle(block),
+  };
+}
+
+function loadTitle(loadIndex) {
+  const m = state.model;
+  if (!m || loadIndex === null || loadIndex < 0) return null;
+  const seqIndex = state.spanKept?.length ? state.spanKept[loadIndex] : loadIndex;
+  const original = state.seq?.order?.[seqIndex];
+  if (!Number.isInteger(original)) return `Block #${loadIndex + 1}`;
+  if (original < (m.blocks?.length ?? 0)) return `Block #${original + 1}`;
+  return `Force #${original - (m.blocks?.length ?? 0) + 1}`;
+}
+
+function loadIndexForBlock(blockIndex) {
+  const m = state.model;
+  if (!m || !state.seq?.order || blockIndex < 0 || blockIndex >= m.blocks.length) return null;
+  const seqIndex = state.seq.order.indexOf(blockIndex);
+  if (seqIndex < 0) return null;
+  if (state.spanKept?.length) {
+    const keptIndex = state.spanKept.indexOf(seqIndex);
+    return keptIndex >= 0 ? keptIndex : null;
+  }
+  return seqIndex;
+}
+
+function selectedBlockEquilibrium() {
+  const m = state.model;
+  const block = state.selectedEquilibriumBlock;
+  if (!ui.showEquilibrium.checked || block === null || !m?.blocks?.[block]
+      || !m.centroids?.[block] || !state.fp || !state.lot?.points) return null;
+  const loadIndex = loadIndexForBlock(block);
+  if (loadIndex === null || loadIndex + 1 >= state.lot.points.length) return null;
+  const pressure = [
+    state.crossings?.[block]?.point ?? state.lot.points[loadIndex],
+    state.crossings?.[block + 1]?.point ?? state.lot.points[loadIndex + 1],
+  ];
+  return {
+    title: `Block #${block + 1}`,
+    block: m.blocks[block],
+    centroid: m.centroids[block],
+    pressure,
+    fp: state.fp,
+    loadIndex,
+    loadKind: state.fpKinds?.[loadIndex] ?? 0,
+    forceUnit: barUnits().force,
+  };
 }
 
 function syncConstructionSlider() {
@@ -2146,11 +2229,7 @@ function draw() {
     }
   }
   if (ui.showWeights.checked && m.centroids && m.weights) {
-    drawWeights(mainAx,
-      state.seq ? state.seq.centroids : m.centroids,
-      state.seq ? state.seq.weights : m.weights, {
-        kinds: state.seq ? state.seq.kind : null,
-      });
+    drawWeights(mainAx, m.centroids, m.weights);
   }
   if (sideView() === 'radius' && state.ringAuto) drawRingStudyCurves();
   if (ui.showThrust.checked && state.lot && !constructing) {
@@ -2244,15 +2323,6 @@ function draw() {
       drawThrustConstructionNote(preliminary);
     }
   }
-  if (ui.showEquilibrium.checked && state.fp && state.ends.construction) {
-    drawEquilibriumTriangle(mainAx, state.fp, {
-      block: 0,
-      construction: state.ends.construction,
-      trial: Boolean(progress && !progress.correctionVisible),
-      loadKinds: state.seq ? state.seq.kind : null,
-      title: 'Block 1 equilibrium',
-    });
-  }
   if (state.ends.A || state.ends.B) drawEnds(mainAx, state.ends.A, state.ends.B);
   drawSupports(mainAx, m.pointA, m.pointB);
   if (ui.showJoints.checked || state.selectedJoint !== null) drawJoints();
@@ -2262,6 +2332,8 @@ function draw() {
   drawForces();
   drawReference();
   mainAx.decorate();
+  const blockEq = selectedBlockEquilibrium();
+  if (blockEq) drawBlockEquilibrium(mainAx, blockEq.block, blockEq);
   if (ui.showScale.checked) drawScaleBar(mainAx, { unit: barUnits().length });
 
   if (sideView() === 'solid') {
@@ -2283,6 +2355,7 @@ function draw() {
   forceAx.begin();
   forceAx.reequalize();
   if (state.fp) {
+    const equilibrium = constructionEquilibrium(progress);
     drawForcePolygon(forceAx, state.fp, {
       rayLabels: ui.showRays.checked,
       stride: raysStride(),
@@ -2291,11 +2364,43 @@ function draw() {
       construction: state.ends.construction,
       constructionLines: ui.showConstruction.checked,
       constructionStep: progress,
-      loadKinds: state.seq ? state.seq.kind : null,
+      loadKinds: state.fpKinds,
+      equilibrium,
     });
   }
   forceAx.decorate();
   if (ui.showScale.checked) drawScaleBar(forceAx, { unit: barUnits().force });
+}
+
+function refreshDraw() {
+  draw();
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(draw);
+  setTimeout(draw, 0);
+  setTimeout(draw, 40);
+}
+
+function drawSelectedBlockEquilibriumOverlay() {
+  const blockEq = selectedBlockEquilibrium();
+  if (blockEq) drawBlockEquilibrium(mainAx, blockEq.block, blockEq);
+}
+
+function refreshBlockSelection() {
+  draw();
+  drawSelectedBlockEquilibriumOverlay();
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      draw();
+      drawSelectedBlockEquilibriumOverlay();
+    });
+  }
+  setTimeout(() => {
+    draw();
+    drawSelectedBlockEquilibriumOverlay();
+  }, 0);
+  setTimeout(() => {
+    draw();
+    drawSelectedBlockEquilibriumOverlay();
+  }, 40);
 }
 
 function segmentForceAt(segment) {
@@ -3129,6 +3234,28 @@ function pickJointAt(px) {
   return best.d <= 9 ? best.i : null;
 }
 
+function pickBlockAt(dataPoint) {
+  const blocks = state.model?.blocks;
+  if (!blocks || !blocks.length) return null;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (piecesOf(blocks[i]).some((p) => pointInPolygon(dataPoint, p))) return i;
+  }
+  return null;
+}
+
+function selectEquilibriumBlockAt(ax, e) {
+  if (ax !== mainAx || !ui.showEquilibrium.checked) return false;
+  const block = pickBlockAt(mainAx.toData([e.offsetX, e.offsetY]));
+  if (block === null) return false;
+  state.selectedEquilibriumBlock = block;
+  state.selectedBlock = block;
+  e.preventDefault();
+  e.stopPropagation();
+  drawBlockTable();
+  refreshBlockSelection();
+  return true;
+}
+
 function drawForces() {
   const f = state.forces;
   if (!f.points.length) return;
@@ -3161,28 +3288,69 @@ function armForce() {
   draw();
 }
 
-function listForces() {
-  const f = state.forces ?? { points: [], magnitudes: [] };
+function ensureForceBases() {
+  const f = state.forces ?? { points: [], magnitudes: [], bases: [] };
+  f.bases = Array.isArray(f.bases) ? f.bases : [];
+  f.magnitudes.forEach((mag, i) => {
+    if (!(f.bases[i] > 0)) f.bases[i] = mag;
+  });
+  f.bases = f.bases.slice(0, f.magnitudes.length);
   state.forces = { placing: false, ...f };
+  return state.forces;
+}
+
+function listForces() {
+  const f = ensureForceBases();
   const scaled = state.model?.frame?.coordinates === 'physical';
   ui.forceList.innerHTML = '';
   f.points.forEach((p, i) => {
     const li = document.createElement('li');
-    const mag = scaled ? format(f.magnitudes[i], 'force', state.system)
-      : `${f.magnitudes[i].toPrecision(4)}`;
-    li.append(document.createTextNode(
-      `F${i + 1}  ${mag}  at x = ${p[0].toPrecision(4)}`));
+    const row = document.createElement('div');
+    row.className = 'force-row';
+    const text = document.createElement('span');
+    const writeText = () => {
+      const mag = scaled ? format(f.magnitudes[i], 'force', state.system)
+        : `${f.magnitudes[i].toPrecision(4)}`;
+      text.textContent = `F${i + 1}  ${mag}  at x = ${p[0].toPrecision(4)}`;
+    };
+    writeText();
     const del = document.createElement('button');
     del.textContent = 'remove';
     del.addEventListener('click', () => {
       f.points.splice(i, 1);
       f.magnitudes.splice(i, 1);
+      f.bases.splice(i, 1);
       listForces();
       recompute();
       fitForceView();
       draw();
     });
-    li.append(del);
+    row.append(text, del);
+    li.append(row);
+
+    const scaleRow = document.createElement('div');
+    scaleRow.className = 'force-scale';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0.1';
+    slider.max = '2';
+    slider.step = '0.01';
+    const factor = f.bases[i] > 0 ? f.magnitudes[i] / f.bases[i] : 1;
+    slider.value = String(Math.max(0.1, Math.min(2, factor)));
+    const out = document.createElement('output');
+    const writeOut = () => { out.textContent = `${Number(slider.value).toFixed(2)}×`; };
+    writeOut();
+    slider.addEventListener('input', () => {
+      const k = Number(slider.value);
+      f.magnitudes[i] = f.bases[i] * k;
+      writeText();
+      writeOut();
+      recompute();
+      fitForceView();
+      draw();
+    });
+    scaleRow.append(slider, out);
+    li.append(scaleRow);
     ui.forceList.append(li);
   });
   ui.forceLabel.textContent =
@@ -4314,6 +4482,75 @@ function drawSolidGroupLegend(groups) {
   c.restore();
 }
 
+function currentSolidsForExport() {
+  const m = state.model;
+  const dome = domeOptions();
+  return solids(m.blocks, {
+    poleni: dome.poleni,
+    axisX: dome.axisX,
+    angleDeg: dome.angleDeg,
+    thickness: assignedThicknesses(),
+    steps: dome.poleni ? Math.max(2, Math.round(dome.angleDeg / 4)) : 1,
+    align: state.solidAlign,
+  });
+}
+
+function supportPointsForExport() {
+  const pts = state.lot?.points ?? [];
+  if (pts.length >= 2) return [pts[pts.length - 1], pts[0]];
+  const m = state.model;
+  return [m?.pointA, m?.pointB].filter(Boolean);
+}
+
+function abaqusFileName() {
+  const base = (state.exampleName || 'alotia_arch')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^\w.-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'alotia_arch';
+  return `${base}.inp`;
+}
+
+async function exportAbaqus() {
+  try {
+    const m = state.model;
+    if (!m?.blocks?.length) throw new Error('no blocks to export');
+    if (!state.lot) recompute();
+    const text = abaqusInput(m, {
+      solids: currentSolidsForExport(),
+      supports: supportPointsForExport(),
+      forces: state.forces,
+      friction: 0.6,
+      system: state.system,
+      title: abaqusFileName(),
+    });
+    const suggested = abaqusFileName();
+    const blob = new Blob([text], { type: 'text/plain' });
+    if ('showSaveFilePicker' in window) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{
+          description: 'Abaqus input file',
+          accept: { 'text/plain': ['.inp'] },
+        }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = suggested;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    appendLog(`Exported Abaqus model ${suggested}`);
+    ui.saveStatus.textContent = `exported ${suggested} (${(text.length / 1024).toFixed(0)} kB)`;
+  } catch (e) {
+    ui.saveStatus.textContent = `could not export Abaqus model: ${e.message}`;
+  }
+}
+
 /** What the solid view is a picture of; a change means refit. */
 function sideKey() {
   const m = state.model;
@@ -4449,7 +4686,7 @@ function generateRing(opt = {}) {
 
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   state.profiles = { list: [], current: null, centre: null, picking: false };
-  state.forces = { points: [], magnitudes: [], placing: false };
+  state.forces = { points: [], magnitudes: [], bases: [], placing: false };
   state.image = null;
   state.imageData = null;
   state.ends = { A: null, B: null, picking: null, construction: null };
@@ -4533,7 +4770,7 @@ function generateThreePointRing() {
 
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   state.profiles = { list: [], current: null, centre: null, picking: false };
-  state.forces = { points: [], magnitudes: [], placing: false };
+  state.forces = { points: [], magnitudes: [], bases: [], placing: false };
   state.ends = { A: null, B: null, picking: null, construction: null };
   state.model = {
     ...(state.model ?? {}),
@@ -4655,6 +4892,7 @@ function attachNavigation(ax) {
         const p = mainAx.toData([e.offsetX, e.offsetY]);
         state.forces.points.push(p);
         state.forces.magnitudes.push(mag);
+        ensureForceBases().bases[state.forces.magnitudes.length - 1] = mag;
         listForces();
         recompute();
         fitForceView();
@@ -4744,6 +4982,7 @@ function attachNavigation(ax) {
       draw();
       return;
     }
+    if (selectEquilibriumBlockAt(ax, e)) return;
     if (ax === mainAx) {
       const picked = pickJointAt([e.offsetX, e.offsetY]);
       if (picked !== null) {
@@ -4757,6 +4996,10 @@ function attachNavigation(ax) {
     dragging = true;
     last = [e.offsetX, e.offsetY];
     ax.canvas.setPointerCapture(e.pointerId);
+  });
+  ax.canvas.addEventListener('click', (e) => {
+    ax.syncSize();
+    selectEquilibriumBlockAt(ax, e);
   });
   ax.canvas.addEventListener('pointermove', (e) => {
     if (ax === mainAx && state.newBlock) {
@@ -4818,6 +5061,7 @@ ui.clearForces.addEventListener('click', () => {
   const n = state.forces.points.length;
   state.forces.points = [];
   state.forces.magnitudes = [];
+  state.forces.bases = [];
   listForces();
   recompute();
   fitForceView();
@@ -4881,6 +5125,7 @@ ui.system.addEventListener('change', () => {
       ...forces,
       points: poly(forces.points),
       magnitudes: (forces.magnitudes ?? []).map((v) => v * kF),
+      bases: (forces.bases ?? forces.magnitudes ?? []).map((v) => v * kF),
     };
     // BOTH coordinates of the pole are forces: the abscissa is the horizontal
     // thrust and the ordinate divides the total weight between the reactions.
@@ -5154,6 +5399,7 @@ function viewAction(ax, act) {
     const b = contentBounds(ax);
     if (!b) return;
     ax.fit(b, 0.06, act === 'fitx' ? 'x' : act === 'fity' ? 'y' : null);
+    if (ax === forceAx) panForcePolygonLeft();
   }
   draw();
 }
@@ -5194,6 +5440,7 @@ el('solidTools').addEventListener('click', (e) => {
   state.solidFit = null;
   draw();
 });
+ui.exportAbaqus.addEventListener('click', exportAbaqus);
 
 function updateSolidAlignButtons() {
   for (const [id, align] of [
@@ -5557,7 +5804,7 @@ for (const f of [ui.ringRi, ui.ringN]) {
 ui.addBlock.addEventListener('click', armBlock);
 ui.cableWeights.addEventListener('input', draw);
 ui.thrustWidth.addEventListener('input', draw);
-ui.showEquilibrium.addEventListener('change', draw);
+ui.showEquilibrium.addEventListener('change', refreshDraw);
 ui.forceConstructionStep.addEventListener('input', () => {
   state.constructionStep = Number(ui.forceConstructionStep.value) || 0;
   draw();
@@ -5664,6 +5911,7 @@ function openWork(text, { source = null } = {}) {
       armed: null, cursor: null }
     : null;
   state.forces = data.forces;
+  ensureForceBases();
   state.basePole = data.basePole
     ?? [totalLoad() / 4, -totalLoad() / 2];
   state.system = data.system;
