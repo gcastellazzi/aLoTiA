@@ -2248,6 +2248,7 @@ function draw() {
       construction: state.ends.construction,
       constructionLines: ui.showConstruction.checked,
       constructionStep: progress,
+      loadKinds: state.seq ? state.seq.kind : null,
     });
   }
   forceAx.decorate();

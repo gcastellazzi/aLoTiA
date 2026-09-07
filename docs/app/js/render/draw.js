@@ -713,7 +713,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
   const {
     labels = true, rayLabels = false, stride = 1, construction = null,
     constructionLines = true, constructionStep = null,
-    reactions = false, reactionLabels = null,
+    reactions = false, reactionLabels = null, loadKinds = null,
   } = opt;
   const { stations, pole } = fp;
   const c = ax.ctx;
@@ -790,16 +790,11 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.textBaseline = 'bottom';
       c.fillText(reactionLabels?.H ?? 'H', (hx0 + hx1) / 2, hy0 - 5);
     }
-    // The load line, one red segment per weight.
-    c.strokeStyle = '#c00';
-    c.lineWidth = 3;
+    // The load line, one arrow per vertical load. Added point forces share the
+    // same statics as block weights, but the colour keeps their origin visible.
     for (let j = 0; j + 1 < stations.length; j++) {
-      const [x0, y0] = ax.toPx([0, stations[j]]);
-      const [x1, y1] = ax.toPx([0, stations[j + 1]]);
-      c.beginPath();
-      c.moveTo(x0, y0);
-      c.lineTo(x1, y1);
-      c.stroke();
+      const colour = loadKinds && loadKinds[j] === 1 ? '#0072BD' : '#c00';
+      drawArrow(ax, [0, stations[j]], [0, stations[j + 1]], colour, 8, 3);
     }
     // The corrected pole is introduced only after the ordinate correction when
     // the construction slider is stepping through the drawing.
