@@ -797,12 +797,11 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.textBaseline = 'bottom';
       c.fillText(reactionLabels?.H ?? 'H', (hx0 + hx1) / 2, hy0 - 5);
     }
-    // The load line, one arrow per vertical load. Load j lives between station
-    // j and station j+1; counted on the drawing from 1, that is arrow j+1.
-    // Added point forces share the same statics as block weights, but the
-    // colour keeps their origin visible.
+    // The load line, one arrow per vertical load. In Bow's lettering the load
+    // named by the adjacent bays appears one interval earlier than the station
+    // index used for the rays, so the colour is intentionally read from j+1.
     for (let j = 0; j < fp.magnitudes.length; j++) {
-      const colour = loadKinds && loadKinds[j] === 1
+      const colour = loadKinds && loadKinds[j + 1] === 1
         ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
       drawArrow(ax, [0, stations[j]], [0, stations[j + 1]], colour, 8, 3);
     }
@@ -965,6 +964,97 @@ export function drawThrustLabels(ax, points, opt = {}) {
       }
     }
   });
+}
+
+export function drawEquilibriumTriangle(ax, fp, opt = {}) {
+  const {
+    block = 0, construction = null, trial = false,
+    loadKinds = null, title = 'Equilibrium',
+  } = opt;
+  if (!fp || !fp.stations || !fp.pole || block < 0 || block + 1 >= fp.stations.length) return;
+  const pole = trial && construction?.trial ? construction.trial : fp.pole;
+  const a = [0, fp.stations[block]];
+  const b = [0, fp.stations[block + 1]];
+  const O = pole;
+  const loadColour = loadKinds && loadKinds[block + 1] === 1
+    ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
+
+  const bx = ax.box.x + 12;
+  const by = ax.box.y + 12;
+  const bw = Math.min(190, Math.max(136, ax.box.w * 0.28));
+  const bh = Math.min(150, Math.max(112, ax.box.h * 0.24));
+  if (!(ax.box.w > bw + 28) || !(ax.box.h > bh + 28)) return;
+
+  const xs = [O[0], a[0], b[0]];
+  const ys = [O[1], a[1], b[1]];
+  const dx = Math.max(...xs) - Math.min(...xs) || 1;
+  const dy = Math.max(...ys) - Math.min(...ys) || 1;
+  const s = Math.min((bw - 44) / dx, (bh - 46) / dy);
+  const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
+  const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
+  const map = ([x, y]) => [
+    bx + bw / 2 + (x - cx) * s,
+    by + bh / 2 - (y - cy) * s + 8,
+  ];
+
+  const drawPxArrow = (c, p, q, colour) => {
+    const dxp = q[0] - p[0];
+    const dyp = q[1] - p[1];
+    const len = Math.hypot(dxp, dyp);
+    if (len < 1e-6) return;
+    const ux = dxp / len;
+    const uy = dyp / len;
+    const head = Math.min(9, len * 0.35);
+    const base = [q[0] - ux * head, q[1] - uy * head];
+    c.strokeStyle = colour;
+    c.fillStyle = colour;
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(p[0], p[1]);
+    c.lineTo(base[0], base[1]);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(q[0], q[1]);
+    c.lineTo(base[0] - uy * head * 0.42, base[1] + ux * head * 0.42);
+    c.lineTo(base[0] + uy * head * 0.42, base[1] - ux * head * 0.42);
+    c.closePath();
+    c.fill();
+  };
+
+  const c = ax.ctx;
+  c.save();
+  c.globalAlpha = 0.94;
+  c.fillStyle = '#fff';
+  c.fillRect(bx, by, bw, bh);
+  c.globalAlpha = 1;
+  c.strokeStyle = 'rgba(0,0,0,0.18)';
+  c.lineWidth = 1;
+  c.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+
+  const pO = map(O);
+  const pa = map(a);
+  const pb = map(b);
+  drawPxArrow(c, pO, pa, '#333');
+  drawPxArrow(c, pa, pb, loadColour);
+  drawPxArrow(c, pb, pO, '#333');
+
+  c.font = 'bold 11px Helvetica, Arial, sans-serif';
+  c.fillStyle = '#333';
+  c.textAlign = 'left';
+  c.textBaseline = 'top';
+  c.fillText(title, bx + 8, by + 6);
+
+  c.font = '10px Helvetica, Arial, sans-serif';
+  const label = (text, p, dx = 5, dy = -5, colour = '#333') => {
+    c.fillStyle = colour;
+    c.fillText(text, p[0] + dx, p[1] + dy);
+  };
+  label(`${trial ? "O'" : 'O'}${rayLabel(block)}`, [(pO[0] + pa[0]) / 2, (pO[1] + pa[1]) / 2]);
+  label(`${rayLabel(block)}${rayLabel(block + 1)}`,
+    [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], 5, -3, loadColour);
+  label(`${rayLabel(block + 1)}${trial ? "O'" : 'O'}`,
+    [(pb[0] + pO[0]) / 2, (pb[1] + pO[1]) / 2]);
+  c.restore();
 }
 
 /**

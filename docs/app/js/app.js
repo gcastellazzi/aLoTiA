@@ -12,7 +12,7 @@ import {
   drawForcePolygon, drawArrow, drawReactionLabel, drawThrustLabels, labelStride,
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary, drawNotice, wrapText,
-  drawJointCell, APPLIED_FORCE_COLOUR,
+  drawJointCell, drawEquilibriumTriangle, APPLIED_FORCE_COLOUR,
 } from './render/draw.js';
 import { bounds, area as signedAreaOf, piecesOf } from './core/geometry.js';
 import {
@@ -111,6 +111,7 @@ const ui = {
   forceConstruction: el('forceConstruction'),
   forceConstructionStep: el('forceConstructionStep'),
   forceConstructionStatus: el('forceConstructionStatus'),
+  showEquilibrium: el('showEquilibrium'),
   showCable2: el('showCable2'), cableWeights: el('cableWeights'),
   thrustWidth: el('thrustWidth'),
   imposeEnds: el('imposeEnds'), pickA: el('pickA'), pickB: el('pickB'),
@@ -2242,6 +2243,15 @@ function draw() {
     if (!progress || progress.trialSegments > 0) {
       drawThrustConstructionNote(preliminary);
     }
+  }
+  if (ui.showEquilibrium.checked && state.fp && state.ends.construction) {
+    drawEquilibriumTriangle(mainAx, state.fp, {
+      block: 0,
+      construction: state.ends.construction,
+      trial: Boolean(progress && !progress.correctionVisible),
+      loadKinds: state.seq ? state.seq.kind : null,
+      title: 'Block 1 equilibrium',
+    });
   }
   if (state.ends.A || state.ends.B) drawEnds(mainAx, state.ends.A, state.ends.B);
   drawSupports(mainAx, m.pointA, m.pointB);
@@ -5547,6 +5557,7 @@ for (const f of [ui.ringRi, ui.ringN]) {
 ui.addBlock.addEventListener('click', armBlock);
 ui.cableWeights.addEventListener('input', draw);
 ui.thrustWidth.addEventListener('input', draw);
+ui.showEquilibrium.addEventListener('change', draw);
 ui.forceConstructionStep.addEventListener('input', () => {
   state.constructionStep = Number(ui.forceConstructionStep.value) || 0;
   draw();

@@ -733,6 +733,12 @@ ul.forces button:hover { background: #f0e2e3; }
 }
 .plotbuild[hidden] { display: none; }
 .plotbuild label { white-space: nowrap; }
+.plotbuild .plotcheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.plotbuild .plotcheck input { margin: 0; }
 .plotbuild input[type="range"] { flex: 1 1 auto; min-width: 80px; }
 .plotbuild .reading {
   min-width: 148px;
