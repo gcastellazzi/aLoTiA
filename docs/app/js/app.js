@@ -7,6 +7,7 @@
 
 import { Axes } from './render/axes.js';
 import { drawScaleBar } from './render/scalebar.js';
+import { warpToQuad } from './render/warp.js';
 import {
   drawBlocks, drawThrustLine, drawCable, drawWeights, drawSupports,
   drawForcePolygon, drawArrow, drawReactionLabel, drawThrustLabels, labelStride,
@@ -2222,45 +2223,32 @@ function imagePerspectiveCorners(x, y, w, h) {
   };
 }
 
+/**
+ * The photograph on its quadrilateral.
+ *
+ * The rectification is a true projective map computed in `render/warp.js` and
+ * drawn as a single image, which is what keeps it free of the banding a
+ * strip-by-strip approximation cannot avoid. Where the pixels cannot be read
+ * back -- a photograph served from another origin taints the canvas -- there
+ * is nothing to sample, and the image is drawn on its own rectangle instead:
+ * unrectified, but visible and honest about it.
+ */
 function drawImageQuad(ctx, img, corners, alpha = 0.85) {
   const iw = img.naturalWidth || img.width;
   const ih = img.naturalHeight || img.height;
   if (!(iw > 0) || !(ih > 0)) return;
-  const strips = Math.max(24, Math.min(180, Math.round(ih / 8)));
+
+  const warped = warpToQuad(img, corners, { flipY: false });
   ctx.save();
   ctx.globalAlpha = alpha;
-  for (let i = 0; i < strips; i++) {
-    const t0 = i / strips;
-    const t1 = (i + 1) / strips;
-    const a = lerpPoint(corners.tl, corners.bl, t0);
-    const b = lerpPoint(corners.tr, corners.br, t0);
-    const d = lerpPoint(corners.tl, corners.bl, t1);
-    const sy = t0 * ih;
-    const sh = Math.max(1, (t1 - t0) * ih + 1);
-    const dx = b[0] - a[0];
-    const dy = b[1] - a[1];
-    const hx = d[0] - a[0];
-    const hy = d[1] - a[1];
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(a[0], a[1]);
-    ctx.lineTo(b[0], b[1]);
-    const c = lerpPoint(corners.tr, corners.br, t1);
-    ctx.lineTo(c[0], c[1]);
-    ctx.lineTo(d[0], d[1]);
-    ctx.closePath();
-    ctx.clip();
-    const base = ctx.getTransform();
-    ctx.setTransform(
-      base.a * dx / iw,
-      base.a * dy / iw,
-      base.d * hx / sh,
-      base.d * hy / sh,
-      base.a * a[0],
-      base.d * a[1],
-    );
-    ctx.drawImage(img, 0, sy, iw, sh, 0, 0, iw, sh);
-    ctx.restore();
+  if (warped) {
+    ctx.drawImage(warped.canvas, warped.x, warped.y, warped.w, warped.h);
+  } else {
+    const xs = [corners.tl[0], corners.tr[0], corners.br[0], corners.bl[0]];
+    const ys = [corners.tl[1], corners.tr[1], corners.br[1], corners.bl[1]];
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    ctx.drawImage(img, x, y, Math.max(...xs) - x, Math.max(...ys) - y);
   }
   ctx.restore();
 }
@@ -4666,8 +4654,12 @@ async function exportAbaqus() {
     const m = state.model;
     if (!m?.blocks?.length) throw new Error('no blocks to export');
     if (!state.lot) recompute();
+    const exportBlocks = blocksForAbaqusExport();
+    const exportThickness = assignedThicknesses();
     const text = abaqusInput(m, {
       solids: currentSolidsForExport(),
+      sections: exportBlocks,
+      thickness: exportThickness,
       supports: supportPointsForExport(),
       forces: state.forces,
       friction: 0.6,

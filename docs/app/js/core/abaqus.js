@@ -1,3 +1,5 @@
+import { area, piecesOf, signedArea } from './geometry.js';
+
 function key3(p) {
   return p.map((v) => Number(v).toPrecision(12)).join(',');
 }
@@ -31,7 +33,7 @@ function linesOf(list, perLine = 12) {
   return out;
 }
 
-function blockMesh(faces) {
+function tetBlockMesh(faces) {
   const nodes = [];
   const seen = new Map();
   const nodeId = (p) => {
@@ -64,8 +66,8 @@ function blockMesh(faces) {
     if (tetVolume(pts[0], pts[1], pts[2], pts[3]) < 0) {
       [ids[2], ids[3]] = [ids[3], ids[2]];
     }
-    elements.push(ids);
-    exterior.push(elements.length);
+    elements.push({ type: 'C3D4', ids });
+    exterior.push({ element: elements.length, side: 'S3' });
   };
 
   for (const face of faces) {
@@ -78,11 +80,257 @@ function blockMesh(faces) {
   }
 
   const volume = elements.reduce((sum, e) => {
-    const pts = e.map((id) => nodes[id - 1]);
+    const pts = e.ids.map((id) => nodes[id - 1]);
     return sum + Math.abs(tetVolume(pts[0], pts[1], pts[2], pts[3]));
   }, 0);
 
-  return { nodes, elements, exterior, volume };
+  return { nodes, elements, exterior, contact: exterior.slice(), volume };
+}
+
+
+/**
+ * Triangulating a voussoir outline, including the concave ones.
+ *
+ * THE BUG THIS REPLACES. The outline used to be triangulated as a fan from its
+ * first vertex: triangles (0, i, i+1) for every i. A fan is correct only for a
+ * CONVEX polygon. A voussoir cut radially from a traced profile is frequently
+ * not convex --- a re-entrant corner is enough --- and for those the fan
+ * produces triangles that lie partly outside the outline and, worse, some that
+ * are wound the other way. Extruded, an inverted triangle becomes a wedge of
+ * NEGATIVE volume, which is what Abaqus refuses with
+ * "The volume of N elements is zero, small, or negative".
+ *
+ * The old code took the absolute value of each triangle's area, so the total
+ * volume it reported came out plausible while the elements it wrote were
+ * unusable. Taking the modulus of a signed quantity is how the fault stayed
+ * invisible: the sign was the evidence.
+ *
+ * Ear clipping is correct for any simple polygon and costs nothing at these
+ * sizes --- a voussoir has tens of vertices, not thousands.
+ *
+ * @param {number[][]} pts  the outline, counter-clockwise, without a repeat
+ * @returns {number[][]} triples of indices into `pts`
+ */
+export function earClip(pts) {
+  const n = pts.length;
+  if (n < 3) return [];
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1])
+    - (a[1] - o[1]) * (b[0] - o[0]);
+
+  const inTriangle = (p, a, b, c) => {
+    const d1 = cross(a, b, p);
+    const d2 = cross(b, c, p);
+    const d3 = cross(c, a, p);
+    const neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+    const pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+    return !(neg && pos);
+  };
+
+  const idx = [...Array(n).keys()];
+  const out = [];
+  let guard = 0;
+  while (idx.length > 3 && guard++ < 4 * n) {
+    let clipped = false;
+    for (let k = 0; k < idx.length; k++) {
+      const i0 = idx[(k + idx.length - 1) % idx.length];
+      const i1 = idx[k];
+      const i2 = idx[(k + 1) % idx.length];
+      const a = pts[i0];
+      const b = pts[i1];
+      const c = pts[i2];
+      if (cross(a, b, c) <= 0) continue;            // reflex or degenerate
+      let clear = true;
+      for (const j of idx) {
+        if (j === i0 || j === i1 || j === i2) continue;
+        if (inTriangle(pts[j], a, b, c)) { clear = false; break; }
+      }
+      if (!clear) continue;
+      out.push([i0, i1, i2]);
+      idx.splice(k, 1);
+      clipped = true;
+      break;
+    }
+    // A self-intersecting or otherwise unclippable outline: fall back to the
+    // fan for what is left rather than looping, and let the volume check
+    // downstream reject anything it produces that is not usable.
+    if (!clipped) break;
+  }
+  if (idx.length >= 3) {
+    for (let i = 1; i + 1 < idx.length; i++) {
+      out.push([idx[0], idx[i], idx[i + 1]]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The signed volume of a C3D6 wedge, as Abaqus will compute it.
+ *
+ * A prism 1-2-3 / 4-5-6 splits into three tetrahedra. If the sum is negative
+ * the element is inside out and the two triangular faces must be exchanged;
+ * if it is nearly zero the element is degenerate and must not be written at
+ * all. Checking this here rather than trusting the construction is the point:
+ * the previous code trusted it and was wrong.
+ */
+export function wedgeVolume(p) {
+  const [a, b, c, d, e, f] = p;
+  return tetVolume(a, b, c, d) + tetVolume(b, c, d, e) + tetVolume(c, d, e, f);
+}
+
+/**
+ * Put a node where a support or a load acts, even when it acts off the block.
+ *
+ * A and B are picked on the drawing and need not land on a vertex --- and when
+ * an end is imposed outside the ring they need not land on the block at all.
+ * Attaching the boundary condition to whatever node happens to be nearest
+ * moves it, silently, by however far that is. Instead the point is projected
+ * onto the outline and the projection is inserted as a vertex, so a node
+ * exists exactly where the condition is applied.
+ *
+ * The point is left alone when it is already within `tol` of a vertex, since
+ * inserting a duplicate would make a zero-length edge and a degenerate
+ * element --- the very fault this file is otherwise fixing.
+ *
+ * @returns {{pts: number[][], inserted: boolean, distance: number}}
+ */
+export function insertOutlinePoint(pts, p, tol = 1e-9) {
+  if (!p || pts.length < 3) return { pts, inserted: false, distance: Infinity };
+
+  let best = { d: Infinity, at: -1, q: null };
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const vx = b[0] - a[0];
+    const vy = b[1] - a[1];
+    const len2 = vx * vx + vy * vy;
+    let t = len2 ? ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const q = [a[0] + t * vx, a[1] + t * vy];
+    const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d < best.d) best = { d, at: i, q, t };
+  }
+  if (best.at < 0) return { pts, inserted: false, distance: Infinity };
+
+  // Already a vertex, to within tolerance: nothing to insert.
+  for (const v of pts) {
+    if (Math.hypot(v[0] - best.q[0], v[1] - best.q[1]) <= tol) {
+      return { pts, inserted: false, distance: best.d };
+    }
+  }
+  const out = pts.slice();
+  out.splice(best.at + 1, 0, best.q);
+  return { pts: out, inserted: true, distance: best.d };
+}
+
+function profilePoints(poly) {
+  const pts = poly.x.map((x, i) => [x, poly.y[i]]);
+  return signedArea(poly) >= 0 ? pts : pts.slice().reverse();
+}
+
+function addNode(mesh, p) {
+  const key = key3(p);
+  if (mesh.seen.has(key)) return mesh.seen.get(key);
+  const id = mesh.nodes.length + 1;
+  mesh.seen.set(key, id);
+  mesh.nodes.push(p.slice());
+  return id;
+}
+
+function addWedge(mesh, ids, volume, sideLabels = []) {
+  mesh.elements.push({ type: 'C3D6', ids });
+  const e = mesh.elements.length;
+  mesh.exterior.push(
+    { element: e, side: 'S1' },
+    { element: e, side: 'S2' },
+    ...sideLabels.map((side) => ({ element: e, side })),
+  );
+  mesh.contact.push(...sideLabels.map((side) => ({ element: e, side })));
+  mesh.volume += volume;
+}
+
+function sectionBlockMesh(block, thickness = 1, opt = {}) {
+  const { anchors = [] } = opt;
+  const width = Math.max(Math.abs(Number(thickness) || 0), 1e-9);
+  const y0 = -width / 2;
+  const y1 = width / 2;
+  // The scale of the block, used to size every tolerance below relative to it
+  // rather than absolutely: a model in metres and the same model in
+  // millimetres must reject the same elements.
+  const xs = piecesOf(block).flatMap((q) => q.x);
+  const zs = piecesOf(block).flatMap((q) => q.y);
+  const span = Math.max(
+    Math.max(...xs) - Math.min(...xs),
+    Math.max(...zs) - Math.min(...zs),
+    1e-9,
+  );
+  const volumeFloor = span * span * width * 1e-10;
+  const mesh = {
+    nodes: [], seen: new Map(), elements: [], exterior: [], contact: [], volume: 0,
+  };
+
+  mesh.rejected = [];
+  for (const piece of piecesOf(block)) {
+    let pts = profilePoints(piece);
+    if (pts.length < 3) continue;
+
+    // A support or a load may act at a point that is not a vertex, and when an
+    // end is imposed outside the ring, not even on the block. Put a node there
+    // before the outline is triangulated, so that the condition is applied
+    // where it was asked for rather than at whatever node is nearest.
+    for (const p2 of anchors) {
+      const got = insertOutlinePoint(pts, p2, span * 1e-6);
+      pts = got.pts;
+    }
+
+    const front = pts.map(([x, z]) => addNode(mesh, [x, y0, z]));
+    const back = pts.map(([x, z]) => addNode(mesh, [x, y1, z]));
+    const pieceArea = area(piece);
+
+    // Ear clipping, not a fan: a fan is only correct for a convex outline and
+    // a voussoir need not be convex. See earClip.
+    const tris = earClip(pts);
+    const onEdge = new Set();
+    for (let i = 0; i < pts.length; i++) onEdge.add(`${i},${(i + 1) % pts.length}`);
+
+    for (const [i0, i1, i2] of tris) {
+      // The faces that lie on the outline of the piece, so that contact is
+      // declared on the real boundary and not on an internal cut.
+      const sides = [];
+      if (onEdge.has(`${i0},${i1}`)) sides.push('S3');
+      if (onEdge.has(`${i1},${i2}`)) sides.push('S4');
+      if (onEdge.has(`${i2},${i0}`)) sides.push('S5');
+
+      const ids = [back[i0], back[i1], back[i2],
+        front[i0], front[i1], front[i2]];
+      let pts3 = ids.map((id) => mesh.nodes[id - 1]);
+      let vol = wedgeVolume(pts3);
+
+      // Inside out: exchange the two triangular faces rather than write an
+      // element Abaqus will reject.
+      if (vol < 0) {
+        ids.splice(0, 6, ids[3], ids[4], ids[5], ids[0], ids[1], ids[2]);
+        pts3 = ids.map((id) => mesh.nodes[id - 1]);
+        vol = wedgeVolume(pts3);
+      }
+      // Degenerate: three nodes in a line, or a piece of outline of no area.
+      if (!(vol > volumeFloor)) {
+        mesh.rejected.push({ ids: ids.slice(), volume: vol });
+        continue;
+      }
+      addWedge(mesh, ids, vol, sides);
+    }
+    if (!(mesh.volume > 0) && pieceArea > 0) mesh.volume += pieceArea * width;
+  }
+
+  delete mesh.seen;
+  return mesh;
+}
+
+function blockMesh(faces, opt = {}) {
+  if (opt.section) {
+    return sectionBlockMesh(opt.section, opt.thickness, { anchors: opt.anchors });
+  }
+  return tetBlockMesh(faces);
 }
 
 function lineNodeCandidates(mesh, point2d) {
@@ -135,20 +383,49 @@ function materialProps(system = 'SI') {
 
 export function abaqusInput(model, opt = {}) {
   const {
-    solids = [], supports = [], forces = { points: [], magnitudes: [] },
+    solids = [], sections = null, thickness = [], supports = [],
+    forces = { points: [], magnitudes: [] },
     friction = 0.6, system = 'SI', title = 'aLoTiA export',
   } = opt;
   if (!model?.blocks?.length || !solids.length) {
     throw new Error('no 3D blocks available to export');
   }
 
-  const meshes = solids.map(blockMesh);
+  // Every point at which a boundary condition or a load will be applied. Each
+  // block gets a node there if the point touches it, so a support imposed off
+  // the ring is still attached where it was asked for.
+  const out0 = [];
+  const anchors = [
+    ...supports.filter(Boolean),
+    ...(forces.points ?? []).filter(Boolean),
+  ];
+
+  const meshes = solids.map((faces, i) => blockMesh(faces, {
+    section: sections?.[i] ?? null,
+    thickness: thickness?.[i] ?? 1,
+    anchors,
+  }));
+
+  // NOTHING IS WRITTEN THAT THE SOLVER WILL REJECT. A degenerate wedge is
+  // dropped at construction, but silence would only move the surprise from
+  // here to the .dat file, so the count is reported to the caller.
+  const rejected = meshes.reduce((n, m) => n + (m.rejected?.length ?? 0), 0);
+  if (rejected) {
+    out0.push(`** ${rejected} degenerate element(s) were dropped: the outline `
+      + 'had zero-area regions or repeated vertices.');
+  }
+  if (!meshes.some((m) => m.elements.length)) {
+    throw new Error('every element came out degenerate; check the block outlines');
+  }
   const { elastic, gravity } = materialProps(system);
   const out = [];
+  out.push(...out0);
   out.push('*Heading');
   out.push(`** ${title}`);
   out.push('** Generated by aLoTiA. Units follow the active model unit system.');
   out.push('** X = arch horizontal coordinate, Y = out-of-plane depth, Z = vertical coordinate.');
+  out.push('** Barrel blocks are meshed by triangulating and extruding the 2D voussoir section as C3D6 wedges.');
+  out.push('** There is one solid element through the thickness.');
   out.push('*Preprint, echo=NO, model=NO, history=NO, contact=NO');
 
   meshes.forEach((mesh, i) => {
@@ -156,12 +433,21 @@ export function abaqusInput(model, opt = {}) {
     out.push(`*Part, name=${part}`);
     out.push('*Node');
     mesh.nodes.forEach((p, id) => out.push(`${id + 1}, ${fmt(p[0])}, ${fmt(p[1])}, ${fmt(p[2])}`));
-    out.push('*Element, type=C3D4');
-    mesh.elements.forEach((e, id) => out.push(`${id + 1}, ${e.join(', ')}`));
+    for (const type of ['C3D8', 'C3D6', 'C3D4']) {
+      const rows = mesh.elements
+        .map((e, id) => ({ ...e, id: id + 1 }))
+        .filter((e) => e.type === type);
+      if (!rows.length) continue;
+      out.push(`*Element, type=${type}`);
+      rows.forEach((e) => out.push(`${e.id}, ${e.ids.join(', ')}`));
+    }
     out.push(`*Elset, elset=${part}_ALL, generate`);
     out.push(`1, ${Math.max(1, mesh.elements.length)}, 1`);
     out.push(`*Surface, type=ELEMENT, name=${part}_EXTERIOR`);
-    mesh.exterior.forEach((id) => out.push(`${id}, S3`));
+    mesh.exterior.forEach(({ element, side }) => out.push(`${element}, ${side}`));
+    out.push(`*Surface, type=ELEMENT, name=${part}_CONTACT`);
+    (mesh.contact.length ? mesh.contact : mesh.exterior)
+      .forEach(({ element, side }) => out.push(`${element}, ${side}`));
     out.push(`*Solid Section, elset=${part}_ALL, material=STONE_${i + 1}`);
     out.push(',');
     out.push('*End Part');
@@ -214,7 +500,7 @@ export function abaqusInput(model, opt = {}) {
   out.push('** Explicit contact pairs between adjacent voussoirs.');
   for (let i = 0; i + 1 < meshes.length; i++) {
     out.push('*Contact Pair, interaction=STONE_FRICTION, type=SURFACE TO SURFACE');
-    out.push(`BLOCK_${i + 1}_I.BLOCK_${i + 1}_EXTERIOR, BLOCK_${i + 2}_I.BLOCK_${i + 2}_EXTERIOR`);
+    out.push(`BLOCK_${i + 1}_I.BLOCK_${i + 1}_CONTACT, BLOCK_${i + 2}_I.BLOCK_${i + 2}_CONTACT`);
   }
   out.push('** Cylindrical hinge lines: solid elements have translational DOFs only,');
   out.push('** so constraining the line nodes in U1-U3 leaves block rotation to contact kinematics.');
