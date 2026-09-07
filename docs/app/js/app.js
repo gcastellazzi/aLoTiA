@@ -12,7 +12,7 @@ import {
   drawForcePolygon, drawArrow, drawReactionLabel, drawThrustLabels, labelStride,
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary, drawNotice, wrapText,
-  drawJointCell,
+  drawJointCell, APPLIED_FORCE_COLOUR,
 } from './render/draw.js';
 import { bounds, area as signedAreaOf, piecesOf } from './core/geometry.js';
 import {
@@ -2145,7 +2145,11 @@ function draw() {
     }
   }
   if (ui.showWeights.checked && m.centroids && m.weights) {
-    drawWeights(mainAx, m.centroids, m.weights);
+    drawWeights(mainAx,
+      state.seq ? state.seq.centroids : m.centroids,
+      state.seq ? state.seq.weights : m.weights, {
+        kinds: state.seq ? state.seq.kind : null,
+      });
   }
   if (sideView() === 'radius' && state.ringAuto) drawRingStudyCurves();
   if (ui.showThrust.checked && state.lot && !constructing) {
@@ -2156,7 +2160,11 @@ function draw() {
       widthFactor: (Number(ui.thrustWidth.value) / 100) * 40,
     });
     if (ui.showConstruction.checked && ui.showRays.checked) {
-      drawThrustLabels(mainAx, state.lot.points, { stride: raysStride() });
+      drawThrustLabels(mainAx, state.lot.points, {
+        stride: raysStride(),
+        poleName: 'O',
+        overbar: true,
+      });
     }
   }
   if (ui.showReactions.checked && state.lot && state.fp) {
@@ -2193,18 +2201,43 @@ function draw() {
   }
   if (ui.showConstruction.checked && state.ends.construction) {
     const preliminary = state.ends.construction.preliminary.points;
-    if (progress) {
+    if (progress && constructing) {
       drawPreliminary(mainAx, preliminary, {
         segments: progress.trialSegments,
       });
+      if (ui.showRays.checked) {
+        drawThrustLabels(mainAx, preliminary, {
+          stride: raysStride(),
+          poleName: "O'",
+          overbar: true,
+          segments: progress.trialSegments,
+          colour: '#666',
+        });
+      }
       if (progress.finalSegments > 0 && state.lot) {
         drawThrustLine(mainAx, state.lot.points.slice(0, progress.finalSegments + 1),
           state.segForces?.slice(0, progress.finalSegments), {
             widthFactor: (Number(ui.thrustWidth.value) / 100) * 40,
           });
+        if (ui.showRays.checked) {
+          drawThrustLabels(mainAx, state.lot.points, {
+            stride: raysStride(),
+            poleName: 'O',
+            overbar: true,
+            segments: progress.finalSegments,
+          });
+        }
       }
     } else {
       drawPreliminary(mainAx, preliminary);
+      if (ui.showRays.checked) {
+        drawThrustLabels(mainAx, preliminary, {
+          stride: raysStride(),
+          poleName: "O'",
+          overbar: true,
+          colour: '#666',
+        });
+      }
     }
     if (!progress || progress.trialSegments > 0) {
       drawThrustConstructionNote(preliminary);
@@ -3095,10 +3128,10 @@ function drawForces() {
     f.points.forEach((p, i) => {
       const l = (Math.abs(f.magnitudes[i]) / max) * span;
       // Drawn arriving AT the point of application, which is where it acts.
-      drawArrow(mainAx, [p[0], p[1] + l], p, '#A2142F', 10);
+      drawArrow(mainAx, [p[0], p[1] + l], p, APPLIED_FORCE_COLOUR, 10);
       const [X, Y] = mainAx.toPx([p[0], p[1] + l]);
       c.font = 'bold 10px Helvetica, Arial, sans-serif';
-      c.fillStyle = '#A2142F';
+      c.fillStyle = APPLIED_FORCE_COLOUR;
       c.textAlign = 'left';
       c.textBaseline = 'bottom';
       c.fillText(`F${i + 1}`, X + 4, Y);

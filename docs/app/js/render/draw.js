@@ -14,6 +14,9 @@
 import { COLOR_ORDER } from './axes.js';
 import { piecesOf } from '../core/geometry.js';
 
+export const BLOCK_WEIGHT_COLOUR = '#c00';
+export const APPLIED_FORCE_COLOUR = '#0072BD';
+
 /** A deterministic light brick colour, so a block keeps its colour on redraw. */
 export function brickColour(index) {
   // Golden-angle hopping through the warm end of the wheel.
@@ -637,14 +640,18 @@ export function drawReactionLabel(ctx, x, y, name, value, opt = {}) {
 
 /** The weight of each block, as a downward arrow from its centroid. */
 export function drawWeights(ax, centroids, weights, opt = {}) {
-  const { scale = 1, colour = '#7a7a7a' } = opt;
+  const {
+    scale = 1, colour = BLOCK_WEIGHT_COLOUR, loadColour = APPLIED_FORCE_COLOUR,
+    kinds = null,
+  } = opt;
   if (!centroids || !weights) return;
   const maxW = Math.max(...weights.map(Math.abs)) || 1;
   const span = (ax.view.ymax - ax.view.ymin) * 0.12 * scale;
   ax.clipped(() => {
     centroids.forEach((g, k) => {
       const l = (Math.abs(weights[k]) / maxW) * span;
-      drawArrow(ax, g, [g[0], g[1] - l], colour, 7);
+      const tint = kinds && kinds[k] === 1 ? loadColour : colour;
+      drawArrow(ax, g, [g[0], g[1] - l], tint, 7);
     });
   });
 }
@@ -790,10 +797,13 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.textBaseline = 'bottom';
       c.fillText(reactionLabels?.H ?? 'H', (hx0 + hx1) / 2, hy0 - 5);
     }
-    // The load line, one arrow per vertical load. Added point forces share the
-    // same statics as block weights, but the colour keeps their origin visible.
-    for (let j = 0; j + 1 < stations.length; j++) {
-      const colour = loadKinds && loadKinds[j] === 1 ? '#0072BD' : '#c00';
+    // The load line, one arrow per vertical load. Load j lives between station
+    // j and station j+1; counted on the drawing from 1, that is arrow j+1.
+    // Added point forces share the same statics as block weights, but the
+    // colour keeps their origin visible.
+    for (let j = 0; j < fp.magnitudes.length; j++) {
+      const colour = loadKinds && loadKinds[j] === 1
+        ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
       drawArrow(ax, [0, stations[j]], [0, stations[j + 1]], colour, 8, 3);
     }
     // The corrected pole is introduced only after the ordinate correction when
@@ -910,14 +920,20 @@ export function drawPreliminary(ax, points, opt = {}) {
  * letter sits beside the line rather than on top of it.
  */
 export function drawThrustLabels(ax, points, opt = {}) {
-  const { stride = 1, colour = '#111' } = opt;
+  const {
+    stride = 1, colour = '#111', poleName = '', overbar = false,
+    segments = null,
+  } = opt;
   if (!points || points.length < 2) return;
+  const n = segments === null ? points.length - 1
+    : Math.max(0, Math.min(segments, points.length - 1));
+  if (n < 1) return;
   ax.clipped((c) => {
     c.font = '10px Helvetica, Arial, sans-serif';
     c.fillStyle = colour;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    for (let j = 0; j + 1 < points.length; j++) {
+    for (let j = 0; j < n; j++) {
       if (j % stride) continue;
       const [x0, y0] = ax.toPx(points[j]);
       const [x1, y1] = ax.toPx(points[j + 1]);
@@ -930,7 +946,7 @@ export function drawThrustLabels(ax, points, opt = {}) {
       // normal puts the letter on the upper side of a rising segment.
       const nx = -dy / len;
       const ny = dx / len;
-      const text = rayLabel(j);
+      const text = `${poleName}${rayLabel(j)}`;
       const X = mx + nx * 9;
       const Y = my + ny * 9;
       // A halo, or the letter disappears into the brickwork.
@@ -938,6 +954,15 @@ export function drawThrustLabels(ax, points, opt = {}) {
       c.strokeStyle = 'rgba(255,255,255,0.85)';
       c.strokeText(text, X, Y);
       c.fillText(text, X, Y);
+      if (overbar) {
+        const w = c.measureText(text).width;
+        c.strokeStyle = colour;
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(X - w / 2, Y - 7);
+        c.lineTo(X + w / 2, Y - 7);
+        c.stroke();
+      }
     }
   });
 }
