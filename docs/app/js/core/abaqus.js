@@ -56,6 +56,7 @@ function blockMesh(faces) {
   const centreId = nodeId(centre);
 
   const elements = [];
+  const exterior = [];
   const addTet = (tri) => {
     const ids = [centreId, ...tri.map(nodeId)];
     const pts = ids.map((id) => nodes[id - 1]);
@@ -64,6 +65,7 @@ function blockMesh(faces) {
       [ids[2], ids[3]] = [ids[3], ids[2]];
     }
     elements.push(ids);
+    exterior.push(elements.length);
   };
 
   for (const face of faces) {
@@ -80,7 +82,7 @@ function blockMesh(faces) {
     return sum + Math.abs(tetVolume(pts[0], pts[1], pts[2], pts[3]));
   }, 0);
 
-  return { nodes, elements, volume };
+  return { nodes, elements, exterior, volume };
 }
 
 function lineNodeCandidates(mesh, point2d) {
@@ -158,6 +160,8 @@ export function abaqusInput(model, opt = {}) {
     mesh.elements.forEach((e, id) => out.push(`${id + 1}, ${e.join(', ')}`));
     out.push(`*Elset, elset=${part}_ALL, generate`);
     out.push(`1, ${Math.max(1, mesh.elements.length)}, 1`);
+    out.push(`*Surface, type=ELEMENT, name=${part}_EXTERIOR`);
+    mesh.exterior.forEach((id) => out.push(`${id}, S3`));
     out.push(`*Solid Section, elset=${part}_ALL, material=STONE_${i + 1}`);
     out.push(',');
     out.push('*End Part');
@@ -207,10 +211,11 @@ export function abaqusInput(model, opt = {}) {
   out.push('*Step, name=Gravity_and_applied_loads, nlgeom=YES, inc=1000');
   out.push('*Dynamic, application=QUASI-STATIC');
   out.push('0.01, 1., 1e-08, 0.05');
-  out.push('*Contact, op=NEW');
-  out.push('*Contact Inclusions, ALL EXTERIOR');
-  out.push('*Contact Property Assignment');
-  out.push(', , STONE_FRICTION');
+  out.push('** Explicit contact pairs between adjacent voussoirs.');
+  for (let i = 0; i + 1 < meshes.length; i++) {
+    out.push('*Contact Pair, interaction=STONE_FRICTION, type=SURFACE TO SURFACE');
+    out.push(`BLOCK_${i + 1}_I.BLOCK_${i + 1}_EXTERIOR, BLOCK_${i + 2}_I.BLOCK_${i + 2}_EXTERIOR`);
+  }
   out.push('** Cylindrical hinge lines: solid elements have translational DOFs only,');
   out.push('** so constraining the line nodes in U1-U3 leaves block rotation to contact kinematics.');
   supportSets.forEach((sets, si) => {

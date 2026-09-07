@@ -4482,10 +4482,73 @@ function drawSolidGroupLegend(groups) {
   c.restore();
 }
 
+function pointOnSegmentFraction(p, a, b, tol) {
+  const vx = b[0] - a[0];
+  const vy = b[1] - a[1];
+  const len2 = vx * vx + vy * vy;
+  if (!(len2 > 0)) return null;
+  const t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / len2;
+  if (t < -tol || t > 1 + tol) return null;
+  const q = [a[0] + t * vx, a[1] + t * vy];
+  const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+  return d <= tol * Math.sqrt(len2) ? Math.max(0, Math.min(1, t)) : null;
+}
+
+function splitPolygonAtPoints(poly, points) {
+  const out = { x: [], y: [] };
+  const n = poly?.x?.length ?? 0;
+  if (n < 3) return poly;
+  const scale = Math.hypot(
+    Math.max(...poly.x) - Math.min(...poly.x),
+    Math.max(...poly.y) - Math.min(...poly.y),
+  ) || 1;
+  const tol = 1e-7;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const a = [poly.x[i], poly.y[i]];
+    const b = [poly.x[j], poly.y[j]];
+    out.x.push(a[0]);
+    out.y.push(a[1]);
+    const hits = [];
+    for (const p of points) {
+      const t = pointOnSegmentFraction(p, a, b, tol);
+      if (t === null || t <= tol || t >= 1 - tol) continue;
+      hits.push({ t, p: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t] });
+    }
+    hits
+      .sort((u, v) => u.t - v.t)
+      .forEach(({ p }) => {
+        const last = [out.x[out.x.length - 1], out.y[out.y.length - 1]];
+        if (Math.hypot(last[0] - p[0], last[1] - p[1]) <= scale * tol) return;
+        out.x.push(p[0]);
+        out.y.push(p[1]);
+      });
+  }
+  return out;
+}
+
+function splitBlockAtSupportPoints(block, points) {
+  if (!points.length) return block;
+  if (block?.pieces) {
+    return {
+      ...block,
+      pieces: block.pieces.map((p) => splitPolygonAtPoints(p, points)),
+    };
+  }
+  return splitPolygonAtPoints(block, points);
+}
+
+function blocksForAbaqusExport() {
+  const m = state.model;
+  if (!m?.blocks?.length) return [];
+  const supports = supportPointsForExport();
+  return m.blocks.map((block) => splitBlockAtSupportPoints(block, supports));
+}
+
 function currentSolidsForExport() {
   const m = state.model;
   const dome = domeOptions();
-  return solids(m.blocks, {
+  return solids(blocksForAbaqusExport(), {
     poleni: dome.poleni,
     axisX: dome.axisX,
     angleDeg: dome.angleDeg,
