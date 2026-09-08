@@ -62,11 +62,15 @@ export const TOUCH = 0.02;
  */
 export const SEARCH = { grid: 15, rounds: 2 };
 
+function verticalLoad(load) {
+  return Array.isArray(load) ? Number(load[1]) || 0 : Number(load) || 0;
+}
+
 export function bestLineForThrust(seq, joints, thrust, opt = {}) {
   const { grid = SEARCH.grid, rounds = SEARCH.rounds } = opt;
   if (!joints || joints.length < 2 || !seq.weights.length) return null;
 
-  const total = seq.weights.reduce((a, b) => a + b, 0);
+  const total = seq.weights.reduce((a, b) => a + verticalLoad(b), 0);
   if (!(total > 0)) return null;
 
   const mid = (j) => (j.a[0] + j.b[0]) / 2;
@@ -77,7 +81,7 @@ export function bestLineForThrust(seq, joints, thrust, opt = {}) {
 
   const evaluate = (s, split) => {
     const fp = forcePolygon(seq.weights, [total * thrust, -total * split]);
-    const lot = freeThrustLine(fp, seq.centroids, startJoint, endJoint, s);
+    const lot = freeThrustLine(fp, seq.centroids, startJoint, endJoint, s, seq.actionDirs);
     if (!lot.points || lot.points.length < 2) return null;
     const crossings = jointCrossings(lot.points, joints);
     let clearance = Infinity;
@@ -288,14 +292,15 @@ export function lineWithFrozenBranch(seq, joints, frozen, thrust, opt = {}) {
 
   const weights = kept.map((i) => seq.weights[i]);
   const centroids = kept.map((i) => seq.centroids[i]);
-  const total = weights.reduce((a, b) => a + b, 0);
+  const actionDirs = seq.actionDirs ? kept.map((i) => seq.actionDirs[i]) : null;
+  const total = weights.reduce((a, b) => a + verticalLoad(b), 0);
   const P = nearFirst ? opposite : frozen.point;
   const Q = nearFirst ? frozen.point : opposite;
   const pole = poleForEnds(weights, centroids, P, Q,
-    Math.abs(thrust) * total, opt.trialOrdinate);
+    Math.abs(thrust) * total, opt.trialOrdinate, actionDirs);
   if (!pole) return null;
   const fp = forcePolygon(weights, pole.pole);
-  const free = funicular(fp, centroids, P, Q);
+  const free = funicular(fp, centroids, P, Q, actionDirs);
   if (!free.points || free.points.length < 2) return null;
   const points = nearFirst
     ? [...free.points, ...frozen.points.slice(1)]

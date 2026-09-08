@@ -201,6 +201,17 @@ test('a force is merged into the sequence at its own station', () => {
   assert.deepEqual(m.centroids[1], [2.5, 4]);
 });
 
+test('an inclined force carries horizontal and vertical components', () => {
+  const m = blocksLike(threeBlocks(), {
+    points: [[2.5, 4]], x: [3], magnitudes: [7],
+  });
+  assert.deepEqual(m.weights, [3, [3, 7], 2, 1]);
+  assert.deepEqual(m.actionDirs[1], [3, -7]);
+  const fp = forcePolygon(m.weights, [6, -6]);
+  assert.deepEqual(fp.stations[1], [0, -3]);
+  assert.deepEqual(fp.stations[2], [3, -10]);
+});
+
 test('a force carries no area and no thickness', () => {
   const m = blocksLike(threeBlocks(), { points: [[2.5, 4]], magnitudes: [7] });
   assert.equal(m.areas[1], 0);

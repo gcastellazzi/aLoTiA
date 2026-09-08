@@ -73,21 +73,32 @@ export function applyOrder(arr, order) {
 /**
  * Merge blocks and applied point forces into one sequence, "blocks_like".
  *
- * A force is carried as a block with no area and no outline, whose weight is
- * the force magnitude and whose centroid is its point of application. From
- * the funicular construction's point of view the two are the same thing: a
- * vertical load at a station, and it is much simpler to treat them alike than
- * to special-case forces later.
+ * A force is carried as a block with no area and no outline. A scalar
+ * magnitude remains a vertical load; a pair [Fx, Fy] is a general force with
+ * Fy positive downward, matching the UI.
  *
  * @param {object} blocks   {centroids, weights, areas, thickness}
  * @param {object} forces   {points: [[x,y],...], magnitudes: [...]}
  * @returns {object} merged and already sorted, with `kind` 0 block / 1 force
  */
 export function blocksLike(blocks, forces = { points: [], magnitudes: [] }) {
+  const forceLoads = (forces.magnitudes ?? []).map((mag, i) => {
+    if (Array.isArray(mag)) return [Number(mag[0]) || 0, Number(mag[1]) || 0];
+    const fx = Number(forces.x?.[i] ?? 0) || 0;
+    const fy = Number(mag) || 0;
+    return fx ? [fx, fy] : fy;
+  });
   const centroids = [...blocks.centroids, ...forces.points];
-  const weights = [...blocks.weights, ...forces.magnitudes];
+  const weights = [...blocks.weights, ...forceLoads];
   const areas = [...blocks.areas, ...forces.points.map(() => 0)];
   const thickness = [...blocks.thickness, ...forces.points.map(() => 0)];
+  const actionDirs = [
+    ...blocks.centroids.map(() => [0, 1]),
+    ...forceLoads.map((load) => {
+      if (!Array.isArray(load)) return [0, 1];
+      return [load[0], -load[1]];
+    }),
+  ];
   const kind = [
     ...blocks.centroids.map(() => 0),
     ...forces.points.map(() => 1),
@@ -99,6 +110,7 @@ export function blocksLike(blocks, forces = { points: [], magnitudes: [] }) {
     weights: applyOrder(weights, order),
     areas: applyOrder(areas, order),
     thickness: applyOrder(thickness, order),
+    actionDirs: applyOrder(actionDirs, order),
     kind: applyOrder(kind, order),
     order,
   };
@@ -151,6 +163,7 @@ export function betweenEnds(seq, A, B) {
     weights: pick(seq.weights),
     areas: pick(seq.areas),
     thickness: pick(seq.thickness),
+    actionDirs: seq.actionDirs ? pick(seq.actionDirs) : undefined,
     kind: seq.kind ? pick(seq.kind) : undefined,
     order: seq.order,
     kept,

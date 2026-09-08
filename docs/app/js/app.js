@@ -149,10 +149,12 @@ const ui = {
   gammaTarget: el('gammaTarget'), thickTarget: el('thickTarget'),
   clearTarget: el('clearTarget'), clearBlocks: el('clearBlocks'),
   groupStatus: el('groupStatus'),
-  forceMag: el('forceMag'), forceLabel: el('forceLabel'),
+  forceMag: el('forceMag'), forceMagX: el('forceMagX'),
+  forceLabel: el('forceLabel'), forceLabelX: el('forceLabelX'),
   addForce: el('addForce'), clearForces: el('clearForces'),
   forceList: el('forceList'),
   exportAbaqus: el('exportAbaqus'),
+  abaqusRefine: el('abaqusRefine'),
   system: el('system'), pickRef: el('pickRef'), refLength: el('refLength'),
   applyScale: el('applyScale'), scaleStatus: el('scaleStatus'),
 };
@@ -228,7 +230,7 @@ const state = {
   ref: { points: [], picking: false },
   system: 'SI',
   // Applied point loads: where they act, how big, and whether we are placing.
-  forces: { points: [], magnitudes: [], bases: [], placing: false },
+  forces: { points: [], magnitudes: [], x: [], bases: [], placing: false },
 };
 
 const GROUP_COLOURS = [
@@ -1158,7 +1160,7 @@ function newWork() {
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   clearThreePointRing();
   state.profiles = { list: [], current: null, centre: null, picking: false };
-  state.forces = { points: [], magnitudes: [], bases: [], placing: false };
+  state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
   state.ends = { A: null, B: null, picking: null, construction: null };
   state.ref = { points: [], picking: false };
   state.newBlock = null;
@@ -1263,7 +1265,7 @@ async function loadExample(file) {
     setImagePerspective(0, 0);
     state.trace = { inner: [], outer: [], armed: null, cursor: null };
     clearThreePointRing();
-    state.forces = { points: [], magnitudes: [], bases: [], placing: false };
+    state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
     appendLog(`Failed to load example ${file}: ${err.message}`);
     assessAdmissibility();
     reportMechanism();
@@ -1302,7 +1304,7 @@ async function loadExample(file) {
 
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   clearThreePointRing();
-  state.forces = { points: [], magnitudes: [], bases: [], placing: false };
+  state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
   // The collapse band belongs to the arch that was on screen, not to this one.
   // The signature guard recomputes it for another arch WITH joints, but an
   // arch without them never reaches that branch and inherited the last band
@@ -1415,8 +1417,32 @@ function endJoints() {
 /** The total load, blocks and applied forces together. */
 function totalLoad() {
   const w = (state.model?.weights ?? []).reduce((s, v) => s + v, 0);
-  const f = (state.forces?.magnitudes ?? []).reduce((s, v) => s + v, 0);
+  const f = (state.forces?.magnitudes ?? []).reduce((s, v) => s + forceY(v), 0);
   return w + f;
+}
+
+function forceX(forceOrIndex, maybeIndex = null) {
+  if (Array.isArray(forceOrIndex)) return Number(forceOrIndex[0]) || 0;
+  if (maybeIndex !== null) return Number(forceOrIndex?.x?.[maybeIndex] ?? 0) || 0;
+  return 0;
+}
+
+function forceY(forceOrValue) {
+  return Array.isArray(forceOrValue)
+    ? Number(forceOrValue[1]) || 0
+    : Number(forceOrValue) || 0;
+}
+
+function forceMag2(fx, fy) {
+  return Math.hypot(Number(fx) || 0, Number(fy) || 0);
+}
+
+function forceComponents(f, i) {
+  const raw = f?.magnitudes?.[i] ?? 0;
+  return {
+    x: Array.isArray(raw) ? forceX(raw) : forceX(f, i),
+    y: forceY(raw),
+  };
 }
 
 /** Say where the line leaves one springing and where it arrives at the other. */
@@ -1804,12 +1830,12 @@ function recompute() {
     // of freedom having been spent on the two points -- and the demanded
     // thrust is held inside it.
     const solveAt = (f) => {
-      const total = span.weights.reduce((a, b) => a + b, 0);
+      const total = span.weights.reduce((a, b) => a + forceY(b), 0);
       const g = poleForEnds(span.weights, span.centroids, P, Q,
-        total * f, pole[1]);
+        total * f, pole[1], span.actionDirs);
       if (!g) return null;
       const fpTry = forcePolygon(span.weights, g.pole);
-      const lotTry = funicular(fpTry, span.centroids, P, Q);
+      const lotTry = funicular(fpTry, span.centroids, P, Q, span.actionDirs);
       return { g, fp: fpTry, lot: lotTry,
         // An arch with both ends imposed need not have joints at all: a pier
         // and a course drawn beside a ring are not a chain. The construction
@@ -1818,12 +1844,12 @@ function recompute() {
         crossings: jointCrossings(lotTry.points, m.joints ?? []) };
     };
     const first = span.weights.length
-      ? poleForEnds(span.weights, span.centroids, P, Q, pole[0], pole[1])
+      ? poleForEnds(span.weights, span.centroids, P, Q, pole[0], pole[1], span.actionDirs)
       : null;
     let solved = null;
     if (first) {
       const fpTry = forcePolygon(span.weights, first.pole);
-      const lotTry = funicular(fpTry, span.centroids, P, Q);
+      const lotTry = funicular(fpTry, span.centroids, P, Q, span.actionDirs);
       solved = {
         g: first,
         fp: fpTry,
@@ -1839,7 +1865,7 @@ function recompute() {
     // the interior hinge, which is the case that was reported.
     const mechActive = ui.mechOn.checked || ui.showMech.checked;
     if (solved && mechActive && span.weights.length) {
-      const total = span.weights.reduce((a, b) => a + b, 0);
+      const total = span.weights.reduce((a, b) => a + forceY(b), 0);
       const key = `imposed:${span.kept.length}:${total.toPrecision(12)}:`
         + `${P.map((v) => v.toFixed(4))}:${Q.map((v) => v.toFixed(4))}`;
       if (state.imposedKey !== key) {
@@ -1896,12 +1922,12 @@ function recompute() {
     // springings, exactly as the theory says it should.
     state.startFraction = Number(ui.startPos.value) / 100;
     state.lot = freeThrustLine(state.fp, seq.centroids,
-      ends.start, ends.end, state.startFraction);
+      ends.start, ends.end, state.startFraction, seq.actionDirs);
     state.endFraction = state.lot.endFraction;
   } else if (m.pointA && m.pointB) {
     state.startFraction = null;
     state.endFraction = null;
-    state.lot = funicular(state.fp, seq.centroids, m.pointB, m.pointA);
+    state.lot = funicular(state.fp, seq.centroids, m.pointB, m.pointA, seq.actionDirs);
   } else {
     // Neither joints for the ends to slide along nor stored springings to pin
     // them to. The force polygon is still right and is drawn; the line needs
@@ -2030,8 +2056,9 @@ function fitViews() {
 function fitForceView() {
   if (!state.fp) return;
   forceAx.syncSize();
-  const xs = [0, state.fp.pole[0]];
-  const ys = [...state.fp.stations, state.fp.pole[1]];
+  const pts = forceStationPoints(state.fp);
+  const xs = [state.fp.pole[0], ...pts.map((p) => p[0])];
+  const ys = [state.fp.pole[1], ...pts.map((p) => p[1])];
   if (state.ends.construction?.trial) {
     xs.push(state.ends.construction.trial[0]);
     ys.push(state.ends.construction.trial[1]);
@@ -2041,6 +2068,14 @@ function fitForceView() {
     ymin: Math.min(...ys), ymax: Math.max(...ys),
   }, 0.12);
   panForcePolygonLeft();
+}
+
+function forceStationPoint(s) {
+  return Array.isArray(s) ? s : [0, s];
+}
+
+function forceStationPoints(fp) {
+  return (fp?.stations ?? []).map(forceStationPoint);
 }
 
 function panForcePolygonLeft() {
@@ -2551,11 +2586,11 @@ function formatRadiusY(value, scaled) {
 function reactionForces() {
   const fp = state.fp;
   if (!fp || !fp.stations || !fp.stations.length) return null;
-  const top = fp.stations[0];
-  const bottom = fp.stations[fp.stations.length - 1];
+  const top = forceStationPoint(fp.stations[0]);
+  const bottom = forceStationPoint(fp.stations[fp.stations.length - 1]);
   return {
-    RB: Math.hypot(fp.pole[0], top - fp.pole[1]),
-    RA: Math.hypot(fp.pole[0], bottom - fp.pole[1]),
+    RB: Math.hypot(top[0] - fp.pole[0], top[1] - fp.pole[1]),
+    RA: Math.hypot(bottom[0] - fp.pole[0], bottom[1] - fp.pole[1]),
     H: fp.thrust,
   };
 }
@@ -3335,14 +3370,22 @@ function selectEquilibriumBlockAt(ax, e) {
 function drawForces() {
   const f = state.forces;
   if (!f.points.length) return;
-  const max = Math.max(...f.magnitudes.map(Math.abs), 1);
+  const max = Math.max(...f.magnitudes.map((_, i) => {
+    const v = forceComponents(f, i);
+    return forceMag2(v.x, v.y);
+  }), 1);
   const span = (mainAx.view.ymax - mainAx.view.ymin) * 0.16;
   mainAx.clipped((c) => {
     f.points.forEach((p, i) => {
-      const l = (Math.abs(f.magnitudes[i]) / max) * span;
+      const v = forceComponents(f, i);
+      const mag = forceMag2(v.x, v.y);
+      if (!(mag > 0)) return;
+      const l = (mag / max) * span;
+      const dir = [v.x / mag, -v.y / mag];
       // Drawn arriving AT the point of application, which is where it acts.
-      drawArrow(mainAx, [p[0], p[1] + l], p, APPLIED_FORCE_COLOUR, 10);
-      const [X, Y] = mainAx.toPx([p[0], p[1] + l]);
+      const start = [p[0] - dir[0] * l, p[1] - dir[1] * l];
+      drawArrow(mainAx, start, p, APPLIED_FORCE_COLOUR, 10);
+      const [X, Y] = mainAx.toPx(start);
       c.font = 'bold 10px Helvetica, Arial, sans-serif';
       c.fillStyle = APPLIED_FORCE_COLOUR;
       c.textAlign = 'left';
@@ -3365,12 +3408,18 @@ function armForce() {
 }
 
 function ensureForceBases() {
-  const f = state.forces ?? { points: [], magnitudes: [], bases: [] };
+  const f = state.forces ?? { points: [], magnitudes: [], x: [], bases: [] };
+  f.x = Array.isArray(f.x) ? f.x : [];
   f.bases = Array.isArray(f.bases) ? f.bases : [];
   f.magnitudes.forEach((mag, i) => {
-    if (!(f.bases[i] > 0)) f.bases[i] = mag;
+    const v = forceComponents(f, i);
+    if (f.bases[i] === undefined) f.bases[i] = [v.x, v.y];
+    if (!Array.isArray(f.bases[i])) f.bases[i] = [0, Number(f.bases[i]) || 0];
+    f.x[i] = v.x;
+    f.magnitudes[i] = v.y;
   });
   f.bases = f.bases.slice(0, f.magnitudes.length);
+  f.x = f.x.slice(0, f.magnitudes.length);
   state.forces = { placing: false, ...f };
   return state.forces;
 }
@@ -3385,9 +3434,10 @@ function listForces() {
     row.className = 'force-row';
     const text = document.createElement('span');
     const writeText = () => {
-      const mag = scaled ? format(f.magnitudes[i], 'force', state.system)
-        : `${f.magnitudes[i].toPrecision(4)}`;
-      text.textContent = `F${i + 1}  ${mag}  at x = ${p[0].toPrecision(4)}`;
+      const v = forceComponents(f, i);
+      const fx = scaled ? format(v.x, 'force', state.system) : `${v.x.toPrecision(4)}`;
+      const fy = scaled ? format(v.y, 'force', state.system) : `${v.y.toPrecision(4)}`;
+      text.textContent = `F${i + 1}  X ${fx}  Y ${fy}  at x = ${p[0].toPrecision(4)}`;
     };
     writeText();
     const del = document.createElement('button');
@@ -3395,6 +3445,7 @@ function listForces() {
     del.addEventListener('click', () => {
       f.points.splice(i, 1);
       f.magnitudes.splice(i, 1);
+      f.x.splice(i, 1);
       f.bases.splice(i, 1);
       listForces();
       recompute();
@@ -3404,6 +3455,31 @@ function listForces() {
     row.append(text, del);
     li.append(row);
 
+    const componentRow = document.createElement('div');
+    componentRow.className = 'force-components';
+    const xInput = document.createElement('input');
+    xInput.type = 'number';
+    xInput.step = '1';
+    xInput.value = String(forceComponents(f, i).x);
+    const yInput = document.createElement('input');
+    yInput.type = 'number';
+    yInput.step = '1';
+    yInput.value = String(forceComponents(f, i).y);
+    const updateComponents = () => {
+      f.x[i] = Number(xInput.value) || 0;
+      f.magnitudes[i] = Number(yInput.value) || 0;
+      f.bases[i] = [f.x[i], f.magnitudes[i]];
+      writeText();
+      listForces();
+      recompute();
+      fitForceView();
+      draw();
+    };
+    xInput.addEventListener('change', updateComponents);
+    yInput.addEventListener('change', updateComponents);
+    componentRow.append('X ', xInput, ' Y ', yInput);
+    li.append(componentRow);
+
     const scaleRow = document.createElement('div');
     scaleRow.className = 'force-scale';
     const slider = document.createElement('input');
@@ -3411,14 +3487,18 @@ function listForces() {
     slider.min = '0.1';
     slider.max = '2';
     slider.step = '0.01';
-    const factor = f.bases[i] > 0 ? f.magnitudes[i] / f.bases[i] : 1;
+    const base = Array.isArray(f.bases[i]) ? f.bases[i] : [0, f.bases[i]];
+    const baseMag = forceMag2(base[0], base[1]);
+    const now = forceComponents(f, i);
+    const factor = baseMag > 0 ? forceMag2(now.x, now.y) / baseMag : 1;
     slider.value = String(Math.max(0.1, Math.min(2, factor)));
     const out = document.createElement('output');
     const writeOut = () => { out.textContent = `${Number(slider.value).toFixed(2)}×`; };
     writeOut();
     slider.addEventListener('input', () => {
       const k = Number(slider.value);
-      f.magnitudes[i] = f.bases[i] * k;
+      f.x[i] = (Number(base[0]) || 0) * k;
+      f.magnitudes[i] = (Number(base[1]) || 0) * k;
       writeText();
       writeOut();
       recompute();
@@ -3430,7 +3510,9 @@ function listForces() {
     ui.forceList.append(li);
   });
   ui.forceLabel.textContent =
-    `Magnitude ${SYSTEMS[state.system].force.label}`;
+    `Y ${SYSTEMS[state.system].force.label}`;
+  ui.forceLabelX.textContent =
+    `X ${SYSTEMS[state.system].force.label}`;
 }
 
 function drawReference() {
@@ -3602,7 +3684,7 @@ function scalePixelWorkspace(k, source) {
   }
   state.ref = state.ref ?? { points: [], picking: false };
   state.ref.points = scalePoints(state.ref.points, k);
-  state.forces = state.forces ?? { points: [], magnitudes: [], placing: false };
+  state.forces = state.forces ?? { points: [], magnitudes: [], x: [], placing: false };
   state.forces.points = scalePoints(state.forces.points, k);
   state.ends = state.ends ?? { A: null, B: null, picking: null, construction: null };
   state.ends.A = scaleMaybePoint(state.ends.A, k);
@@ -4649,6 +4731,12 @@ function abaqusFileName() {
   return `${base}.inp`;
 }
 
+/** The mesh density asked for in the panel, as the exporter wants it. */
+function abaqusRefinement() {
+  const across = Math.min(12, Math.max(2, Math.round(Number(ui.abaqusRefine?.value) || 3)));
+  return { across, along: Math.max(2, Math.round(across * 0.7)) };
+}
+
 async function exportAbaqus() {
   try {
     const m = state.model;
@@ -4661,6 +4749,13 @@ async function exportAbaqus() {
       sections: exportBlocks,
       thickness: exportThickness,
       supports: supportPointsForExport(),
+      // The joints, so that each contact pair is the two faces that actually
+      // abut rather than two whole outlines.
+      joints: m.joints ?? null,
+      // How finely each voussoir is divided. Across the ring thickness is
+      // where the gradient is, so that is what the control sets; along the
+      // arch follows it, and never drops below two either.
+      refine: abaqusRefinement(),
       forces: state.forces,
       friction: 0.6,
       system: state.system,
@@ -4829,7 +4924,7 @@ function generateRing(opt = {}) {
 
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   state.profiles = { list: [], current: null, centre: null, picking: false };
-  state.forces = { points: [], magnitudes: [], bases: [], placing: false };
+  state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
   state.image = null;
   state.imageData = null;
   state.ends = { A: null, B: null, picking: null, construction: null };
@@ -4913,7 +5008,7 @@ function generateThreePointRing() {
 
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   state.profiles = { list: [], current: null, centre: null, picking: false };
-  state.forces = { points: [], magnitudes: [], bases: [], placing: false };
+  state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
   state.ends = { A: null, B: null, picking: null, construction: null };
   state.model = {
     ...(state.model ?? {}),
@@ -5030,16 +5125,20 @@ function attachNavigation(ax) {
     // While a curve is armed, a click on the main axes adds a point instead
     // of starting a pan.
     if (ax === mainAx && state.forces.placing) {
-      const mag = Number(ui.forceMag.value);
+      const fx = Number(ui.forceMagX.value) || 0;
+      const fy = Number(ui.forceMag.value) || 0;
+      const mag = forceMag2(fx, fy);
       if (mag > 0) {
         const p = mainAx.toData([e.offsetX, e.offsetY]);
         state.forces.points.push(p);
-        state.forces.magnitudes.push(mag);
-        ensureForceBases().bases[state.forces.magnitudes.length - 1] = mag;
+        state.forces.x.push(fx);
+        state.forces.magnitudes.push(fy);
+        ensureForceBases().bases[state.forces.magnitudes.length - 1] = [fx, fy];
         listForces();
         recompute();
         fitForceView();
-        appendLog(`Added force ${format(mag, 'force', state.system)} `
+        appendLog(`Added force X ${format(fx, 'force', state.system)}, `
+          + `Y ${format(fy, 'force', state.system)} `
           + `at (${p[0].toPrecision(4)}, ${p[1].toPrecision(4)})`);
       }
       armForce();
@@ -5204,6 +5303,7 @@ ui.clearForces.addEventListener('click', () => {
   const n = state.forces.points.length;
   state.forces.points = [];
   state.forces.magnitudes = [];
+  state.forces.x = [];
   state.forces.bases = [];
   listForces();
   recompute();
@@ -5277,8 +5377,11 @@ ui.system.addEventListener('change', () => {
     state.forces = {
       ...forces,
       points: poly(forces.points),
+      x: (forces.x ?? []).map((v) => v * kF),
       magnitudes: (forces.magnitudes ?? []).map((v) => v * kF),
-      bases: (forces.bases ?? forces.magnitudes ?? []).map((v) => v * kF),
+      bases: (forces.bases ?? forces.magnitudes ?? []).map((v, i) => (Array.isArray(v)
+        ? [v[0] * kF, v[1] * kF]
+        : [(forces.x?.[i] ?? 0) * kF, v * kF])),
     };
     // BOTH coordinates of the pole are forces: the abscissa is the horizontal
     // thrust and the ordinate divides the total weight between the reactions.
@@ -5322,6 +5425,7 @@ ui.system.addEventListener('change', () => {
     field(ui.refLength, kL);
     field(ui.domeAxis, kL);
     field(ui.forceMag, kF);
+    field(ui.forceMagX, kF);
     if (state.model?.groups) {
       state.model.groups = state.model.groups.map((g) => ({
         ...g,
@@ -5525,8 +5629,9 @@ function contentBounds(ax) {
   }
   if (ax === forceAx) {
     if (!state.fp) return null;
-    const xs = [0, state.fp.pole[0]];
-    const ys = [...state.fp.stations, state.fp.pole[1]];
+    const pts = forceStationPoints(state.fp);
+    const xs = [state.fp.pole[0], ...pts.map((p) => p[0])];
+    const ys = [state.fp.pole[1], ...pts.map((p) => p[1])];
     if (state.ends.construction?.trial) {
       xs.push(state.ends.construction.trial[0]);
       ys.push(state.ends.construction.trial[1]);

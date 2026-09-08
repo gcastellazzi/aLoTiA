@@ -526,6 +526,23 @@ figure {
   color: #fff;
   font-weight: 600;
 }
+.viewtools label.inline {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+.viewtools label.inline input {
+  width: 44px;
+  padding: 1px 4px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #fff;
+}
 .viewtools .hint { margin: 0 0 0 4px; font-size: 11px; }
 .viewtools[hidden] { display: none; }
 
@@ -674,11 +691,19 @@ ul.forces li {
   color: var(--muted);
 }
 ul.forces .force-row,
+ul.forces .force-components,
 ul.forces .force-scale {
   display: flex; justify-content: space-between; align-items: center;
   gap: 6px;
 }
 ul.forces .force-row span { min-width: 0; }
+ul.forces .force-components input {
+  width: 72px;
+  padding: 2px 4px;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
 ul.forces .force-scale input[type="range"] {
   flex: 1 1 auto;
   min-width: 90px;

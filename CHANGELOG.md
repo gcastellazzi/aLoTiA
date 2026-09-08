@@ -5,6 +5,36 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### The Abaqus export
+
+Voussoirs are meshed as a structured grid rather than a pair of wedges, at
+least three elements across the ring thickness by two along the arch, with a
+further division at every traced vertex and at every point where a support or
+a load acts. A cell that comes out concave is split rather than dropped, and
+every element is checked on all eight of its corner Jacobians, not on its total
+volume alone --- a hexahedron can have a good volume and still be inside out at
+one corner, which is what Abaqus reports as a zero or negative volume.
+
+Contact is built on the joints. Each voussoir now offers only its two joint
+faces, as separate surfaces, and each contact pair is the two faces that
+actually abut, with a closing tolerance for a joint traced by hand. The whole
+outline used to be offered instead, which produced facets facing away from
+their pair, joints that never closed, and one negative eigenvalue per block
+left free. Where a joint genuinely cannot be identified, only that joint falls
+back, and the deck says which.
+
+Nodes no element uses are dropped and the rest renumbered. A cell thrown out
+for being degenerate used to leave its corners behind; Abaqus deletes an
+unconnected node, and a support set built on one then has no members, which is
+fatal --- "a boundary condition has been specified on node set ... but this
+node set is not active in the model".
+
+Each voussoir is divided along the arch in proportion to its own shape, so the
+cells come out roughly square. Two by two on a block three times longer than it
+is thick gives cells of aspect three, and a skewed cell of aspect three is a
+distorted element. The mesh density is set from the panel, beside the export
+button.
+
 ## [1.1.0] — 2026-09-02
 
 Interactive graphical statics of masonry arches in the browser, as plain ES

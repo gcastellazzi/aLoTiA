@@ -47,12 +47,16 @@ export function serialise(state, controls = {}, imageName = null) {
   const m = state.model ?? {};
   const forceBases = state.forces?.bases;
   const forceMagnitudes = state.forces?.magnitudes ?? [];
+  const forceX = state.forces?.x ?? [];
   const forces = state.forces
     ? {
       points: points(state.forces.points),
+      ...(forceX.some((v) => Number(v) !== 0) ? { x: numbers(forceX) } : {}),
       magnitudes: numbers(forceMagnitudes),
       ...(forceBases?.length === forceMagnitudes.length && forceBases.length
-        ? { bases: numbers(forceBases) } : {}),
+        ? { bases: forceBases.map((v, i) => (Array.isArray(v)
+          ? numbers(v)
+          : [Number(forceX[i] ?? 0), Number(v)])) } : {}),
     }
     : null;
   return {
@@ -215,6 +219,9 @@ export function deserialise(text) {
   if (f && (f.points ?? []).length !== (f.magnitudes ?? []).length) {
     throw new Error('the file has a force without a magnitude, or the reverse');
   }
+  if (Array.isArray(f?.x) && f.x.length && f.x.length !== (f.magnitudes ?? []).length) {
+    throw new Error('the file has a horizontal force component without a vertical component, or the reverse');
+  }
   if (Array.isArray(f?.bases) && f.bases.length
     && f.bases.length !== (f.magnitudes ?? []).length) {
     throw new Error('the file has a force base without a magnitude, or the reverse');
@@ -241,7 +248,12 @@ export function deserialise(text) {
         thrustLine: null,
       }
       : null,
-    forces: f ?? { points: [], magnitudes: [] },
+    forces: f
+      ? {
+        ...f,
+        ...(Array.isArray(f.x) && f.x.length ? { x: numbers(f.x) } : {}),
+      }
+      : { points: [], magnitudes: [] },
     // Older files carry no ends at all, and must still open.
     ends: data.ends
       ? { A: data.ends.A ?? null, B: data.ends.B ?? null, imposed: !!data.ends.imposed }

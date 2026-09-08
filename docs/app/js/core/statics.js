@@ -34,24 +34,34 @@ import { distance, lineIntersection } from './geometry.js';
  * so that magnitudes[j][2] === magnitudes[j-1][1]. The horizontal component of
  * every ray is the same, and equals the horizontal thrust.
  *
- * @param {number[]} weights  in the sorted order of blocksLike
+ * @param {Array<number|number[]>} weights  in the sorted order of blocksLike.
+ *        A number is a vertical downward load. A pair is [Fx, Fy], with Fy
+ *        positive downward in the UI and stored state.
  * @param {number[]} pole     [xO, yO]
  */
 export function forcePolygon(weights, pole) {
   const [xO, yO] = pole;
   const n = weights.length;
 
-  // Divisions of the load line: y0 = 0, then running down by each weight.
-  const stations = [0];
-  for (let j = 0; j < n; j++) stations.push(stations[j] - weights[j]);
+  const loadVector = (load) => (Array.isArray(load)
+    ? [Number(load[0]) || 0, -(Number(load[1]) || 0)]
+    : [0, -(Number(load) || 0)]);
+
+  // Divisions of the load line. With purely vertical loads this is the old
+  // x = 0 line; with inclined applied forces it becomes the force polygon.
+  const stations = [[0, 0]];
+  for (let j = 0; j < n; j++) {
+    const v = loadVector(weights[j]);
+    stations.push([stations[j][0] + v[0], stations[j][1] + v[1]]);
+  }
 
   const magnitudes = [];
   const rays = [];
   for (let j = 0; j < n; j++) {
-    const above = [0, stations[j]];
-    const below = [0, stations[j + 1]];
+    const above = stations[j];
+    const below = stations[j + 1];
     magnitudes.push([
-      weights[j],
+      distance(above, below),
       distance(pole, below),
       distance(pole, above),
     ]);
@@ -61,7 +71,7 @@ export function forcePolygon(weights, pole) {
   }
   // One more ray, to the division below the last block: it carries the
   // closing segment of the funicular into the far springing.
-  const last = [0, stations[n]];
+  const last = stations[n];
   rays.push([last[0] - xO, last[1] - yO]);
 
   return { stations, magnitudes, rays, thrust: Math.abs(xO), pole };
@@ -80,7 +90,7 @@ export function forcePolygon(weights, pole) {
  * @param {number[]} end     the other springing, [x, y]
  * @returns {{points: number[][], closed: boolean, closureError: number}}
  */
-export function funicular(fp, centroids, start, end) {
+export function funicular(fp, centroids, start, end, actionDirs = null) {
   // NO SPRINGINGS, NO WALK. Six of the stored examples were saved before a
   // solution was computed and several of those carry no xy_Point_A either, so
   // there is nowhere to begin. Throwing here aborted the whole update in the
@@ -98,7 +108,8 @@ export function funicular(fp, centroids, start, end) {
     const last = j === centroids.length;
     const dir = last ? fp.rays[j].map((v) => -v) : fp.rays[j];
     const through = last ? end : centroids[j];
-    const hit = lineIntersection(current, dir, through, vertical);
+    const action = last ? vertical : (actionDirs?.[j] ?? vertical);
+    const hit = lineIntersection(current, dir, through, action);
     if (!hit) break; // a horizontal ray never meets a vertical line
     points.push(hit);
     current = hit;
@@ -176,23 +187,35 @@ export function fractionAlongJoint(joint, point) {
  * @param {number} [trialOrdinate]  any value; the answer does not depend on it
  * @returns {{pole, trial, preliminary, closureError, slope}}
  */
-export function poleForEnds(weights, centroids, A, B, thrust, trialOrdinate) {
+export function poleForEnds(weights, centroids, A, B, thrust, trialOrdinate, actionDirs = null) {
   const xO = Math.abs(thrust);
   const span = B[0] - A[0];
   if (!(xO > 0) || span === 0) return null;
 
-  const total = weights.reduce((a, b) => a + b, 0);
+  const vertical = (load) => (Array.isArray(load) ? Number(load[1]) || 0 : Number(load) || 0);
+  const total = weights.reduce((a, b) => a + vertical(b), 0);
   const trialY = trialOrdinate ?? -total / 2;
   const trial = [xO, trialY];
 
-  const preliminary = funicular(forcePolygon(weights, trial), centroids, A, B);
-  const reached = preliminary.points[preliminary.points.length - 1];
+  const run = (y) => {
+    const p = [xO, y];
+    const lot = funicular(forcePolygon(weights, p), centroids, A, B, actionDirs);
+    const end = lot.points[lot.points.length - 1];
+    return { p, lot, end };
+  };
+  const first = run(trialY);
+  const second = run(trialY + xO);
+  if (!first.end || !second.end) return null;
 
-  // d(y_end)/d(yO), derived above and verified against the numbers.
-  const slope = span / xO;
-  const pole = [xO, trialY + (B[1] - reached[1]) / slope];
+  // For vertical loads this slope is span/xO. For general forces the ordinate
+  // still acts affinely, but the line is stopped on inclined action lines, so
+  // the slope is measured from two trials instead of hard-coded.
+  const slope = (second.end[1] - first.end[1]) / xO;
+  if (Math.abs(slope) < 1e-12) return null;
+  const preliminary = first.lot;
+  const pole = [xO, trialY + (B[1] - first.end[1]) / slope];
 
-  const settled = funicular(forcePolygon(weights, pole), centroids, A, B);
+  const settled = funicular(forcePolygon(weights, pole), centroids, A, B, actionDirs);
   const end = settled.points[settled.points.length - 1];
 
   return {
@@ -228,7 +251,7 @@ export function poleForEnds(weights, centroids, A, B, thrust, trialOrdinate) {
  * @param {number} s              0 at the intrados of the starting joint, 1 at
  *                                the extrados
  */
-export function freeThrustLine(fp, centroids, startJoint, endJoint, s = 0.5) {
+export function freeThrustLine(fp, centroids, startJoint, endJoint, s = 0.5, actionDirs = null) {
   const vertical = [0, 1];
   const start = pointOnJoint(startJoint, s);
   const points = [start.slice()];
@@ -236,7 +259,8 @@ export function freeThrustLine(fp, centroids, startJoint, endJoint, s = 0.5) {
 
   // Every ray but the last, taken at the vertical through its centroid.
   for (let j = 0; j < centroids.length; j++) {
-    const hit = lineIntersection(current, fp.rays[j], centroids[j], vertical);
+    const action = actionDirs?.[j] ?? vertical;
+    const hit = lineIntersection(current, fp.rays[j], centroids[j], action);
     if (!hit) return { points, closed: false, end: null, endFraction: NaN };
     points.push(hit);
     current = hit;

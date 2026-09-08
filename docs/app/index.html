@@ -214,15 +214,18 @@
     </section>
     <section>
       <h2>Applied forces</h2>
-      <label class="inline"><span id="forceLabel">Magnitude kN</span>
-        <input type="number" id="forceMag" min="0" step="1" value="100">
+      <label class="inline"><span id="forceLabelX">X kN</span>
+        <input type="number" id="forceMagX" step="1" value="0">
+      </label>
+      <label class="inline"><span id="forceLabel">Y kN</span>
+        <input type="number" id="forceMag" step="1" value="100">
       </label>
       <div class="row">
         <button id="addForce">Add a force</button>
         <button id="clearForces">Clear</button>
       </div>
-      <p class="hint">Click where it acts. Forces are taken as vertical and
-        downward, and join the blocks in the same sequence.</p>
+      <p class="hint">Click where it acts. Y is positive downward; X is positive
+        to the right. The force joins the blocks in the same sequence.</p>
       <ul id="forceList" class="forces"></ul>
     </section>
     <section>
@@ -455,6 +458,9 @@ Plain text, with **bold**, *emph*, _underline_ and
         <button data-view3d="alignLeft" id="solidAlignLeft" title="Align blocks on the left meridian">sx</button>
         <button data-view3d="alignRight" id="solidAlignRight" title="Align blocks on the right meridian">dx</button>
         <button data-view3d="axes" id="showSolidAxes" title="Show reference frame">axes</button>
+        <label class="inline" title="Elements across the ring thickness of one voussoir. Two is the least that shows a stress gradient.">mesh
+          <input id="abaqusRefine" type="number" min="2" max="12" step="1" value="3">
+        </label>
         <button id="exportAbaqus" type="button" title="Export an Abaqus .inp model">export</button>
         <span class="hint">drag to turn &middot; wheel to zoom &middot; shift-drag to pan</span>
       </div>

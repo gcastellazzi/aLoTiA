@@ -724,6 +724,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
     equilibrium = null,
   } = opt;
   const { stations, pole } = fp;
+  const stationPoint = (s) => (Array.isArray(s) ? s : [0, s]);
   const c = ax.ctx;
   const stepped = constructionStep && construction && construction.trial;
   const nRays = stations.length;
@@ -748,7 +749,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       const upto = stepped ? finalRayCount : stations.length;
       for (const s of stations.slice(0, upto)) {
         const [x0, y0] = ax.toPx(pole);
-        const [x1, y1] = ax.toPx([0, s]);
+        const [x1, y1] = ax.toPx(stationPoint(s));
         c.beginPath();
         c.moveTo(x0, y0);
         c.lineTo(x1, y1);
@@ -768,13 +769,13 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       const upto = stepped ? finalRayCount : stations.length;
       stations.slice(0, upto).forEach((s, j) => {
         if (j % stride) return;
-        const [X, Y] = ax.toPx([0, s]);
+        const [X, Y] = ax.toPx(stationPoint(s));
         c.fillText(rayLabel(j), X + side * 6, Y);
       });
     }
     if (reactions && stations.length >= 2 && (!stepped || finalRayCount >= nRays)) {
-      const top = [0, stations[0]];
-      const bottom = [0, stations[stations.length - 1]];
+      const top = stationPoint(stations[0]);
+      const bottom = stationPoint(stations[stations.length - 1]);
       const drawRay = (p, name, side) => {
         drawArrow(ax, pole, p, '#0072BD', 12, 2.6);
       const [X, Y] = ax.toPx(p);
@@ -803,7 +804,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
     for (let j = 0; j < fp.magnitudes.length; j++) {
       const colour = loadKinds && loadKinds[j] === 1
         ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
-      drawArrow(ax, [0, stations[j]], [0, stations[j + 1]], colour, 8, 3);
+      drawArrow(ax, stationPoint(stations[j]), stationPoint(stations[j + 1]), colour, 8, 3);
     }
     // The corrected pole is introduced only after the ordinate correction when
     // the construction slider is stepping through the drawing.
@@ -832,7 +833,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
         c.lineWidth = 0.9;
         const upto = stepped ? trialRayCount : stations.length;
         for (const s of stations.slice(0, upto)) {
-          const [x1, y1] = ax.toPx([0, s]);
+          const [x1, y1] = ax.toPx(stationPoint(s));
           c.beginPath();
           c.moveTo(tx, ty);
           c.lineTo(x1, y1);
@@ -984,9 +985,10 @@ export function drawEquilibriumTriangle(ax, fp, opt = {}) {
     loadKinds = null,
   } = opt;
   if (!fp || !fp.stations || !fp.pole || block < 0 || block + 1 >= fp.stations.length) return;
+  const stationPoint = (s) => (Array.isArray(s) ? s : [0, s]);
   const pole = trial && construction?.trial ? construction.trial : fp.pole;
-  const a = [0, fp.stations[block]];
-  const b = [0, fp.stations[block + 1]];
+  const a = stationPoint(fp.stations[block]);
+  const b = stationPoint(fp.stations[block + 1]);
   const O = pole;
   const loadColour = loadKinds && loadKinds[block] === 1
     ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
@@ -1030,9 +1032,10 @@ export function drawEquilibriumConcurrency(ax, fp, opt = {}) {
   } = opt;
   if (!fp || !fp.stations || !fp.pole || block < 0 || block + 1 >= fp.stations.length) return;
 
+  const stationPoint = (s) => (Array.isArray(s) ? s : [0, s]);
   const pole = trial && construction?.trial ? construction.trial : fp.pole;
-  const a = [0, fp.stations[block]];
-  const b = [0, fp.stations[block + 1]];
+  const a = stationPoint(fp.stations[block]);
+  const b = stationPoint(fp.stations[block + 1]);
   const loadColour = loadKinds && loadKinds[block] === 1
     ? APPLIED_FORCE_COLOUR : BLOCK_WEIGHT_COLOUR;
   const vectors = [
@@ -1227,8 +1230,9 @@ export function drawBlockEquilibrium(ax, block, opt = {}) {
   const r0 = fp.rays[loadIndex];
   const r1 = fp.rays[loadIndex + 1];
   const stations = fp.stations ?? [];
-  const a = [0, stations[loadIndex]];
-  const b = [0, stations[loadIndex + 1]];
+  const stationPoint = (s) => (Array.isArray(s) ? s : [0, s]);
+  const a = stationPoint(stations[loadIndex]);
+  const b = stationPoint(stations[loadIndex + 1]);
   const pole = fp.pole;
   let K = p1 ? lineHit(p1, r0, centroid, [0, 1]) : null;
   if (!K && p0) K = lineHit(p0, r1, centroid, [0, 1]);
