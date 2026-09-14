@@ -754,6 +754,12 @@ ul.forces button:hover { background: #f0e2e3; }
 }
 .plotthrust label { white-space: nowrap; }
 .plotthrust input[type="range"] { flex: 1 1 auto; min-width: 80px; }
+.plotthrust button {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
 .plotthrust .reading {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;

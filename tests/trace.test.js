@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { area, centroid } from '../docs/app/js/core/geometry.js';
 import {
   arcLengths, length, resample, reverse, sameDirection, blocksBetween,
-  checkTrace, weighBlocks, springings,
+  checkTrace, weighBlocks, springings, curveFrame, normalCuts,
 } from '../docs/app/js/core/trace.js';
 import { forcePolygon, funicular } from '../docs/app/js/core/statics.js';
 
@@ -97,6 +97,55 @@ test('there is one more joint than there are blocks', () => {
   const { blocks, joints } = blocksBetween(arc(4), arc(5), 15);
   assert.equal(blocks.length, 15);
   assert.equal(joints.length, 16);
+});
+
+test('local normals can be evaluated on the extrados and on the mean line', () => {
+  const quarter = (r) => arc(r).slice(0, 101);
+  const outer = normalCuts(quarter(4), quarter(5), 8, 'normal-outer');
+  const middle = normalCuts(quarter(4), quarter(5), 8, 'normal-midline');
+  for (const rows of [outer, middle]) {
+    rows.slice(1, -1).forEach((j) => {
+      const radial = j.normal[0] * j.b[1] - j.normal[1] * j.b[0];
+      assert.ok(Math.abs(radial) < 0.03, `normal ${j.normal} is radial at ${j.b}`);
+    });
+  }
+  const frame = curveFrame([[0, 0], [2, 0]], 0.5);
+  assert.deepEqual(frame.tangent, [1, 0]);
+  assert.deepEqual(frame.normal, [0, 1]);
+});
+
+test('sub-normal courses are horizontal and super-normal cuts are vertical', () => {
+  const quarter = (r) => Array.from({ length: 101 }, (_, i) => {
+    const t = (Math.PI * i) / 200;
+    return [r * Math.cos(t), r * Math.sin(t)];
+  });
+  const sub = blocksBetween(arc(4), arc(5), 8, { cutMode: 'subnormal' });
+  const sup = blocksBetween(quarter(4), quarter(5), 8, { cutMode: 'supernormal' });
+  assert.equal(sub.courses.length, 8);
+  sub.courses.forEach((course, i) => {
+    assert.ok(Math.abs(course.y1 - course.y0 - sub.courseHeight) < 1e-12,
+      `course ${i} has the common height`);
+  });
+  assert.ok(sub.blocks.some((b) => Math.max(...b.y) > 4),
+    'the crown above the highest point of the intrados is filled');
+  assert.ok(sub.blocks.length > sub.courses.length,
+    'wide courses are split into running-bond blocks');
+  const gotArea = sub.blocks.reduce((sum, b) => sum + area(b), 0);
+  const ringArea = (Math.PI / 2) * (25 - 16);
+  assert.ok(Math.abs(gotArea - ringArea) / ringArea < 0.001,
+    'the courses cover the whole traced ring without gaps');
+  sup.joints.slice(1, -1).forEach((j) => assert.ok(Math.abs(j.a[0] - j.b[0]) < 1e-9));
+  assert.equal(sup.blocks.length, 8);
+});
+
+test('an approximate horizontal module controls every sub-normal course', () => {
+  const made = blocksBetween(arc(4), arc(5), 10, {
+    cutMode: 'subnormal', blockWidth: 0.8,
+  });
+  assert.ok(made.courses.every((course) => Math.abs(course.module - 0.8) < 1e-12));
+  assert.ok(made.blocks.length > 10, 'wide courses are divided at the requested module');
+  const maxWidth = Math.max(...made.blocks.map((b) => Math.max(...b.x) - Math.min(...b.x)));
+  assert.ok(maxWidth <= 0.8 + 1e-9, `no block is wider than the 0.8 module (${maxWidth})`);
 });
 
 test('a bad trace is reported rather than silently drawn', () => {

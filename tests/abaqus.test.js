@@ -175,6 +175,30 @@ function twoBlockModel(extra = {}) {
   });
 }
 
+test('optional end-face roller beds block only the face-normal displacement', () => {
+  const legacy = twoBlockModel();
+  assert.doesNotMatch(legacy, /SUPPORT_A_FACE/);
+  assert.doesNotMatch(legacy, /^\*Equation$/m);
+
+  const inp = twoBlockModel({ supportMode: 'face-rollers' });
+  assert.match(inp, /\*Nset, nset=SUPPORT_A_FACE_B1, instance=BLOCK_1_I/);
+  assert.match(inp, /\*Nset, nset=SUPPORT_B_FACE_B2, instance=BLOCK_2_I/);
+  assert.match(inp, /End face A: roller bed blocks U\.normal/);
+  assert.match(inp, /^\*Equation\n1\nBLOCK_1_I\.\d+, 1, -?1$/m,
+    'the vertical end face has a horizontal normal');
+  // A and B remain fully fixed hinge lines in addition to the roller beds.
+  assert.match(inp, /SUPPORT_A_B1, 1, 3, 0\./);
+  assert.match(inp, /SUPPORT_B_B2, 1, 3, 0\./);
+});
+
+test('running-bond assemblies use general contact instead of a false block chain', () => {
+  const inp = twoBlockModel({ generalContact: true });
+  assert.match(inp, /^\*Contact$/m);
+  assert.match(inp, /^\*Contact Inclusions, ALL EXTERIOR$/m);
+  assert.match(inp, /^\*Contact Property Assignment\n, , STONE_FRICTION$/m);
+  assert.doesNotMatch(inp, /^\*Contact Pair/m);
+});
+
 test('a four-sided voussoir is meshed as a refined grid of hexahedra, not one wedge pair', () => {
   // The whole reason for the grid: a single element per block reports one
   // stress value per block, which shows nothing of how load percolates.

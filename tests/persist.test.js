@@ -68,12 +68,23 @@ test('a session survives the round trip through JSON unchanged', () => {
   const back = deserialise(JSON.stringify(serialise(state, controls)));
 
   assert.equal(back.system, 'SI');
-  assert.deepEqual(back.controls, { thrust: 62, startPos: 80, split: 44 });
+  assert.deepEqual(back.controls,
+    { thrust: 62, startPos: 80, split: 44, thrustRangeMax: 5 });
   assert.deepEqual(back.basePole, state.basePole);
   assert.equal(back.model.centroids.length, state.model.centroids.length);
   assert.deepEqual(back.forces.magnitudes, [12]);
   assert.deepEqual(back.trace.inner[0], state.trace.inner[0]);
   assert.equal(back.trace.outer.length, state.trace.outer.length);
+});
+
+test('the 10x thrust range and sub-normal stereotomy survive reopening', () => {
+  const { state, controls } = session();
+  state.model.stereotomy = { mode: 'subnormal', courseHeight: 0.4, meanWidth: 1.2 };
+  controls.thrustRangeMax = 10;
+  const back = deserialise(JSON.stringify(serialise(state, controls)));
+  assert.equal(back.controls.thrustRangeMax, 10);
+  assert.deepEqual(back.model.stereotomy,
+    { mode: 'subnormal', courseHeight: 0.4, meanWidth: 1.2, requestedWidth: 0 });
 });
 
 test('a user-loaded background image is embedded in the saved JSON', () => {
@@ -234,7 +245,8 @@ test('a session with nothing in it saves and reopens without complaint', () => {
   assert.equal(empty.model, null);
   assert.equal(empty.trace, null);
   assert.deepEqual(empty.forces, { points: [], magnitudes: [] });
-  assert.deepEqual(empty.controls, { thrust: 50, startPos: 50, split: 50 });
+  assert.deepEqual(empty.controls,
+    { thrust: 50, startPos: 50, split: 50, thrustRangeMax: 5 });
 });
 
 test('the suggested file name is safe to write to disk', () => {

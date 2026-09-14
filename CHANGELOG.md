@@ -7,6 +7,11 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ### The Abaqus export
 
+The support selector can now keep the original A/B hinge lines or add a roller
+bed over each complete end face. In the latter case every face node is blocked
+only in the local face-normal direction, while the hinge line remains fixed in
+translation and tangential motion of the remaining face nodes stays free.
+
 Voussoirs are meshed as a structured grid rather than a pair of wedges, at
 least three elements across the ring thickness by two along the arch, with a
 further division at every traced vertex and at every point where a support or
@@ -34,6 +39,30 @@ cells come out roughly square. Two by two on a block three times longer than it
 is thick gives cells of aspect three, and a skewed cell of aspect three is a
 distorted element. The mesh density is set from the panel, beside the export
 button.
+
+### Block stereotomy
+
+Blocks generated between a traced intrados and extrados can retain the legacy
+matched stations, follow the local normal calculated either on the extrados or
+on the mean line, use horizontal sub-normal courses (the tholos/igloo case), or
+use vertical super-normal cuts (the lintel case). Invalid repeated or missing
+intersections are reported before blocks are generated. Sub-normal courses now
+have one common vertical height and cover the crown above the intrados. Working
+upwards, courses wider than the mean block width established below are divided
+with alternating half-module offsets, as running bond.
+Because those courses form a bonded assembly rather than one serial voussoir
+chain, their Abaqus export uses all-exterior general contact instead of pairing
+unrelated consecutive blocks.
+
+The traced intrados and extrados now remain active after block generation and
+are removed only by Clear curves. Re-generating replaces the group derived from
+those curves instead of appending a duplicate. Sub-normal courses also accept
+an approximate horizontal block width; once a tessellation exists, editing the
+value rebuilds it live while retaining all unrelated block groups.
+
+The main horizontal-thrust slider has a 5x/10x range button. Its centre remains
+the saved equilibrium state while the upper logarithmic limit doubles from
+five to ten times the reference thrust.
 
 ## [1.1.0] — 2026-09-02
 

@@ -21,6 +21,13 @@
 
 import { distance, lineIntersection } from './geometry.js';
 
+/** Logarithmic multiplier controlled by the horizontal-thrust slider. */
+export function thrustRangeFactor(value, maximum = 5) {
+  const max = Math.max(1, Number(maximum) || 5);
+  const t = (Math.max(0, Math.min(100, Number(value) || 0)) - 50) / 50;
+  return Math.pow(max, t);
+}
+
 /**
  * The force polygon.
  *

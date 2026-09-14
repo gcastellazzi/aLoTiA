@@ -20,7 +20,7 @@ import {
 } from './core/geometry.js';
 import {
   forcePolygon, funicular, poleFromForcePolygon, hangingCable, jointCrossings,
-  freeThrustLine, poleForEnds,
+  freeThrustLine, poleForEnds, thrustRangeFactor,
 } from './core/statics.js';
 import { fromExample, poleOf, consistency } from './core/model.js';
 import {
@@ -67,6 +67,7 @@ const ui = {
   newWork: el('newWork'),
   scaleSource: el('scaleSource'),
   thrust: el('thrust'), thrustValue: el('thrustValue'), reset: el('reset'),
+  doubleThrustRange: el('doubleThrustRange'),
   startPos: el('startPos'), startValue: el('startValue'),
   split: el('split'), splitValue: el('splitValue'),
   saveState: el('saveState'), loadState: el('loadState'),
@@ -135,7 +136,11 @@ const ui = {
   imagePerspectiveV: el('imagePerspectiveV'), imagePerspectiveH: el('imagePerspectiveH'),
   resetImagePerspective: el('resetImagePerspective'),
   traceOuter: el('traceOuter'), traceHint: el('traceHint'),
-  nBlocks: el('nBlocks'), gamma: el('gamma'), thick: el('thick'),
+  nBlocks: el('nBlocks'), traceCountLabel: el('traceCountLabel'),
+  traceCutMode: el('traceCutMode'), subnormalWidth: el('subnormalWidth'),
+  subnormalWidthRow: el('subnormalWidthRow'),
+  subnormalWidthLabel: el('subnormalWidthLabel'),
+  gamma: el('gamma'), thick: el('thick'),
   ringRi: el('ringRi'), ringTri: el('ringTri'), ringN: el('ringN'),
   makeRing: el('makeRing'), ringStatus: el('ringStatus'),
   pickInnerArc: el('pickInnerArc'), pickOuterArc: el('pickOuterArc'),
@@ -154,7 +159,7 @@ const ui = {
   addForce: el('addForce'), clearForces: el('clearForces'),
   forceList: el('forceList'),
   exportAbaqus: el('exportAbaqus'),
-  abaqusRefine: el('abaqusRefine'),
+  abaqusRefine: el('abaqusRefine'), abaqusSupports: el('abaqusSupports'),
   system: el('system'), pickRef: el('pickRef'), refLength: el('refLength'),
   applyScale: el('applyScale'), scaleStatus: el('scaleStatus'),
 };
@@ -181,6 +186,7 @@ const state = {
   fitAfterImageLoad: false,
   imagePerspective: { vertical: 0, horizontal: 0 },
   basePole: null,   // the pole as saved: thrust slider is relative to it
+  thrustRangeMax: 5,
   mech: null,       // the hinge analysis, when the mechanism tab is driving
   band: null,       // the two collapse thrusts, once computed
   camera: { az: -45, el: 30 },   // the 3-D viewpoint, in degrees
@@ -1691,11 +1697,10 @@ function recompute() {
   }
   setThrustEnabled(true);
 
-  // The slider scales the pole's distance from the load line between a fifth
-  // and five times what the example was saved with, on a log scale so the
-  // middle of the travel is the saved state.
-  const t = (Number(ui.thrust.value) - 50) / 50;      // -1 .. 1
-  const factor = Math.pow(5, t);
+  // The slider scales the pole's distance from the load line logarithmically,
+  // with the saved state at mid-travel. The button beside the main copy can
+  // extend the upper limit from 5x to 10x (and the reciprocal lower limit).
+  const factor = thrustRangeFactor(ui.thrust.value, state.thrustRangeMax);
   // The pole's ORDINATE is left exactly where it was. For a stored example it
   // is the one recovered from the saved force polygon, and moving it would
   // stop the app reproducing that example at the middle of the slider.
@@ -3595,6 +3600,8 @@ function reportScale() {
   ui.applyImageSize.disabled = !(m && m.imageSize);
   ui.gammaLabel.textContent = `Unit weight ${sys.density.label}`;
   ui.thickLabel.textContent = `Thickness ${sys.length.label}`;
+  const widthUnit = m?.frame?.coordinates === 'physical' ? sys.length.label : 'px';
+  ui.subnormalWidthLabel.textContent = `Approx. block width ${widthUnit}`;
 
   if (m && m.frame && m.frame.coordinates === 'physical' && m.joints) {
     const d = archDimensions(m.joints);
@@ -3675,6 +3682,14 @@ function scalePixelWorkspace(k, source) {
   const imageDrawSize = state.model.imageDrawSize
     ? state.model.imageDrawSize.map((v) => v * k) : null;
   state.model = scaleModel(state.model, k, { thicknessInPixels: false });
+  if (state.model.stereotomy) {
+    state.model.stereotomy = {
+      ...state.model.stereotomy,
+      courseHeight: Number(state.model.stereotomy.courseHeight ?? 0) * k,
+      meanWidth: Number(state.model.stereotomy.meanWidth ?? 0) * k,
+      requestedWidth: Number(state.model.stereotomy.requestedWidth ?? 0) * k,
+    };
+  }
   if (imageDrawSize) state.model.imageDrawSize = imageDrawSize;
   state.model.units = state.system;
   state.model.scaleSource = source;
@@ -3698,6 +3713,9 @@ function scalePixelWorkspace(k, source) {
   state.threePointRing.inner = state.threePointRing.inner.map((p) => scaleMaybePoint(p, k));
   state.threePointRing.outer = state.threePointRing.outer.map((p) => scaleMaybePoint(p, k));
   ui.domeAxis.value = (Number(ui.domeAxis.value) * k).toPrecision(6);
+  if (Number(ui.subnormalWidth.value) > 0) {
+    ui.subnormalWidth.value = (Number(ui.subnormalWidth.value) * k).toPrecision(6);
+  }
   reweigh();
   state.band = null; state.bandKey = null;
   state.solidFit = null;
@@ -3954,12 +3972,25 @@ function reportTrace() {
   const n = Number(ui.nBlocks.value) || 1;
   const bits = [`intrados ${t.inner.length} pts`,
     `extrados ${t.outer.length} pts`];
+  ui.traceCountLabel.textContent = ui.traceCutMode?.value === 'subnormal'
+    ? 'Courses' : 'Blocks';
+  ui.subnormalWidthRow.hidden = ui.traceCutMode?.value !== 'subnormal';
   let problems = [];
   if (t.inner.length >= 2 && t.outer.length >= 2) {
     problems = checkTrace(t.inner, t.outer, n);
+    if (!problems.length && (ui.traceCutMode?.value ?? 'stations') !== 'stations') {
+      try {
+        blocksBetween(t.inner, t.outer, n, {
+          cutMode: ui.traceCutMode.value,
+          blockWidth: Number(ui.subnormalWidth.value) || 0,
+        });
+      } catch (e) {
+        problems.push(e.message);
+      }
+    }
   }
   ui.traceStatus.textContent = bits.join(' · ');
-  ui.makeBlocks.disabled = t.inner.length < 2 || t.outer.length < 2;
+  ui.makeBlocks.disabled = t.inner.length < 2 || t.outer.length < 2 || problems.length > 0;
   if (problems.length) {
     ui.warn.hidden = false;
     ui.warn.textContent = problems.join('; ') + '.';
@@ -4717,9 +4748,15 @@ function currentSolidsForExport() {
 }
 
 function supportPointsForExport() {
+  const m = state.model;
+  // A running-bond assembly is not one voussoir chain, so the graphical
+  // funicular endpoints are not its physical support points. Keep the supports
+  // on the two end faces recorded when the traced ring was coursed.
+  if (m?.stereotomy?.mode === 'subnormal') {
+    return [m.pointA, m.pointB].filter(Boolean);
+  }
   const pts = state.lot?.points ?? [];
   if (pts.length >= 2) return [pts[pts.length - 1], pts[0]];
-  const m = state.model;
   return [m?.pointA, m?.pointB].filter(Boolean);
 }
 
@@ -4749,6 +4786,8 @@ async function exportAbaqus() {
       sections: exportBlocks,
       thickness: exportThickness,
       supports: supportPointsForExport(),
+      supportMode: ui.abaqusSupports?.value ?? 'hinges',
+      generalContact: m.stereotomy?.mode === 'subnormal',
       // The joints, so that each contact pair is the two faces that actually
       // abut rather than two whole outlines.
       joints: m.joints ?? null,
@@ -5055,34 +5094,60 @@ function generateBlocks() {
   const gamma = Number(ui.gamma.value) || 20;
 
   const thickness = Math.max(0, Number(ui.thick.value) || 1);
-  const built = blocksBetween(t.inner, t.outer, n);
+  const cutMode = ui.traceCutMode?.value ?? 'stations';
+  const blockWidth = Math.max(0, Number(ui.subnormalWidth?.value) || 0);
+  const built = blocksBetween(t.inner, t.outer, n, { cutMode, blockWidth });
   const previous = state.model ?? null;
-  const existing = previous?.blocks?.length ? previous : null;
-  const blocks = existing ? [...existing.blocks, ...built.blocks] : built.blocks;
-  const joints = existing?.joints ? [...existing.joints, ...built.joints] : built.joints;
+  const replaceId = t.generatedGroupId;
+  const previousBlocks = previous?.blocks ?? [];
+  const keep = previousBlocks.map((_, i) => i)
+    .filter((i) => !replaceId || previous?.blockGroups?.[i] !== replaceId);
+  const baseBlocks = keep.map((i) => previousBlocks[i]);
+  const blocks = [...baseBlocks, ...built.blocks];
+  const hasOtherBlocks = baseBlocks.length > 0;
+  const joints = hasOtherBlocks ? null : built.joints;
   const weights = weighBlocks(blocks, { specificWeight: gamma, thickness });
   const centroids = centroidsOf(blocks);
-  const { pointA, pointB } = springings(joints);
+  const ends = joints?.length >= 2 ? springings(joints)
+    : built.endJoints?.length >= 2 ? springings(built.endJoints)
+      : { pointA: previous?.pointA ?? null, pointB: previous?.pointB ?? null };
+  const { pointA, pointB } = ends;
   const frame = previous?.frame
     ?? { coordinates: 'pixels', units_per_pixel: 1, inferred: false };
 
   state.model = {
     ...(previous ?? {}),
     blocks, centroids, weights, joints,
+    groups: (previous?.groups ?? []).filter((g) => g.id !== replaceId),
+    blockGroups: keep.map((i) => previous?.blockGroups?.[i]),
     areas: blocks.map((p) => Math.abs(signedAreaOf(p))),
     thickness: blocks.map(() => thickness),
     pointA, pointB,
+    stereotomy: cutMode === 'subnormal' ? {
+      mode: cutMode, courseHeight: built.courseHeight, meanWidth: built.meanWidth,
+      courses: built.courses, requestedWidth: blockWidth,
+    } : { mode: cutMode },
     forcePolygon: null, thrustLine: null,
     units: previous?.units ?? null,
     frame,
   };
-  newGroup('trace', built.blocks.length);
+  const replacedGroup = previous?.groups?.find((g) => g.id === replaceId);
+  let generatedGroup;
+  if (replacedGroup) {
+    generatedGroup = { ...replacedGroup, gamma, thickness };
+    state.model.groups.push(generatedGroup);
+    state.model.blockGroups.push(...built.blocks.map(() => generatedGroup.id));
+    reportGroups();
+  } else {
+    generatedGroup = newGroup('trace', built.blocks.length);
+  }
+  t.generatedGroupId = generatedGroup?.id ?? null;
   // ONE RUN CARRIES ITS OWN CUTS; two runs concatenated do not. The joint list
   // was `blocks + runs` long where every panel downstream expects `blocks + 1`,
   // so a second trace added to the first was read against a list one too long.
-  if (existing) recoverJoints();
+  if (hasOtherBlocks) recoverJoints();
   clearPlotState();
-  state.trace = { inner: [], outer: [], armed: null, cursor: null };
+  state.trace = { ...t, armed: null, cursor: null };
   // A traced arch has no stored solution to be inconsistent with.
   state.consistent = { ok: true, reason: null, extraRows: 0 };
   // The axis of revolution defaults to the mid-point of the springings, which
@@ -5108,8 +5173,8 @@ function generateBlocks() {
 
   recompute();
   fitViews();
-  appendLog(`${existing ? 'Added' : 'Generated'} ${built.blocks.length} traced blocks`
-    + (existing ? ` (${blocks.length} total)` : ''));
+  appendLog(`${replacedGroup ? 'Regenerated' : 'Generated'} ${built.blocks.length} traced blocks`
+    + (hasOtherBlocks ? ` (${blocks.length} total)` : '') + ` · ${cutMode}`);
   draw();
 }
 
@@ -5373,6 +5438,14 @@ ui.system.addEventListener('change', () => {
     const poly = (q) => (q ?? []).map(pt);
 
     state.model = convertModel(state.model, from, to);
+    if (state.model.stereotomy) {
+      state.model.stereotomy = {
+        ...state.model.stereotomy,
+        courseHeight: Number(state.model.stereotomy.courseHeight ?? 0) * kL,
+        meanWidth: Number(state.model.stereotomy.meanWidth ?? 0) * kL,
+        requestedWidth: Number(state.model.stereotomy.requestedWidth ?? 0) * kL,
+      };
+    }
     const forces = state.forces ?? { points: [], magnitudes: [] };
     state.forces = {
       ...forces,
@@ -5421,6 +5494,7 @@ ui.system.addEventListener('change', () => {
     };
     field(ui.gamma, density);
     field(ui.thick, kL);
+    field(ui.subnormalWidth, kL);
     field(ui.ringRi, kL);
     field(ui.refLength, kL);
     field(ui.domeAxis, kL);
@@ -5451,6 +5525,15 @@ ui.traceInner.addEventListener('click', () => arm('inner'));
 ui.traceOuter.addEventListener('click', () => arm('outer'));
 ui.makeBlocks.addEventListener('click', generateBlocks);
 ui.nBlocks.addEventListener('change', reportTrace);
+ui.traceCutMode.addEventListener('change', reportTrace);
+let subnormalRegeneration = null;
+ui.subnormalWidth.addEventListener('input', () => {
+  reportTrace();
+  if (ui.traceCutMode.value !== 'subnormal' || !state.trace?.generatedGroupId
+    || ui.makeBlocks.disabled) return;
+  clearTimeout(subnormalRegeneration);
+  subnormalRegeneration = setTimeout(() => generateBlocks(), 120);
+});
 document.querySelectorAll('.methodtabs button').forEach((button) => {
   button.addEventListener('click', () => {
     const method = button.dataset.method;
@@ -5609,6 +5692,13 @@ function updateThrust() {
   draw();
 }
 ui.thrust.addEventListener('input', updateThrust);
+ui.doubleThrustRange.addEventListener('click', () => {
+  state.thrustRangeMax = state.thrustRangeMax === 10 ? 5 : 10;
+  ui.doubleThrustRange.textContent = `max ${state.thrustRangeMax}×`;
+  ui.doubleThrustRange.classList.toggle('active', state.thrustRangeMax === 10);
+  ui.doubleThrustRange.setAttribute('aria-pressed', String(state.thrustRangeMax === 10));
+  updateThrust();
+});
 for (const k of ['startPos', 'split']) {
   ui[k].addEventListener('input', () => {
     recompute();
@@ -6124,6 +6214,7 @@ async function saveWork() {
       thrust: ui.thrust.value,
       startPos: ui.startPos.value,
       split: ui.split.value,
+      thrustRangeMax: state.thrustRangeMax,
       imposeEnds: ui.imposeEnds.checked,
     });
     const text = JSON.stringify(data, null, 1);
@@ -6189,6 +6280,12 @@ function openWork(text, { source = null } = {}) {
   state.consistent = { ok: true, problems: [] };
 
   ui.system.value = data.system;
+  const savedCutMode = data.model?.stereotomy?.mode;
+  if ([...ui.traceCutMode.options].some((o) => o.value === savedCutMode)) {
+    ui.traceCutMode.value = savedCutMode;
+  }
+  ui.subnormalWidth.value = data.model?.stereotomy?.requestedWidth > 0
+    ? String(data.model.stereotomy.requestedWidth) : '';
   setImagePerspective(state.imagePerspective.vertical, state.imagePerspective.horizontal);
   ui.poleni.checked = !!data.dome.poleni;
   ui.domeAngle.value = data.dome.angleDeg;
@@ -6198,6 +6295,10 @@ function openWork(text, { source = null } = {}) {
   state.axisPicked = true;          // the file's axis, not a fresh default
   state.dome = data.dome;
   setThrustSlider(data.controls.thrust);
+  state.thrustRangeMax = data.controls.thrustRangeMax === 10 ? 10 : 5;
+  ui.doubleThrustRange.textContent = `max ${state.thrustRangeMax}×`;
+  ui.doubleThrustRange.classList.toggle('active', state.thrustRangeMax === 10);
+  ui.doubleThrustRange.setAttribute('aria-pressed', String(state.thrustRangeMax === 10));
   ui.startPos.value = data.controls.startPos;
   ui.split.value = data.controls.split;
   // The ends the student imposed, and whether they were imposed at all. A file
@@ -6211,6 +6312,10 @@ function openWork(text, { source = null } = {}) {
   ui.imposeEnds.checked = !!(data.ends && data.ends.imposed);
   ui.imposeEnds2.checked = ui.imposeEnds.checked;
   ensureGroups();
+  if (state.trace) {
+    const traceGroups = state.model?.groups?.filter((g) => g.method === 'trace') ?? [];
+    state.trace.generatedGroupId = traceGroups[traceGroups.length - 1]?.id ?? null;
+  }
   // A session saved before the joints could be found — a hand-built assembly,
   // or a file from a version that never looked — is given the same chance a
   // freshly drawn block gets. Cheap, and it is the difference between an arch

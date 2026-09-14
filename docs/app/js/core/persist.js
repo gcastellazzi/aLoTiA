@@ -94,6 +94,12 @@ export function serialise(state, controls = {}, imageName = null) {
         imageDrawSize: m.imageDrawSize ? [...m.imageDrawSize] : null,
         groups: m.groups?.length ? m.groups.map((g) => ({ ...g })) : undefined,
         blockGroups: m.blockGroups?.length ? m.blockGroups.map((id) => Number(id)) : undefined,
+        stereotomy: m.stereotomy ? {
+          mode: String(m.stereotomy.mode ?? 'stations'),
+          courseHeight: Number(m.stereotomy.courseHeight ?? 0),
+          meanWidth: Number(m.stereotomy.meanWidth ?? 0),
+          requestedWidth: Number(m.stereotomy.requestedWidth ?? 0),
+        } : undefined,
         blocks: (m.blocks ?? []).map(polygon),
         // null, not [], when there are none. An empty array is TRUTHY, so a
         // model saved with no joints came back claiming to have some and every
@@ -137,6 +143,7 @@ export function serialise(state, controls = {}, imageName = null) {
       thrust: Number(controls.thrust ?? 50),
       startPos: Number(controls.startPos ?? 50),
       split: Number(controls.split ?? 50),
+      thrustRangeMax: Number(controls.thrustRangeMax ?? 5) === 10 ? 10 : 5,
     },
   };
 }
@@ -259,7 +266,8 @@ export function deserialise(text) {
       ? { A: data.ends.A ?? null, B: data.ends.B ?? null, imposed: !!data.ends.imposed }
       : null,
     controls: {
-      thrust: 50, startPos: 50, split: 50, ...(data.controls ?? {}),
+      thrust: 50, startPos: 50, split: 50, thrustRangeMax: 5,
+      ...(data.controls ?? {}),
     },
     dome: {
       poleni: false, angleDeg: 22.5, axisX: 0, align: 'center', ...(data.dome ?? {}),

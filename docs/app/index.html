@@ -97,9 +97,25 @@
       </div>
       <p class="hint" id="traceHint">Click along a curve; double-click, or
         press Enter, to finish. Esc cancels.</p>
-      <label class="inline">Blocks
+      <label class="inline"><span id="traceCountLabel">Blocks</span>
         <input type="number" id="nBlocks" min="1" max="200" value="16">
       </label>
+      <label class="inline">Joint cuts
+        <select id="traceCutMode">
+          <option value="stations">Matched stations (legacy)</option>
+          <option value="normal-outer">Normal to extrados</option>
+          <option value="normal-midline">Normal to mean line</option>
+          <option value="subnormal">Sub-normal (horizontal courses)</option>
+          <option value="supernormal">Super-normal (vertical cuts)</option>
+        </select>
+      </label>
+      <label class="inline" id="subnormalWidthRow" hidden><span id="subnormalWidthLabel">Approx. block width</span>
+        <input type="number" id="subnormalWidth" min="0" step="0.1"
+          placeholder="automatic">
+      </label>
+      <p class="hint">The traced curves remain editable until Clear curves.
+        With sub-normal courses, changing the approximate width updates an
+        existing tessellation immediately.</p>
       <div class="row">
         <button id="makeBlocks">Generate blocks</button>
         <button id="clearTrace">Clear curves</button>
@@ -345,6 +361,8 @@
       <div class="plotthrust">
         <label for="thrustP">Horizontal thrust</label>
         <input id="thrustP" type="range" min="0" max="100" step="0.01" value="50">
+        <button id="doubleThrustRange" type="button"
+          title="Toggle the maximum horizontal thrust between 5× and 10×">max 5×</button>
         <span id="thrustValueP" class="reading">&mdash;</span>
       </div>
       <figcaption>Arch and line of thrust</figcaption>
@@ -460,6 +478,12 @@ Plain text, with **bold**, *emph*, _underline_ and
         <button data-view3d="axes" id="showSolidAxes" title="Show reference frame">axes</button>
         <label class="inline" title="Elements across the ring thickness of one voussoir. Two is the least that shows a stress gradient.">mesh
           <input id="abaqusRefine" type="number" min="2" max="12" step="1" value="3">
+        </label>
+        <label class="inline" title="Optionally support each whole end face on rollers normal to that face, while A and B remain hinge lines.">supports
+          <select id="abaqusSupports">
+            <option value="hinges">A/B hinge lines</option>
+            <option value="face-rollers">A/B hinges + face rollers</option>
+          </select>
         </label>
         <button id="exportAbaqus" type="button" title="Export an Abaqus .inp model">export</button>
         <span class="hint">drag to turn &middot; wheel to zoom &middot; shift-drag to pan</span>

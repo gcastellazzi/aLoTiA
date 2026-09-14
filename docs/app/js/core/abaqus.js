@@ -949,6 +949,50 @@ function activeLineSets(meshes, point2d, opt = {}) {
     .filter((row) => row.ids.length);
 }
 
+const FACE_NODE_INDEX = {
+  C3D8: { S1: [0, 1, 2, 3], S2: [4, 5, 6, 7], S3: [0, 1, 5, 4], S4: [1, 2, 6, 5], S5: [2, 3, 7, 6], S6: [3, 0, 4, 7] },
+  C3D6: { S1: [0, 1, 2], S2: [3, 4, 5], S3: [0, 1, 4, 3], S4: [1, 2, 5, 4], S5: [2, 0, 3, 5] },
+  C3D4: { S1: [0, 1, 2], S2: [0, 3, 1], S3: [1, 3, 2], S4: [2, 3, 0] },
+};
+
+function nodesOnJointFace(mesh, which) {
+  const ids = new Set();
+  mesh.contact.filter((c) => c.which === which).forEach(({ element, side }) => {
+    const e = mesh.elements[element - 1];
+    for (const k of FACE_NODE_INDEX[e?.type]?.[side] ?? []) ids.add(e.ids[k]);
+  });
+  return [...ids].sort((a, b) => a - b);
+}
+
+function jointMidpoint(j) {
+  return [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+}
+
+/** End face, nodes, and in-plane face normal corresponding to each A/B point. */
+function rollerFaces(meshes, supports, joints) {
+  if (!joints || joints.length !== meshes.length + 1) return [];
+  const ends = [
+    { block: 0, which: 'lo', joint: joints[0] },
+    { block: meshes.length - 1, which: 'hi', joint: joints[joints.length - 1] },
+  ];
+  return supports.map((p, support) => {
+    if (!p) return null;
+    const end = ends.reduce((best, row) => {
+      const m = jointMidpoint(row.joint);
+      const d = Math.hypot(p[0] - m[0], p[1] - m[1]);
+      return !best || d < best.d ? { ...row, d } : best;
+    }, null);
+    const dx = end.joint.b[0] - end.joint.a[0];
+    const dz = end.joint.b[1] - end.joint.a[1];
+    const length = Math.hypot(dx, dz) || 1;
+    return {
+      support, block: end.block, which: end.which,
+      ids: nodesOnJointFace(meshes[end.block], end.which),
+      normal: [-dz / length, dx / length],
+    };
+  }).filter((row) => row?.ids.length);
+}
+
 function forceName(i) {
   return `LOAD_F${i + 1}`;
 }
@@ -970,7 +1014,7 @@ export function abaqusInput(model, opt = {}) {
     solids = [], sections = null, thickness = [], supports = [],
     forces = { points: [], magnitudes: [] },
     friction = 0.6, system = 'SI', title = 'aLoTiA export',
-    joints = null, refine = {},
+    joints = null, refine = {}, supportMode = 'hinges', generalContact = false,
   } = opt;
   if (!model?.blocks?.length || !solids.length) {
     throw new Error('no 3D blocks available to export');
@@ -1016,8 +1060,10 @@ export function abaqusInput(model, opt = {}) {
     return { lo: w.has('lo'), hi: w.has('hi') };
   });
   const degraded = [];
-  for (let i = 0; i + 1 < meshes.length; i++) {
-    if (!faces[i].hi || !faces[i + 1].lo) degraded.push(i + 1);
+  if (!generalContact) {
+    for (let i = 0; i + 1 < meshes.length; i++) {
+      if (!faces[i].hi || !faces[i + 1].lo) degraded.push(i + 1);
+    }
   }
 
   // How far a node may be moved onto the opposite surface to close an initial
@@ -1111,11 +1157,41 @@ export function abaqusInput(model, opt = {}) {
 
   const supportSets = supports.map((p) => activeLineSets(meshes, p, { limit: 10 }));
   const forceSets = (forces.points ?? []).map((p) => activeLineSets(meshes, p, { limit: 12 }));
+  const faceRollers = supportMode === 'face-rollers'
+    ? rollerFaces(meshes, supports, chain) : [];
 
   supportSets.forEach((sets, si) => {
     sets.forEach(({ block: bi, ids }) => {
       out.push(`*Nset, nset=SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}, instance=BLOCK_${bi + 1}_I`);
       out.push(...linesOf(ids));
+    });
+  });
+
+  faceRollers.forEach(({ support, block, ids }) => {
+    out.push(`*Nset, nset=SUPPORT_${support === 0 ? 'A' : 'B'}_FACE_B${block + 1}, instance=BLOCK_${block + 1}_I`);
+    out.push(...linesOf(ids));
+  });
+  if (supportMode === 'face-rollers' && !faceRollers.length) {
+    out.push('** Face rollers requested, but the two end joint faces could not be identified.');
+  }
+  // Equation constraints are model data in Abaqus, so they belong in the
+  // assembly rather than in the load step. Nodes on A/B themselves are left
+  // out: their three displacement constraints already include this one and a
+  // duplicate equation would overconstrain the system.
+  faceRollers.forEach(({ support, block, ids, normal }) => {
+    const hinge = new Set((supportSets[support] ?? [])
+      .filter((row) => row.block === block).flatMap((row) => row.ids));
+    out.push(`** End face ${support === 0 ? 'A' : 'B'}: roller bed blocks U.normal; tangential motion remains free.`);
+    ids.filter((id) => !hinge.has(id)).forEach((id) => {
+      const node = `BLOCK_${block + 1}_I.${id}`;
+      if (Math.abs(normal[0]) < 1e-12) {
+        out.push('*Equation', '1', `${node}, 3, ${fmt(normal[1])}`);
+      } else if (Math.abs(normal[1]) < 1e-12) {
+        out.push('*Equation', '1', `${node}, 1, ${fmt(normal[0])}`);
+      } else {
+        out.push('*Equation', '2',
+          `${node}, 1, ${fmt(normal[0])}, ${node}, 3, ${fmt(normal[1])}`);
+      }
     });
   });
 
@@ -1139,11 +1215,19 @@ export function abaqusInput(model, opt = {}) {
       + `${degraded.join(', ')} --- and there the block offers its whole outline.`);
     out.push('** Expect wrong-facing facets on those, and a free body wherever one fails to close.');
   }
-  for (let i = 0; i + 1 < meshes.length; i++) {
-    out.push('*Contact Pair, interaction=STONE_FRICTION, type=SURFACE TO SURFACE, '
-      + `small sliding, adjust=${fmt(adjust)}`);
-    out.push(`BLOCK_${i + 2}_I.BLOCK_${i + 2}_CONTACT_LO, `
-      + `BLOCK_${i + 1}_I.BLOCK_${i + 1}_CONTACT_HI`);
+  if (generalContact) {
+    out.push('** Running-bond assembly: contact is discovered over every exterior face.');
+    out.push('*Contact');
+    out.push('*Contact Inclusions, ALL EXTERIOR');
+    out.push('*Contact Property Assignment');
+    out.push(', , STONE_FRICTION');
+  } else {
+    for (let i = 0; i + 1 < meshes.length; i++) {
+      out.push('*Contact Pair, interaction=STONE_FRICTION, type=SURFACE TO SURFACE, '
+        + `small sliding, adjust=${fmt(adjust)}`);
+      out.push(`BLOCK_${i + 2}_I.BLOCK_${i + 2}_CONTACT_LO, `
+        + `BLOCK_${i + 1}_I.BLOCK_${i + 1}_CONTACT_HI`);
+    }
   }
   out.push('** Cylindrical hinge lines: solid elements have translational DOFs only,');
   out.push('** so constraining the line nodes in U1-U3 leaves block rotation to contact kinematics.');

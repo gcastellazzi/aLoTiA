@@ -21,7 +21,7 @@ import { area, centroid, lineIntersection, distance } from
   '../docs/app/js/core/geometry.js';
 import { sortOrder, circularArch } from '../docs/app/js/core/blocks.js';
 import {
-  forcePolygon, funicular, poleFromForcePolygon, hookeCable,
+  forcePolygon, funicular, poleFromForcePolygon, hookeCable, thrustRangeFactor,
 } from '../docs/app/js/core/statics.js';
 import { fromExample, poleOf, consistency } from
   '../docs/app/js/core/model.js';
@@ -93,6 +93,13 @@ test('centroid of a degenerate polygon falls back to the vertex mean', () => {
 test('line intersection, and parallel lines return null', () => {
   assert.deepEqual(lineIntersection([0, 0], [1, 0], [2, -5], [0, 1]), [2, 0]);
   assert.equal(lineIntersection([0, 0], [1, 1], [1, 0], [2, 2]), null);
+});
+
+test('the thrust range button doubles the logarithmic upper limit', () => {
+  assert.equal(thrustRangeFactor(50, 5), 1);
+  assert.equal(thrustRangeFactor(100, 5), 5);
+  assert.equal(thrustRangeFactor(100, 10), 10);
+  assert.equal(thrustRangeFactor(0, 10), 0.1);
 });
 
 test('blocks are ordered by centroid x, descending', () => {
