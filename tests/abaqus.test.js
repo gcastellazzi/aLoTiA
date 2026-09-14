@@ -191,6 +191,37 @@ test('optional end-face roller beds block only the face-normal displacement', ()
   assert.match(inp, /SUPPORT_B_B2, 1, 3, 0\./);
 });
 
+test('face rollers propagate over touching coplanar faces but not remote ones', () => {
+  const blocks = [
+    rect(0, 1, 0, 1),
+    rect(0, 1, 1, 2),
+    rect(0, 1, 5, 6),
+  ];
+  const inp = abaqusInput({ blocks, weights: [40, 40, 40] }, {
+    solids: blocks.map((block) => extrude(block, 0.5)),
+    sections: blocks,
+    thickness: [0.5, 0.5, 0.5],
+    supports: [[0, 0.5]],
+    supportMode: 'face-rollers',
+    generalContact: true,
+  });
+  const parts = parseParts(inp);
+  const nset = (name) => {
+    const match = inp.match(new RegExp(`\\*Nset, nset=${name}[^\\n]*\\n([^*]+)`));
+    return new Set((match?.[1].match(/\d+/g) ?? []).map(Number));
+  };
+  const leftFaceNodes = (partName) => new Set([...parts.get(partName).nodes]
+    .filter(([, p]) => Math.abs(p[0]) < 1e-12).map(([id]) => id));
+
+  assert.deepEqual(nset('SUPPORT_A_FACE_B1'), leftFaceNodes('BLOCK_1'));
+  assert.deepEqual(nset('SUPPORT_A_FACE_B2'), leftFaceNodes('BLOCK_2'),
+    'the touching continuation of the support face must also be constrained');
+  assert.doesNotMatch(inp, /SUPPORT_A_FACE_B3/,
+    'a disconnected face on the same infinite plane must remain free');
+  assert.match(inp, /^BLOCK_2_I\.\d+, 1, -?1$/m,
+    'the propagated face nodes receive the face-normal equation');
+});
+
 test('running-bond assemblies use general contact instead of a false block chain', () => {
   const inp = twoBlockModel({ generalContact: true });
   assert.match(inp, /^\*Contact$/m);

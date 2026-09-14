@@ -10,7 +10,10 @@ and the project uses [semantic versioning](https://semver.org/).
 The support selector can now keep the original A/B hinge lines or add a roller
 bed over each complete end face. In the latter case every face node is blocked
 only in the local face-normal direction, while the hinge line remains fixed in
-translation and tangential motion of the remaining face nodes stays free.
+translation and tangential motion of the remaining face nodes stays free. The
+roller bed now propagates to every exterior face that is coplanar with and
+touches the face containing A or B, including faces of adjacent blocks; remote
+faces that merely lie on the same infinite plane are left unconstrained.
 
 Voussoirs are meshed as a structured grid rather than a pair of wedges, at
 least three elements across the ring thickness by two along the arch, with a

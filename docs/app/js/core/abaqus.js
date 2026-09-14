@@ -955,42 +955,160 @@ const FACE_NODE_INDEX = {
   C3D4: { S1: [0, 1, 2], S2: [0, 3, 1], S3: [1, 3, 2], S4: [2, 3, 0] },
 };
 
-function nodesOnJointFace(mesh, which) {
-  const ids = new Set();
-  mesh.contact.filter((c) => c.which === which).forEach(({ element, side }) => {
-    const e = mesh.elements[element - 1];
-    for (const k of FACE_NODE_INDEX[e?.type]?.[side] ?? []) ids.add(e.ids[k]);
+function pointSegmentDistance(p, a, b) {
+  const dx = b[0] - a[0];
+  const dz = b[1] - a[1];
+  const den = dx * dx + dz * dz;
+  const t = den > 0
+    ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / den))
+    : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dz));
+}
+
+/**
+ * Exterior element faces that are vertical extrusions of a line in the X-Z
+ * section. Front/back faces project to an area and are intentionally omitted.
+ */
+function exteriorSectionFaces(meshes, tolerance) {
+  const rows = [];
+  meshes.forEach((mesh, block) => {
+    const seen = new Set();
+    mesh.exterior.forEach(({ element, side }) => {
+      const key = `${element}:${side}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const e = mesh.elements[element - 1];
+      const ids = (FACE_NODE_INDEX[e?.type]?.[side] ?? []).map((k) => e.ids[k]);
+      const points = ids.map((id) => mesh.nodes[id - 1]).filter(Boolean);
+      if (points.length < 3) return;
+
+      // Use the farthest projected pair, then require every projected vertex
+      // to lie on it. This also handles triangular lateral faces of tetrahedra.
+      let a = null;
+      let b = null;
+      let length = 0;
+      for (let i = 0; i < points.length; i++) {
+        for (let j = i + 1; j < points.length; j++) {
+          const d = Math.hypot(points[j][0] - points[i][0], points[j][2] - points[i][2]);
+          if (d > length) {
+            length = d;
+            a = [points[i][0], points[i][2]];
+            b = [points[j][0], points[j][2]];
+          }
+        }
+      }
+      if (!(length > tolerance)) return;
+      const ux = (b[0] - a[0]) / length;
+      const uz = (b[1] - a[1]) / length;
+      if (points.some((q) => Math.abs((q[0] - a[0]) * uz - (q[2] - a[1]) * ux) > tolerance)) return;
+      rows.push({
+        block, element, side, ids, a, b,
+        yLo: Math.min(...points.map((q) => q[1])),
+        yHi: Math.max(...points.map((q) => q[1])),
+      });
+    });
   });
-  return [...ids].sort((a, b) => a - b);
+  return rows;
 }
 
-function jointMidpoint(j) {
-  return [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+function intervalsTouch(a, b, tolerance) {
+  return a.lo <= b.hi + tolerance && b.lo <= a.hi + tolerance
+    && a.yLo <= b.yHi + tolerance && b.yLo <= a.yHi + tolerance;
 }
 
-/** End face, nodes, and in-plane face normal corresponding to each A/B point. */
+/**
+ * Nodes on the locally connected, coplanar exterior faces containing A/B.
+ * Coplanarity alone is insufficient: a flood fill over touching face intervals
+ * prevents a remote block on the same infinite plane from being constrained.
+ */
 function rollerFaces(meshes, supports, joints) {
-  if (!joints || joints.length !== meshes.length + 1) return [];
-  const ends = [
-    { block: 0, which: 'lo', joint: joints[0] },
-    { block: meshes.length - 1, which: 'hi', joint: joints[joints.length - 1] },
-  ];
-  return supports.map((p, support) => {
-    if (!p) return null;
-    const end = ends.reduce((best, row) => {
-      const m = jointMidpoint(row.joint);
-      const d = Math.hypot(p[0] - m[0], p[1] - m[1]);
-      return !best || d < best.d ? { ...row, d } : best;
-    }, null);
-    const dx = end.joint.b[0] - end.joint.a[0];
-    const dz = end.joint.b[1] - end.joint.a[1];
+  const allNodes = meshes.flatMap((mesh) => mesh.nodes);
+  if (!allNodes.length) return [];
+  const xs = allNodes.map((p) => p[0]);
+  const ys = allNodes.map((p) => p[1]);
+  const zs = allNodes.map((p) => p[2]);
+  const scale = Math.max(
+    Math.max(...xs) - Math.min(...xs),
+    Math.max(...ys) - Math.min(...ys),
+    Math.max(...zs) - Math.min(...zs),
+    1,
+  );
+  const planeTol = scale * 1e-7;
+  const touchTol = scale * 1e-6;
+  const faces = exteriorSectionFaces(meshes, planeTol);
+  const endJoints = joints?.length === meshes.length + 1
+    ? [joints[0], joints[joints.length - 1]] : [];
+
+  return supports.flatMap((p, support) => {
+    if (!p || !faces.length) return [];
+
+    // At a corner two exterior faces contain the support. Preserve the
+    // intended arch-end face when an ordered joint chain is available.
+    let pool = faces;
+    if (endJoints.length) {
+      const preferred = endJoints.reduce((best, joint) => {
+        const m = [(joint.a[0] + joint.b[0]) / 2, (joint.a[1] + joint.b[1]) / 2];
+        const d = Math.hypot(p[0] - m[0], p[1] - m[1]);
+        return !best || d < best.d ? { joint, d } : best;
+      }, null)?.joint;
+      if (preferred) {
+        const dx = preferred.b[0] - preferred.a[0];
+        const dz = preferred.b[1] - preferred.a[1];
+        const len = Math.hypot(dx, dz) || 1;
+        const ux = dx / len;
+        const uz = dz / len;
+        const aligned = faces.filter((face) => [face.a, face.b].every((q) =>
+          Math.abs((q[0] - preferred.a[0]) * uz - (q[1] - preferred.a[1]) * ux) <= planeTol));
+        if (aligned.length) pool = aligned;
+      }
+    }
+    const seed = pool.reduce((best, face) => {
+      const d = pointSegmentDistance(p, face.a, face.b);
+      return !best || d < best.d ? { face, d } : best;
+    }, null)?.face;
+    if (!seed) return [];
+
+    const dx = seed.b[0] - seed.a[0];
+    const dz = seed.b[1] - seed.a[1];
     const length = Math.hypot(dx, dz) || 1;
-    return {
-      support, block: end.block, which: end.which,
-      ids: nodesOnJointFace(meshes[end.block], end.which),
-      normal: [-dz / length, dx / length],
-    };
-  }).filter((row) => row?.ids.length);
+    const ux = dx / length;
+    const uz = dz / length;
+    const coplanar = faces.filter((face) => [face.a, face.b].every((q) =>
+      Math.abs((q[0] - seed.a[0]) * uz - (q[1] - seed.a[1]) * ux) <= planeTol))
+      .map((face) => {
+        const projected = [face.a, face.b].map((q) =>
+          (q[0] - seed.a[0]) * ux + (q[1] - seed.a[1]) * uz);
+        return { ...face, lo: Math.min(...projected), hi: Math.max(...projected) };
+      });
+    const seedIndex = coplanar.findIndex((face) => face.block === seed.block
+      && face.element === seed.element && face.side === seed.side);
+    if (seedIndex < 0) return [];
+
+    const connected = new Set([seedIndex]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      coplanar.forEach((candidate, i) => {
+        if (connected.has(i)) return;
+        if ([...connected].some((j) => intervalsTouch(candidate, coplanar[j], touchTol))) {
+          connected.add(i);
+          changed = true;
+        }
+      });
+    }
+
+    const byBlock = new Map();
+    [...connected].forEach((i) => {
+      const face = coplanar[i];
+      if (!byBlock.has(face.block)) byBlock.set(face.block, new Set());
+      face.ids.forEach((id) => byBlock.get(face.block).add(id));
+    });
+    return [...byBlock].map(([block, ids]) => ({
+      support, block,
+      ids: [...ids].sort((a, b) => a - b),
+      normal: [-uz, ux],
+    }));
+  });
 }
 
 function forceName(i) {
@@ -1172,7 +1290,7 @@ export function abaqusInput(model, opt = {}) {
     out.push(...linesOf(ids));
   });
   if (supportMode === 'face-rollers' && !faceRollers.length) {
-    out.push('** Face rollers requested, but the two end joint faces could not be identified.');
+    out.push('** Face rollers requested, but no exterior face connected to A/B could be identified.');
   }
   // Equation constraints are model data in Abaqus, so they belong in the
   // assembly rather than in the load step. Nodes on A/B themselves are left
