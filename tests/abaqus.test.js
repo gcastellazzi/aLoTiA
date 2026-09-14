@@ -224,7 +224,10 @@ test('face rollers propagate over touching coplanar faces but not remote ones', 
 
 test('running-bond assemblies use general contact instead of a false block chain', () => {
   const inp = twoBlockModel({ generalContact: true });
-  assert.match(inp, /^\*Contact$/m);
+  assert.match(inp, /^\*Contact, op=NEW$/m);
+  // Abaqus/Standard only reads general contact as model data.
+  assert.ok(inp.search(/^\*Contact, op=NEW$/m) < inp.search(/^\*Step\b/m),
+    'general contact is defined before the step');
   assert.match(inp, /^\*Contact Inclusions, ALL EXTERIOR$/m);
   assert.match(inp, /^\*Contact Property Assignment\n, , STONE_FRICTION$/m);
   assert.doesNotMatch(inp, /^\*Contact Pair/m);

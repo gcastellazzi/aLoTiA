@@ -203,10 +203,88 @@ function clipRectangle(poly, x0, x1, y0, y1) {
   q = clipHalfPlane(q, (p) => p[0] <= x1 + 1e-12, vertical(x1));
   q = clipHalfPlane(q, (p) => p[1] >= y0 - 1e-12, horizontal(y0));
   q = clipHalfPlane(q, (p) => p[1] <= y1 + 1e-12, horizontal(y1));
-  return q.filter((p, i) => {
+  q = q.filter((p, i) => {
     const a = q[(i - 1 + q.length) % q.length];
     return !a || Math.hypot(p[0] - a[0], p[1] - a[1]) > 1e-10;
   });
+  return splitBridges(q, [[0, x0], [0, x1], [1, y0], [1, y1]]);
+}
+
+/**
+ * The disjoint pieces of a Sutherland-Hodgman result.
+ *
+ * Clipping a CONCAVE outline keeps it as one polygon: where the cell holds two
+ * separate pieces of the ring (the two sides of the crown above a course
+ * joint, or both legs of a wide course) they come back joined by a
+ * zero-width bridge along a clip line, traversed once forwards and once
+ * backwards. Exported as one part, that bridge is a pair of exterior faces
+ * over the void, and the two pieces are glued into one rigid body. On each
+ * clip line the edges are reduced to their net coverage, so the bridges
+ * cancel, and the remaining edges are chained back into closed loops.
+ */
+function splitBridges(poly, lines) {
+  if (poly.length < 3) return [];
+  const span = Math.max(
+    Math.max(...poly.map((p) => p[0])) - Math.min(...poly.map((p) => p[0])),
+    Math.max(...poly.map((p) => p[1])) - Math.min(...poly.map((p) => p[1])),
+    1e-12,
+  );
+  const tol = span * 1e-9;
+  const edges = [];
+  const buckets = lines.map(() => []);
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i];
+    const q = poly[(i + 1) % poly.length];
+    if (Math.hypot(q[0] - p[0], q[1] - p[1]) <= tol) continue;
+    const k = lines.findIndex(([axis, v]) =>
+      Math.abs(p[axis] - v) <= tol && Math.abs(q[axis] - v) <= tol);
+    if (k < 0) edges.push([p, q]);
+    else buckets[k].push([p[1 - lines[k][0]], q[1 - lines[k][0]]]);
+  }
+  buckets.forEach((rows, k) => {
+    if (!rows.length) return;
+    const [axis, v] = lines[k];
+    const at = (c) => (axis === 0 ? [v, c] : [c, v]);
+    const stops = [...new Set(rows.flat())].sort((a, b) => a - b);
+    let run = null;
+    const flush = () => {
+      if (run) edges.push(run.sign > 0 ? [at(run.lo), at(run.hi)] : [at(run.hi), at(run.lo)]);
+      run = null;
+    };
+    for (let i = 0; i + 1 < stops.length; i++) {
+      const lo = stops[i];
+      const hi = stops[i + 1];
+      if (hi - lo <= tol) continue;
+      const mid = (lo + hi) / 2;
+      const net = rows.reduce((s, [a, b]) =>
+        s + (Math.min(a, b) < mid && mid < Math.max(a, b) ? Math.sign(b - a) : 0), 0);
+      const sign = Math.sign(net);
+      if (run && sign === run.sign) { run.hi = hi; continue; }
+      flush();
+      if (sign) run = { lo, hi, sign };
+    }
+    flush();
+  });
+
+  const loops = [];
+  const used = new Array(edges.length).fill(false);
+  const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= span * 1e-7;
+  for (let s = 0; s < edges.length; s++) {
+    if (used[s]) continue;
+    used[s] = true;
+    const loop = [edges[s][0]];
+    let end = edges[s][1];
+    for (;;) {
+      if (near(end, loop[0])) break;
+      const next = edges.findIndex((e, i) => !used[i] && near(e[0], end));
+      if (next < 0) break;
+      used[next] = true;
+      loop.push(edges[next][0]);
+      end = edges[next][1];
+    }
+    if (loop.length >= 3) loops.push(loop);
+  }
+  return loops;
 }
 
 /** Material intervals cut by a horizontal scan line through a closed outline. */
@@ -277,16 +355,16 @@ export function subnormalCourses(inner, outer, courseCount, opt = {}) {
     }
     cuts.sort((a, b) => a - b);
     for (let k = 0; k + 1 < cuts.length; k++) {
-      const pts = clipRectangle(outline, cuts[k], cuts[k + 1], y0, y1);
-      if (pts.length < 3) continue;
-      const block = { x: pts.map((p) => p[0]), y: pts.map((p) => p[1]) };
-      if (Math.abs(signedArea(block)) <= areaFloor) continue;
-      if (signedArea(block) < 0) { block.x.reverse(); block.y.reverse(); }
-      rowBlocks.push(block);
-      const width = Math.max(...block.x) - Math.min(...block.x);
-      // Half blocks at the ends create the bond but must not progressively
-      // shrink its module as the construction rises.
-      if (width >= module * 0.45) establishedWidths.push(width);
+      for (const pts of clipRectangle(outline, cuts[k], cuts[k + 1], y0, y1)) {
+        const block = { x: pts.map((p) => p[0]), y: pts.map((p) => p[1]) };
+        if (Math.abs(signedArea(block)) <= areaFloor) continue;
+        if (signedArea(block) < 0) { block.x.reverse(); block.y.reverse(); }
+        rowBlocks.push(block);
+        const width = Math.max(...block.x) - Math.min(...block.x);
+        // Half blocks at the ends create the bond but must not progressively
+        // shrink its module as the construction rises.
+        if (width >= module * 0.45) establishedWidths.push(width);
+      }
     }
     blocks.push(...rowBlocks);
     courses.push({ y0, y1, blocks: rowBlocks.length, module });

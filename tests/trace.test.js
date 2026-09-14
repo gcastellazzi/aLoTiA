@@ -148,6 +148,37 @@ test('an approximate horizontal module controls every sub-normal course', () => 
   assert.ok(maxWidth <= 0.8 + 1e-9, `no block is wider than the 0.8 module (${maxWidth})`);
 });
 
+test('a course cell holding two separate pieces of the ring gives two blocks, not a bridged one', () => {
+  // With nine courses a bed joint falls just below the intrados crown, and a
+  // module of 2 puts both sides of the crown in one cell. Clipping the concave
+  // outline used to return them as one polygon joined by a zero-width bridge.
+  const made = blocksBetween(arc(4), arc(5), 9, { cutMode: 'subnormal', blockWidth: 2 });
+  const overlapping = (b) => {
+    const p = b.x.map((x, i) => [x, b.y[i]]);
+    const n = p.length;
+    const cross = (o, a, c) => (a[0] - o[0]) * (c[1] - o[1]) - (a[1] - o[1]) * (c[0] - o[0]);
+    for (let i = 0; i < n; i++) {
+      const a = p[i];
+      const c = p[(i + 1) % n];
+      for (let j = i + 2; j < n; j++) {
+        if ((j + 1) % n === i) continue;
+        const d = p[j];
+        const e = p[(j + 1) % n];
+        if (Math.abs(cross(a, c, d)) > 1e-9 || Math.abs(cross(a, c, e)) > 1e-9) continue;
+        const u = [c[0] - a[0], c[1] - a[1]];
+        const len = u[0] * u[0] + u[1] * u[1];
+        const t = [d, e].map((q) => ((q[0] - a[0]) * u[0] + (q[1] - a[1]) * u[1]) / len);
+        if (Math.min(1, Math.max(...t)) - Math.max(0, Math.min(...t)) > 1e-6) return true;
+      }
+    }
+    return false;
+  };
+  assert.ok(!made.blocks.some(overlapping), 'no block has collinear, overlapping edges');
+  const gotArea = made.blocks.reduce((sum, b) => sum + area(b), 0);
+  const ringArea = (Math.PI / 2) * (25 - 16);
+  assert.ok(Math.abs(gotArea - ringArea) / ringArea < 0.001, 'the ring is still fully covered');
+});
+
 test('a bad trace is reported rather than silently drawn', () => {
   assert.ok(checkTrace([[0, 0]], arc(5), 6).length, 'too few points');
   // Two coincident curves: no masonry at all.

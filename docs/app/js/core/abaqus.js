@@ -1322,24 +1322,30 @@ export function abaqusInput(model, opt = {}) {
 
   out.push('*End Assembly');
 
-  out.push('*Step, name=Gravity_and_applied_loads, nlgeom=YES, inc=1000');
-  out.push('*Dynamic, application=QUASI-STATIC');
-  out.push('0.01, 1., 1e-08, 0.05');
-  out.push('** One pair per joint, and each pair is exactly the two faces that abut:');
-  out.push('** the hi face of a voussoir against the lo face of the next.');
-  out.push('** The first surface named is the slave.');
-  if (degraded.length) {
-    out.push(`** ${degraded.length} joint(s) could not be identified --- `
-      + `${degraded.join(', ')} --- and there the block offers its whole outline.`);
-    out.push('** Expect wrong-facing facets on those, and a free body wherever one fails to close.');
-  }
+  // GENERAL CONTACT IS MODEL DATA IN ABAQUS/STANDARD. Only Abaqus/Explicit
+  // accepts *Contact inside a step; written there for this implicit step it
+  // is dropped (on import into CAE) or rejected, and the courses fall through
+  // one another as if no interaction had been defined at all.
   if (generalContact) {
     out.push('** Running-bond assembly: contact is discovered over every exterior face.');
-    out.push('*Contact');
+    out.push('*Contact, op=NEW');
     out.push('*Contact Inclusions, ALL EXTERIOR');
     out.push('*Contact Property Assignment');
     out.push(', , STONE_FRICTION');
-  } else {
+  }
+
+  out.push('*Step, name=Gravity_and_applied_loads, nlgeom=YES, inc=1000');
+  out.push('*Dynamic, application=QUASI-STATIC');
+  out.push('0.01, 1., 1e-08, 0.05');
+  if (!generalContact) {
+    out.push('** One pair per joint, and each pair is exactly the two faces that abut:');
+    out.push('** the hi face of a voussoir against the lo face of the next.');
+    out.push('** The first surface named is the slave.');
+    if (degraded.length) {
+      out.push(`** ${degraded.length} joint(s) could not be identified --- `
+        + `${degraded.join(', ')} --- and there the block offers its whole outline.`);
+      out.push('** Expect wrong-facing facets on those, and a free body wherever one fails to close.');
+    }
     for (let i = 0; i + 1 < meshes.length; i++) {
       out.push('*Contact Pair, interaction=STONE_FRICTION, type=SURFACE TO SURFACE, '
         + `small sliding, adjust=${fmt(adjust)}`);

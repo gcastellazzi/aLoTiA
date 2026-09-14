@@ -55,7 +55,13 @@ upwards, courses wider than the mean block width established below are divided
 with alternating half-module offsets, as running bond.
 Because those courses form a bonded assembly rather than one serial voussoir
 chain, their Abaqus export uses all-exterior general contact instead of pairing
-unrelated consecutive blocks.
+unrelated consecutive blocks. That general contact is written as model data,
+before the step: Abaqus/Standard does not accept `*Contact` inside a step, so
+the courses previously had no interaction at all. A course cell that contains
+two separate pieces of the ring (both sides of the crown just below it, or both
+legs of a wide course) is now split into two blocks; the concave clip used to
+join them with a zero-width bridge, one rigid part with phantom faces over the
+opening.
 
 The traced intrados and extrados now remain active after block generation and
 are removed only by Clear curves. Re-generating replaces the group derived from
