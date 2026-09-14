@@ -184,11 +184,71 @@ test('optional end-face roller beds block only the face-normal displacement', ()
   assert.match(inp, /\*Nset, nset=SUPPORT_A_FACE_B1, instance=BLOCK_1_I/);
   assert.match(inp, /\*Nset, nset=SUPPORT_B_FACE_B2, instance=BLOCK_2_I/);
   assert.match(inp, /End face A: roller bed blocks U\.normal/);
-  assert.match(inp, /^\*Equation\n1\nBLOCK_1_I\.\d+, 1, -?1$/m,
+  // A boundary condition on the whole face set, which CAE lists with the
+  // supports, not per-node equations that it does not.
+  assert.doesNotMatch(inp, /^\*Equation$/m);
+  assert.doesNotMatch(inp, /^\*Transform/m, 'a vertical face needs no nodal system');
+  assert.match(inp, /^\*Boundary\nSUPPORT_A_FACE_B1, 1, 1, 0\.$/m,
     'the vertical end face has a horizontal normal');
+  assert.match(inp, /^\*Boundary\nSUPPORT_B_FACE_B2, 1, 1, 0\.$/m);
+  assert.ok(inp.search(/SUPPORT_A_FACE_B1, 1, 1/) > inp.search(/^\*Step\b/m),
+    'the roller bed is applied in the step, with the hinges');
   // A and B remain fully fixed hinge lines in addition to the roller beds.
   assert.match(inp, /SUPPORT_A_B1, 1, 3, 0\./);
   assert.match(inp, /SUPPORT_B_B2, 1, 3, 0\./);
+
+  // Every node of the end face is in the roller set, the hinge line included.
+  const parts = parseParts(inp);
+  const face = inp.match(/\*Nset, nset=SUPPORT_A_FACE_B1[^\n]*\n([^*]+)/)[1]
+    .match(/\d+/g).map(Number).sort((a, b) => a - b);
+  const onFace = [...parts.get('BLOCK_1').nodes]
+    .filter(([, p]) => Math.abs(p[0]) < 1e-12).map(([id]) => id).sort((a, b) => a - b);
+  assert.deepEqual(face, onFace);
+});
+
+test('an inclined roller face is restrained in a nodal system along its normal', () => {
+  // A skew-back springing: the end face of block 1 runs from (0,0) to (1,1),
+  // so its normal is (-1, 1)/sqrt(2) (or its opposite).
+  const a = { x: [0, 2, 2, 1], y: [0, 0, 1, 1] };
+  const b = rect(2, 3, 0, 1);
+  const inp = abaqusInput({ blocks: [a, b], weights: [40, 40] }, {
+    solids: [extrude(a, 0.5), extrude(b, 0.5)],
+    sections: [a, b],
+    thickness: [0.5, 0.5],
+    supports: [[0.5, 0.5], [3, 0.5]],
+    supportMode: 'face-rollers',
+    forces: { points: [[0.5, 0.5]], magnitudes: [[10, 0]] },
+    joints: [
+      { a: [0, 0], b: [1, 1] },
+      { a: [2, 0], b: [2, 1] },
+      { a: [3, 0], b: [3, 1] },
+    ],
+  });
+  const t = inp.match(/^\*Transform, nset=SUPPORT_A_FACE_B1, type=R\n([^\n]+)$/m);
+  assert.ok(t, 'the inclined face gets a nodal transformation');
+  const [ax, ay, az, bx, by, bz] = t[1].split(',').map(Number);
+  assert.ok(Math.abs(Math.abs(ax) - Math.SQRT1_2) < 1e-6 && Math.abs(ax + az) < 1e-6 && ay === 0,
+    'local 1 is the face normal');
+  assert.deepEqual([bx, by, bz], [0, 1, 0]);
+  assert.match(inp, /^\*Boundary\nSUPPORT_A_FACE_B1, 1, 1, 0\.$/m);
+  assert.match(inp, /^\*Boundary\nSUPPORT_B_FACE_B2, 1, 1, 0\.$/m,
+    'the vertical face at B still uses the global DOF');
+  assert.doesNotMatch(inp, /^\*Transform, nset=SUPPORT_B/m);
+
+  // The load at A falls on transformed nodes and is written in their system;
+  // mapped back to global axes it must still be the applied (10, 0).
+  const face = new Set(inp.match(/\*Nset, nset=SUPPORT_A_FACE_B1[^\n]*\n([^*]+)/)[1]
+    .match(/\d+/g).map(Number));
+  const c = [-az, 0, ax];
+  const total = [0, 0];
+  for (const [, id, dof, v] of inp.matchAll(/^BLOCK_1_I\.(\d+), ([13]), (\S+)$/gm)) {
+    assert.ok(face.has(Number(id)), 'this load acts on roller-face nodes');
+    const axis = dof === '1' ? [ax, ay, az] : c;
+    total[0] += Number(v) * axis[0];
+    total[1] += Number(v) * axis[2];
+  }
+  assert.ok(Math.abs(total[0] - 10) < 1e-6 && Math.abs(total[1]) < 1e-6,
+    `global load recovered as (${total})`);
 });
 
 test('face rollers propagate over touching coplanar faces but not remote ones', () => {
@@ -218,8 +278,8 @@ test('face rollers propagate over touching coplanar faces but not remote ones', 
     'the touching continuation of the support face must also be constrained');
   assert.doesNotMatch(inp, /SUPPORT_A_FACE_B3/,
     'a disconnected face on the same infinite plane must remain free');
-  assert.match(inp, /^BLOCK_2_I\.\d+, 1, -?1$/m,
-    'the propagated face nodes receive the face-normal equation');
+  assert.match(inp, /^\*Boundary\nSUPPORT_A_FACE_B2, 1, 1, 0\.$/m,
+    'the propagated face nodes receive the face-normal restraint');
 });
 
 test('running-bond assemblies use general contact instead of a false block chain', () => {

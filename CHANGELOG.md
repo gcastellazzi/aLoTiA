@@ -14,6 +14,13 @@ translation and tangential motion of the remaining face nodes stays free. The
 roller bed now propagates to every exterior face that is coplanar with and
 touches the face containing A or B, including faces of adjacent blocks; remote
 faces that merely lie on the same infinite plane are left unconstrained.
+The roller bed is written as a `*Boundary` on each face node set, in the step
+beside the hinge lines, instead of one single-term `*Equation` per node: those
+equations were not boundary conditions, were not listed or reliably imported
+by Abaqus/CAE, and left only the hinge nodes restrained. A face normal to X or
+Z uses the global DOF; an inclined face receives a nodal `*Transform` whose
+local axis 1 is the face normal, and concentrated loads on those nodes are
+rotated into that system.
 
 Voussoirs are meshed as a structured grid rather than a pair of wedges, at
 least three elements across the ring thickness by two along the arch, with a

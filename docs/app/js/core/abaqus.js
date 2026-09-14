@@ -1285,32 +1285,55 @@ export function abaqusInput(model, opt = {}) {
     });
   });
 
-  faceRollers.forEach(({ support, block, ids }) => {
-    out.push(`*Nset, nset=SUPPORT_${support === 0 ? 'A' : 'B'}_FACE_B${block + 1}, instance=BLOCK_${block + 1}_I`);
+  // A ROLLER BED IS A BOUNDARY CONDITION ON THE WHOLE FACE SET, not one
+  // single-term *Equation per node. Equations written against node labels are
+  // not boundary conditions: Abaqus/CAE does not list them with the supports,
+  // and on import they are not reliably kept, which left only the A/B hinge
+  // nodes restrained. A face normal to X or Z takes the global DOF directly;
+  // an inclined face gets a nodal *Transform whose local axis 1 is the face
+  // normal, exactly what CAE writes for a boundary condition in a datum CSYS.
+  // The hinge nodes are fixed in all three translations, which is the same in
+  // any system, so they stay in the face set.
+  const transformed = new Map();
+  const rollerRows = faceRollers.map((row) => {
+    const { support, block, normal } = row;
+    const name = `SUPPORT_${support === 0 ? 'A' : 'B'}_FACE_B${block + 1}`;
+    const dof = Math.abs(normal[1]) < 1e-9 ? 1 : Math.abs(normal[0]) < 1e-9 ? 3 : null;
+    const system = dof ? `global-${dof}` : `${fmt(normal[0])},${fmt(normal[1])}`;
+    // A node carries one nodal transformation only. Where two roller faces of
+    // one block meet and either is inclined, the node stays with the first;
+    // two global DOFs on one corner node are simply both blocked.
+    const clash = [];
+    const ids = row.ids.filter((id) => {
+      const key = `${block}:${id}`;
+      const seen = transformed.get(key);
+      if (seen && seen.system !== system && (seen.normal || !dof)) {
+        clash.push(id);
+        return false;
+      }
+      if (!seen) transformed.set(key, { system, normal: dof ? null : normal });
+      return true;
+    });
+    return { ...row, name, dof, ids, clash };
+  }).filter((row) => row.ids.length);
+
+  rollerRows.forEach(({ name, block, ids }) => {
+    out.push(`*Nset, nset=${name}, instance=BLOCK_${block + 1}_I`);
     out.push(...linesOf(ids));
   });
-  if (supportMode === 'face-rollers' && !faceRollers.length) {
+  if (supportMode === 'face-rollers' && !rollerRows.length) {
     out.push('** Face rollers requested, but no exterior face connected to A/B could be identified.');
   }
-  // Equation constraints are model data in Abaqus, so they belong in the
-  // assembly rather than in the load step. Nodes on A/B themselves are left
-  // out: their three displacement constraints already include this one and a
-  // duplicate equation would overconstrain the system.
-  faceRollers.forEach(({ support, block, ids, normal }) => {
-    const hinge = new Set((supportSets[support] ?? [])
-      .filter((row) => row.block === block).flatMap((row) => row.ids));
+  rollerRows.forEach(({ name, support, dof, normal, clash }) => {
     out.push(`** End face ${support === 0 ? 'A' : 'B'}: roller bed blocks U.normal; tangential motion remains free.`);
-    ids.filter((id) => !hinge.has(id)).forEach((id) => {
-      const node = `BLOCK_${block + 1}_I.${id}`;
-      if (Math.abs(normal[0]) < 1e-12) {
-        out.push('*Equation', '1', `${node}, 3, ${fmt(normal[1])}`);
-      } else if (Math.abs(normal[1]) < 1e-12) {
-        out.push('*Equation', '1', `${node}, 1, ${fmt(normal[0])}`);
-      } else {
-        out.push('*Equation', '2',
-          `${node}, 1, ${fmt(normal[0])}, ${node}, 3, ${fmt(normal[1])}`);
-      }
-    });
+    if (clash.length) {
+      out.push(`** ${clash.length} corner node(s) already belong to another roller face and keep its system.`);
+    }
+    if (dof) return;
+    out.push('** Inclined face: nodal system with local 1 = face normal, local 2 = Y.');
+    out.push('** U, RF and concentrated loads on these nodes are expressed in that system.');
+    out.push(`*Transform, nset=${name}, type=R`);
+    out.push(`${fmt(normal[0])}, 0., ${fmt(normal[1])}, 0., 1., 0.`);
   });
 
   forceSets.forEach((sets, fi) => {
@@ -1361,6 +1384,14 @@ export function abaqusInput(model, opt = {}) {
       out.push(`SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}, 1, 3, 0.`);
     });
   });
+  if (rollerRows.length) {
+    out.push('** Roller beds: every node coplanar with and connected to the A/B face,');
+    out.push('** restrained normal to that face (local 1 where the face is inclined).');
+  }
+  rollerRows.forEach(({ name, dof }) => {
+    out.push('*Boundary');
+    out.push(`${name}, ${dof ?? 1}, ${dof ?? 1}, 0.`);
+  });
   meshes.forEach((_, i) => {
     out.push('*Dload');
     out.push(`BLOCK_${i + 1}_I.BLOCK_${i + 1}_ALL, GRAV, ${fmt(gravity)}, 0., 0., -1.`);
@@ -1374,8 +1405,12 @@ export function abaqusInput(model, opt = {}) {
       const nodalZ = -fy / count;
       out.push('*Cload');
       ids.forEach((id) => {
-        if (nodalX) out.push(`BLOCK_${bi + 1}_I.${id}, 1, ${fmt(nodalX)}`);
-        if (nodalZ) out.push(`BLOCK_${bi + 1}_I.${id}, 3, ${fmt(nodalZ)}`);
+        // A node under a nodal *Transform reads its load in the local system.
+        const n = transformed.get(`${bi}:${id}`)?.normal;
+        const c1 = n ? nodalX * n[0] + nodalZ * n[1] : nodalX;
+        const c3 = n ? -nodalX * n[1] + nodalZ * n[0] : nodalZ;
+        if (c1) out.push(`BLOCK_${bi + 1}_I.${id}, 1, ${fmt(c1)}`);
+        if (c3) out.push(`BLOCK_${bi + 1}_I.${id}, 3, ${fmt(c3)}`);
       });
     });
   });
