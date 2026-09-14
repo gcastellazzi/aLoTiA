@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
-  abaqusInput, jointEdges, ringChains, hexVolume, hexCornerJacobian,
+  abaqusInput, jointEdges, ringChains, hexVolume, hexCornerJacobian, cleanOutline,
 } from '../docs/app/js/core/abaqus.js';
 import { fromExample } from '../docs/app/js/core/model.js';
 import { extrude } from '../docs/app/js/core/dome.js';
+import { blocksBetween, springings } from '../docs/app/js/core/trace.js';
 
 const rect = (x0, x1, y0, y1) => ({
   x: [x0, x1, x1, x0],
@@ -566,8 +567,10 @@ test('the deck defines no node that no element uses', () => {
   //   NODE SET ASSEMBLY_SUPPORT_A_B8 HAS NO MEMBERS AND WILL BE IGNORED
   //   A BOUNDARY CONDITION HAS BEEN SPECIFIED ON NODE SET ... NOT ACTIVE
   //
-  // which is fatal. Example_7 is the case: hand traced, with two cells of
-  // 1e-10 volume that have to go.
+  // which is fatal. Example_7 is the case: hand traced, and its first-ear
+  // triangulation used to leave two cells of 1e-10 volume that had to go.
+  // The outline is now cleaned and triangulated for the best worst triangle,
+  // so none is left to drop; the deck must still carry no orphan node.
   const m = fromExample(JSON.parse(readFileSync(
     new URL('./fixtures/matlab/Example_7_San_Francesco.json', import.meta.url), 'utf8')));
   const inp = abaqusInput(m, {
@@ -577,7 +580,7 @@ test('the deck defines no node that no element uses', () => {
     supports: [m.pointA, m.pointB].filter(Boolean),
     joints: m.joints ?? null,
   });
-  assert.match(inp, /degenerate element/, 'this example does drop cells');
+  assert.doesNotMatch(inp, /degenerate element/, 'no cell of this example is degenerate any more');
 
   const parts = parseParts(inp);
   for (const [name, part] of parts) {
@@ -605,4 +608,58 @@ test('the deck defines no node that no element uses', () => {
       `${h[1]} names node ${id}, which no element uses`));
   });
   assert.ok(seen > 0, 'the supports do produce sets');
+});
+
+test('horizontal courses export without slivers or needle elements', () => {
+  // The shape of the example 1 arch, coursed: before sliver merging and the
+  // best-worst-triangle triangulation it wrote wedges a millionth of the ring
+  // in section and triangles of shape 1e-4, which Abaqus refuses as
+  // "The volume of 1 elements is zero, small, or negative".
+  const ring = (r, m) => Array.from({ length: m + 1 }, (_, i) => {
+    const t = Math.PI * (1 - i / m);
+    return [14.1 + r * Math.cos(t), 0.1 + r * Math.sin(t)];
+  });
+  for (const courses of [9, 10, 12]) {
+    for (const blockWidth of [0, 2, 3.4]) {
+      const made = blocksBetween(ring(11.8, 22), ring(13.1, 26), courses, {
+        cutMode: 'subnormal', blockWidth,
+      });
+      const { pointA, pointB } = springings(made.endJoints);
+      const inp = abaqusInput({ blocks: made.blocks, weights: made.blocks.map(() => 10) }, {
+        solids: made.blocks.map((b) => extrude(b, 4)),
+        sections: made.blocks,
+        thickness: made.blocks.map(() => 4),
+        supports: [pointA, pointB],
+        generalContact: true,
+      });
+      assert.doesNotMatch(inp, /degenerate element/);
+      let total = 0;
+      let smallest = Infinity;
+      let worst = Infinity;
+      for (const [, part] of parseParts(inp)) {
+        for (const e of part.elements.values()) {
+          const [a, b, c] = e.ids.slice(0, 3).map((id) => part.nodes.get(id));
+          const area = Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2])) / 2;
+          const sq = (p, q) => (p[0] - q[0]) ** 2 + (p[2] - q[2]) ** 2;
+          worst = Math.min(worst, (4 * Math.sqrt(3) * area) / (sq(a, b) + sq(b, c) + sq(c, a)));
+          smallest = Math.min(smallest, area);
+          total += area;
+        }
+      }
+      const label = `${courses} courses, width ${blockWidth}`;
+      assert.ok(smallest / total > 1e-5, `${label}: smallest element ${smallest / total} of the ring`);
+      assert.ok(worst > 5e-3, `${label}: worst triangle shape ${worst}`);
+    }
+  }
+});
+
+test('an outline is cleaned of near-duplicate and near-collinear vertices, never of held ones', () => {
+  const square = [[0, 0], [1e-6, 0], [0.5, 1e-7], [1, 0], [1, 1], [0, 1]];
+  const cleaned = cleanOutline(square, 1e-3);
+  assert.equal(cleaned.length, 4, 'a square is left');
+  const corners = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  cleaned.forEach((p, i) => assert.ok(Math.hypot(p[0] - corners[i][0], p[1] - corners[i][1]) < 1e-3
+    || corners.some((c) => Math.hypot(p[0] - c[0], p[1] - c[1]) < 1e-3), `${p} is a corner`));
+  const held = cleanOutline(square, 1e-3, [[0.5, 1e-7]]);
+  assert.ok(held.some((p) => p[0] === 0.5), 'a support point on an edge stays');
 });

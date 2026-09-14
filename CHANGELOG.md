@@ -70,6 +70,35 @@ legs of a wide course) is now split into two blocks; the concave clip used to
 join them with a zero-width bridge, one rigid part with phantom faces over the
 opening.
 
+Coursed blocks smaller than a fifth of a full block (module times course
+height) are merged into the neighbour in the same course with which they share
+the longest vertical joint, by clipping the outline once more with both cells;
+a sliver with no such neighbour is dropped and reported in the log. These
+crumbs, left where a cut falls just beside a traced curve, became single
+wedges a millionth of the ring in section which Abaqus rejects as elements of
+zero, small or negative volume. In the export, outlines meshed as wedges are
+first cleaned of vertices within a thousandth of the block of a neighbour or of
+the chord through their neighbours (support and load points are kept), and are
+triangulated to maximise the shape of the worst triangle instead of clipping
+the first valid ear, which left needle triangles even in well-sized blocks.
+
+Normal joint cuts are oriented from the intrados towards the extrados, so on a
+ring they point left on the left haunch and right on the right one. Each cut
+now looks for the intrados behind the reference curve and the extrados ahead of
+it, further along each curve than the previous cut; taking the nearest crossing
+of the infinite normal line either way used to pick a point back behind the
+previous joint or on the far haunch, and blocks came out crossed or inside out
+without any warning. The normal is a three-point derivative over half a block
+either side of the station, so hand-traced polygons and kinks no longer make it
+jump, and the mean line is built from densely resampled curves rather than from
+the block stations. Cuts that cross, leave the ring, or cannot reach a curve are
+reported with the number of the failing cut. The trace check and the Generate
+button now judge the blocks of the selected stereotomy instead of the legacy
+stations, and a generation that fails reports why instead of doing nothing.
+With a normal stereotomy selected, the reference (the extrados highlighted, or
+the dashed mean line), the oriented normal at every station and the resulting
+cuts are drawn over the trace, and a failing station is marked in red.
+
 The traced intrados and extrados now remain active after block generation and
 are removed only by Clear curves. Re-generating replaces the group derived from
 those curves instead of appending a duplicate. Sub-normal courses also accept

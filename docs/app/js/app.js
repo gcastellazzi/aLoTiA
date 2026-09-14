@@ -25,6 +25,7 @@ import {
 import { fromExample, poleOf, consistency } from './core/model.js';
 import {
   blocksBetween, checkTrace, weighBlocks, centroidsOf, springings,
+  normalCutsPreview,
 } from './core/trace.js';
 import { jointsFromBlocks, contactJoint } from './core/joints.js';
 import {
@@ -3295,6 +3296,100 @@ function drawTrace() {
       });
     }
   });
+  drawNormalPreview();
+}
+
+const NORMAL_COLOUR = { reference: '#D95319', failed: '#A2142F' };
+
+/**
+ * The curve the joint normals are taken from, the normal at every station
+ * and the cuts they give, so that "normal to the mean line" and "normal to
+ * the extrados" can be seen before, and after, the blocks are generated. A cut
+ * that cannot be built is drawn in red at the station where it fails.
+ */
+function drawNormalPreview() {
+  const t = state.trace;
+  const mode = ui.traceCutMode?.value;
+  if (!t || t.armed || (mode !== 'normal-outer' && mode !== 'normal-midline')) return;
+  if (t.inner.length < 2 || t.outer.length < 2) return;
+  const n = Math.max(1, Number(ui.nBlocks.value) || 1);
+  let made;
+  try {
+    made = normalCutsPreview(t.inner, t.outer, n, mode);
+  } catch {
+    return;
+  }
+  const arrowPx = 28;
+  mainAx.clipped((c) => {
+    // The reference: a wide translucent band under the extrados, or the mean
+    // line itself, dashed, between the two traced curves.
+    c.beginPath();
+    made.reference.forEach((p, i) => {
+      const [X, Y] = mainAx.toPx(p);
+      if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
+    });
+    c.strokeStyle = NORMAL_COLOUR.reference;
+    if (mode === 'normal-outer') {
+      c.globalAlpha = 0.35;
+      c.lineWidth = 7;
+    } else {
+      c.lineWidth = 2;
+      c.setLineDash([7, 4]);
+    }
+    c.stroke();
+    c.globalAlpha = 1;
+    c.setLineDash([]);
+
+    // The cuts found so far.
+    c.strokeStyle = NORMAL_COLOUR.reference;
+    c.lineWidth = 1.2;
+    c.setLineDash([4, 3]);
+    made.joints.forEach((j) => {
+      const [x0, y0] = mainAx.toPx(j.a);
+      const [x1, y1] = mainAx.toPx(j.b);
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.lineTo(x1, y1);
+      c.stroke();
+    });
+    c.setLineDash([]);
+
+    // The oriented normal at every station, intrados towards extrados.
+    made.frames.forEach((f, k) => {
+      const failed = k === made.failed;
+      const [X, Y] = mainAx.toPx(f.point);
+      const [X1, Y1] = mainAx.toPx([f.point[0] + f.normal[0], f.point[1] + f.normal[1]]);
+      const len = Math.hypot(X1 - X, Y1 - Y) || 1;
+      const ux = (X1 - X) / len;
+      const uy = (Y1 - Y) / len;
+      const tip = [X + ux * arrowPx, Y + uy * arrowPx];
+      c.strokeStyle = failed ? NORMAL_COLOUR.failed : NORMAL_COLOUR.reference;
+      c.fillStyle = c.strokeStyle;
+      c.lineWidth = failed ? 2.4 : 1.6;
+      if (failed) {
+        // The whole line along which no admissible crossing was found.
+        c.setLineDash([2, 3]);
+        c.beginPath();
+        c.moveTo(X - ux * arrowPx * 4, Y - uy * arrowPx * 4);
+        c.lineTo(X + ux * arrowPx * 4, Y + uy * arrowPx * 4);
+        c.stroke();
+        c.setLineDash([]);
+      }
+      c.beginPath();
+      c.moveTo(X, Y);
+      c.lineTo(tip[0], tip[1]);
+      c.stroke();
+      c.beginPath();
+      c.moveTo(tip[0], tip[1]);
+      c.lineTo(tip[0] - ux * 7 - uy * 4, tip[1] - uy * 7 + ux * 4);
+      c.lineTo(tip[0] - ux * 7 + uy * 4, tip[1] - uy * 7 - ux * 4);
+      c.closePath();
+      c.fill();
+      c.beginPath();
+      c.arc(X, Y, failed ? 4 : 2.5, 0, 2 * Math.PI);
+      c.fill();
+    });
+  });
 }
 
 function drawJoints() {
@@ -3972,21 +4067,21 @@ function reportTrace() {
   const n = Number(ui.nBlocks.value) || 1;
   const bits = [`intrados ${t.inner.length} pts`,
     `extrados ${t.outer.length} pts`];
+  const cutMode = ui.traceCutMode?.value;
+  if (cutMode === 'normal-outer') bits.push('normals from the extrados (highlighted)');
+  if (cutMode === 'normal-midline') bits.push('normals from the mean line (dashed)');
   ui.traceCountLabel.textContent = ui.traceCutMode?.value === 'subnormal'
     ? 'Courses' : 'Blocks';
   ui.subnormalWidthRow.hidden = ui.traceCutMode?.value !== 'subnormal';
   let problems = [];
   if (t.inner.length >= 2 && t.outer.length >= 2) {
-    problems = checkTrace(t.inner, t.outer, n);
-    if (!problems.length && (ui.traceCutMode?.value ?? 'stations') !== 'stations') {
-      try {
-        blocksBetween(t.inner, t.outer, n, {
-          cutMode: ui.traceCutMode.value,
-          blockWidth: Number(ui.subnormalWidth.value) || 0,
-        });
-      } catch (e) {
-        problems.push(e.message);
-      }
+    try {
+      problems = checkTrace(t.inner, t.outer, n, {
+        cutMode: ui.traceCutMode?.value ?? 'stations',
+        blockWidth: Number(ui.subnormalWidth.value) || 0,
+      });
+    } catch (e) {
+      problems = [e.message];
     }
   }
   ui.traceStatus.textContent = bits.join(' · ');
@@ -5096,7 +5191,17 @@ function generateBlocks() {
   const thickness = Math.max(0, Number(ui.thick.value) || 1);
   const cutMode = ui.traceCutMode?.value ?? 'stations';
   const blockWidth = Math.max(0, Number(ui.subnormalWidth?.value) || 0);
-  const built = blocksBetween(t.inner, t.outer, n, { cutMode, blockWidth });
+  let built;
+  try {
+    built = blocksBetween(t.inner, t.outer, n, { cutMode, blockWidth });
+  } catch (e) {
+    // A click that throws used to do nothing at all.
+    ui.warn.hidden = false;
+    ui.warn.textContent = `${e.message}.`;
+    appendLog(`Block generation failed (${cutMode}): ${e.message}`);
+    draw();
+    return;
+  }
   const previous = state.model ?? null;
   const replaceId = t.generatedGroupId;
   const previousBlocks = previous?.blocks ?? [];
@@ -5173,8 +5278,11 @@ function generateBlocks() {
 
   recompute();
   fitViews();
+  const slivers = built.slivers;
   appendLog(`${replacedGroup ? 'Regenerated' : 'Generated'} ${built.blocks.length} traced blocks`
-    + (hasOtherBlocks ? ` (${blocks.length} total)` : '') + ` · ${cutMode}`);
+    + (hasOtherBlocks ? ` (${blocks.length} total)` : '') + ` · ${cutMode}`
+    + (slivers?.merged ? ` · ${slivers.merged} sliver(s) merged into their neighbour` : '')
+    + (slivers?.dropped ? ` · ${slivers.dropped} isolated sliver(s) dropped` : ''));
   draw();
 }
 
@@ -5524,8 +5632,11 @@ ui.system.addEventListener('change', () => {
 ui.traceInner.addEventListener('click', () => arm('inner'));
 ui.traceOuter.addEventListener('click', () => arm('outer'));
 ui.makeBlocks.addEventListener('click', generateBlocks);
-ui.nBlocks.addEventListener('change', reportTrace);
-ui.traceCutMode.addEventListener('change', reportTrace);
+// The normal preview follows the block count and the cut mode as they change.
+const retrace = () => { reportTrace(); draw(); };
+ui.nBlocks.addEventListener('input', retrace);
+ui.nBlocks.addEventListener('change', retrace);
+ui.traceCutMode.addEventListener('change', retrace);
 let subnormalRegeneration = null;
 ui.subnormalWidth.addEventListener('input', () => {
   reportTrace();

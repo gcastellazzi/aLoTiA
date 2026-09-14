@@ -11,10 +11,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { area, centroid } from '../docs/app/js/core/geometry.js';
+import { area, centroid, signedArea } from '../docs/app/js/core/geometry.js';
 import {
   arcLengths, length, resample, reverse, sameDirection, blocksBetween,
-  checkTrace, weighBlocks, springings, curveFrame, normalCuts,
+  checkTrace, weighBlocks, springings, curveFrame, normalCuts, normalCutsPreview,
 } from '../docs/app/js/core/trace.js';
 import { forcePolygon, funicular } from '../docs/app/js/core/statics.js';
 
@@ -114,6 +114,55 @@ test('local normals can be evaluated on the extrados and on the mean line', () =
   assert.deepEqual(frame.normal, [0, 1]);
 });
 
+test('joint normals point from the intrados to the extrados on both haunches', () => {
+  for (const mode of ['normal-outer', 'normal-midline']) {
+    for (const outer of [arc(5), arc(5).reverse()]) {
+      const { frames, reference } = normalCutsPreview(arc(4), outer, 10, mode);
+      assert.ok(reference.length >= 2, `${mode} exposes its reference curve`);
+      frames.forEach((f) => {
+        // Outward on a ring centred on the origin: along the position vector.
+        assert.ok(f.normal[0] * f.point[0] + f.normal[1] * f.point[1] > 0,
+          `${mode} normal ${f.normal} at ${f.point} points outwards`);
+      });
+      frames.filter((f) => Math.abs(f.point[0]) > 1).forEach((f) => {
+        assert.equal(Math.sign(f.normal[0]), Math.sign(f.point[0]),
+          'left on the left haunch, right on the right one');
+      });
+    }
+  }
+  // The mean line lies between the curves, not on either of them.
+  const { reference } = normalCutsPreview(arc(4), arc(5), 6, 'normal-midline');
+  reference.forEach((p) => assert.ok(Math.abs(Math.hypot(p[0], p[1]) - 4.5) < 0.01));
+});
+
+test('normal cuts never take a crossing behind the previous joint', () => {
+  // A coarse hand trace in pixels. The nearest crossing of each infinite
+  // extrados normal used to fall back behind the previous cut on this one,
+  // and blocks came out inside out with no error at all.
+  const inner = [[-304, 3], [163, 254], [248, 166], [249, 158], [301, 19], [303, 0]];
+  const outer = [[-440, -3], [-419, 127], [-394, 182], [-235, 367], [245, 367], [278, 340], [441, 2]];
+  const made = blocksBetween(inner, outer, 12, { cutMode: 'normal-outer' });
+  const signs = new Set(made.blocks.map((b) => Math.sign(signedArea(b))));
+  assert.equal(signs.size, 1, 'every block has the same orientation');
+  assert.deepEqual(checkTrace(inner, outer, 12, { cutMode: 'normal-outer' }), []);
+});
+
+test('an impossible normal construction is reported for that mode, with the failing cut', () => {
+  // A flat extrados over a semicircle: near the springings the vertical
+  // extrados normal passes beside the intrados.
+  const inner = arc(4);
+  const flat = [[-6, 0], [-6, 5], [6, 5], [6, 0]];
+  const preview = normalCutsPreview(inner, flat, 20, 'normal-outer');
+  assert.ok(preview.error, 'the construction fails');
+  assert.ok(Number.isInteger(preview.failed) && preview.failed > 0 && preview.failed < 20);
+  assert.equal(preview.joints.length, preview.failed, 'the cuts before the failure are kept');
+  assert.throws(() => normalCuts(inner, flat, 20, 'normal-outer'), /cut \d+/);
+  assert.ok(checkTrace(inner, flat, 20, { cutMode: 'normal-outer' }).length,
+    'the button is disabled for the mode that fails');
+  assert.deepEqual(checkTrace(inner, flat, 20, { cutMode: 'normal-midline' }), [],
+    'and enabled for the mode that works');
+});
+
 test('sub-normal courses are horizontal and super-normal cuts are vertical', () => {
   const quarter = (r) => Array.from({ length: 101 }, (_, i) => {
     const t = (Math.PI * i) / 200;
@@ -144,8 +193,47 @@ test('an approximate horizontal module controls every sub-normal course', () => 
   });
   assert.ok(made.courses.every((course) => Math.abs(course.module - 0.8) < 1e-12));
   assert.ok(made.blocks.length > 10, 'wide courses are divided at the requested module');
-  const maxWidth = Math.max(...made.blocks.map((b) => Math.max(...b.x) - Math.min(...b.x)));
+  const width = (b) => Math.max(...b.x) - Math.min(...b.x);
+  // Without sliver merging no block is wider than the module.
+  const raw = blocksBetween(arc(4), arc(5), 10, {
+    cutMode: 'subnormal', blockWidth: 0.8, minBlockFraction: 0,
+  });
+  const maxWidth = Math.max(...raw.blocks.map(width));
   assert.ok(maxWidth <= 0.8 + 1e-9, `no block is wider than the 0.8 module (${maxWidth})`);
+  // With it, only a block that absorbed a sliver may be.
+  const wide = made.blocks.filter((b) => width(b) > 0.8 + 1e-9);
+  assert.ok(wide.length <= made.slivers.merged, 'every over-wide block absorbed a sliver');
+  wide.forEach((b) => assert.ok(width(b) <= 3 * 0.8 + 1e-9));
+});
+
+test('sliver blocks are merged into their course neighbour, keeping the ring whole', () => {
+  const ringArea = (Math.PI / 2) * (25 - 16);
+  const inner = arc(4, 64);
+  const outer = arc(5, 64);
+  let merged = 0;
+  for (let n = 3; n <= 30; n++) {
+    for (const blockWidth of [0, 0.8, 1.6, 2.5]) {
+      const made = blocksBetween(inner, outer, n, { cutMode: 'subnormal', blockWidth });
+      merged += made.slivers.merged;
+      assert.equal(made.slivers.dropped, 0, `n=${n} w=${blockWidth}: nothing is thrown away`);
+      let k = 0;
+      made.courses.forEach((c) => {
+        const full = c.module * (c.y1 - c.y0);
+        for (let i = 0; i < c.blocks; i++, k++) {
+          assert.ok(area(made.blocks[k]) >= 0.2 * full * (1 - 1e-9),
+            `n=${n} w=${blockWidth}: block ${k} is ${area(made.blocks[k]) / full} of a full block`);
+        }
+      });
+      const got = made.blocks.reduce((s, b) => s + area(b), 0);
+      const polygonArea = Math.abs([...inner, ...outer.slice().reverse()].reduce((s, p, i, o) => {
+        const q = o[(i + 1) % o.length];
+        return s + p[0] * q[1] - q[0] * p[1];
+      }, 0) / 2);
+      assert.ok(Math.abs(got - polygonArea) / polygonArea < 1e-9, 'the courses still tile the ring');
+      assert.ok(Math.abs(got - ringArea) / ringArea < 0.01);
+    }
+  }
+  assert.ok(merged > 0, 'this sweep does produce slivers to merge');
 });
 
 test('a course cell holding two separate pieces of the ring gives two blocks, not a bridged one', () => {
