@@ -109,6 +109,32 @@ The main horizontal-thrust slider has a 5x/10x range button. Its centre remains
 the saved equilibrium state while the upper logarithmic limit doubles from
 five to ten times the reference thrust.
 
+### The activation multiplier
+
+The Mechanism tab computes the activation multiplier α0 of the linear
+kinematic analysis: horizontal forces α·W at the voussoir centroids, in +x or
+−x, added to the weights, with the forces applied by hand kept but neither
+amplified nor given mass. By the principle of virtual work every mechanism of
+four hinges placed at the intrados or extrados ends of the joints is examined
+in closed form — bodies 1 and 3 turn about the ground hinges, the centre of the
+middle body is where the lines through its hinges meet — with prefix sums of
+the loads, so a ring of forty voussoirs is searched in a fraction of a second
+and a larger one by a coarse pass refined joint by joint. A mechanism counts
+only in the sense that opens every joint, the springings included; it is then
+activated by the one direction whose horizontal forces do positive work. The
+least multiplier in each direction and its mechanism are reported, and the
+mechanism goes onto the drawing, the displacement slider and the 3-D view in
+place of the one read off the line of thrust. Four hinges can also be picked
+by hand, or edited from the minimum, to see the multiplier of that mechanism
+or why it is not one. With both ends imposed the search stays between them.
+
+The mechanism the tab reads off a line of thrust under the vertical loads is
+not used: that line passes through its hinges, so the vertical loads do no
+virtual work on it and its multiplier is zero by construction. The search is
+tested against virtual work on every mechanism of a ring, and against the
+static theorem: with horizontal loads below the minimum a line of thrust still
+fits inside the ring, above it none does.
+
 ## [1.1.0] — 2026-09-02
 
 Interactive graphical statics of masonry arches in the browser, as plain ES

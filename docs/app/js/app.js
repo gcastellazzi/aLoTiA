@@ -41,6 +41,9 @@ import {
 } from './core/persist.js';
 import { abaqusInput } from './core/abaqus.js';
 import {
+  multiplierInput, mechanismMultiplier, minimumMultiplier,
+} from './core/multiplier.js';
+import {
   parseNotes, toggleWrap, setBlockStyle, insertLink,
 } from './core/notes.js';
 import {
@@ -84,6 +87,8 @@ const ui = {
   mechOn: el('mechOn'), mechVerdict: el('mechVerdict'),
   mechCount: el('mechCount'), mechBand: el('mechBand'),
   mechAmp: el('mechAmp'), goHmin: el('goHmin'), goHmax: el('goHmax'),
+  alphaFind: el('alphaFind'), alphaPick: el('alphaPick'), alphaClear: el('alphaClear'),
+  alphaShow: el('alphaShow'), alphaResult: el('alphaResult'), alphaDetail: el('alphaDetail'),
   poleni: el('poleni'), domeAngle: el('domeAngle'), domeAxis: el('domeAxis'),
   pickAxis: el('pickAxis'), domeStatus: el('domeStatus'),
   tabForce: el('tabForce'), tabSolid: el('tabSolid'),
@@ -189,6 +194,10 @@ const state = {
   basePole: null,   // the pole as saved: thrust slider is relative to it
   thrustRangeMax: 5,
   mech: null,       // the hinge analysis, when the mechanism tab is driving
+  // The activation multiplier: the minimum in each direction, the hinges
+  // picked by hand and their result, which of them is shown, and the model
+  // they were computed for.
+  alpha: null,
   band: null,       // the two collapse thrusts, once computed
   camera: { az: -45, el: 30 },   // the 3-D viewpoint, in degrees
   ends: { A: null, B: null, picking: null, construction: null },
@@ -1491,8 +1500,201 @@ function raysStride() {
  * freedom. Two hinges is once hyperstatic and undetermined, three is the
  * three-pin arch, four is a mechanism.
  */
+/* ---------------------------------------------- the activation multiplier -- */
+
+/**
+ * What the multiplier was computed for. Keyed on the arch rather than cleared
+ * by hand from each place that can change it, as the band is: a stale alpha
+ * next to a different arch would be worse than none.
+ */
+function alphaSignature() {
+  const m = state.model;
+  if (!m?.joints) return null;
+  const r = (v) => Number(v).toPrecision(8);
+  const f = state.forces ?? {};
+  return [
+    m.blocks.length,
+    m.joints.map((j) => [...j.a, ...j.b].map(r).join(',')).join(';'),
+    (m.weights ?? []).map(r).join(','),
+    JSON.stringify([f.points ?? [], f.magnitudes ?? [], f.x ?? []]),
+    ui.imposeEnds.checked && state.ends.A && state.ends.B
+      ? `${state.ends.A.map(r)}|${state.ends.B.map(r)}` : '',
+  ].join('#');
+}
+
+/** The alpha state for the arch on screen, dropping one left from another arch. */
+function currentAlpha() {
+  if (state.alpha && state.alpha.key !== alphaSignature()) state.alpha = null;
+  return state.alpha;
+}
+
+function alphaState() {
+  return currentAlpha() ?? (state.alpha = {
+    key: alphaSignature(), plus: null, minus: null, stands: null, evaluated: 0,
+    picks: [], manual: null, picking: false, show: 'none',
+  });
+}
+
+/** With both ends imposed, the mechanism lives between the joints nearest A and B. */
+function alphaRange() {
+  const m = state.model;
+  if (!(ui.imposeEnds.checked && state.ends.A && state.ends.B && m?.joints)) return null;
+  const nearest = (p) => m.joints.reduce((best, j, i) => {
+    const d = Math.hypot((j.a[0] + j.b[0]) / 2 - p[0], (j.a[1] + j.b[1]) / 2 - p[1]);
+    return !best || d < best.d ? { i, d } : best;
+  }, null).i;
+  const a = nearest(state.ends.A);
+  const b = nearest(state.ends.B);
+  return [Math.min(a, b), Math.max(a, b)];
+}
+
+/** The mechanism object to put on the drawing, or null. */
+function shownAlphaMechanism() {
+  const s = currentAlpha();
+  if (!s) return null;
+  const got = s.show === 'plus' ? s.plus : s.show === 'minus' ? s.minus
+    : s.show === 'manual' ? s.manual : null;
+  return got && !got.reason ? got : null;
+}
+
+function describeAlphaHinges(r) {
+  return r.hinges.map((h, i) => `${String.fromCharCode(65 + i)} joint ${h.joint} ${h.face}`).join(', ');
+}
+
+function reportAlpha() {
+  const s = currentAlpha();
+  const m = state.model;
+  ui.alphaFind.disabled = !m?.joints;
+  ui.alphaPick.disabled = !m?.joints;
+  ui.alphaPick.classList.toggle('armed', !!s?.picking);
+  ui.alphaPick.textContent = s?.picking ? `Picking (${s.picks.length}/4)` : 'Pick hinges';
+  if (!m?.joints) {
+    ui.alphaResult.className = 'verdict';
+    ui.alphaResult.textContent = m ? noJointsReason(m) : '—';
+    ui.alphaDetail.textContent = '';
+    return;
+  }
+  if (!s || (!s.plus && !s.minus && !s.manual && !s.picks.length)) {
+    ui.alphaResult.className = 'verdict';
+    ui.alphaResult.textContent = '—';
+    ui.alphaDetail.textContent = '';
+    ui.alphaShow.value = 'none';
+    return;
+  }
+  ui.alphaShow.value = s.show;
+  const lines = [];
+  const fmt = (r) => `α0 = ${r.alpha.toFixed(4)}`;
+  if (s.plus || s.minus) {
+    lines.push(`+x: ${s.plus ? fmt(s.plus) : 'no mechanism activated'}`
+      + ` · −x: ${s.minus ? fmt(s.minus) : 'no mechanism activated'}`);
+  }
+  if (s.manual) {
+    lines.push(s.manual.reason
+      ? `picked hinges: ${s.manual.reason}`
+      : `picked hinges: ${fmt(s.manual)} for loads in ${s.manual.direction > 0 ? '+x' : '−x'}`);
+  } else if (s.picking) {
+    lines.push(`picked ${s.picks.length} of 4 hinges: click near the intrados or extrados end of a joint`);
+  }
+  const low = [s.plus, s.minus].filter(Boolean).map((r) => r.alpha);
+  const governing = low.length ? Math.min(...low) : null;
+  ui.alphaResult.className = `verdict ${s.stands === false || governing === 0 ? 'bad' : governing !== null ? 'ok' : ''}`;
+  ui.alphaResult.textContent = s.stands === false
+    ? 'the arch does not stand under its vertical loads: α0 = 0'
+    : governing !== null
+      ? `activation multiplier α0 = ${governing.toFixed(4)} (horizontal action ${governing.toFixed(4)} g)`
+      : lines.shift() ?? '—';
+  const shown = shownAlphaMechanism();
+  ui.alphaDetail.textContent = [
+    ...lines,
+    shown ? `shown: ${describeAlphaHinges(shown)}` : '',
+    s.evaluated ? `${s.evaluated.toLocaleString()} mechanisms examined` : '',
+  ].filter(Boolean).join('  ·  ');
+}
+
+function findAlpha() {
+  const m = state.model;
+  if (!m?.joints) { reportAlpha(); return; }
+  const s = alphaState();
+  try {
+    const input = multiplierInput(m, state.forces);
+    const t0 = performance.now();
+    const got = minimumMultiplier(input, { range: alphaRange() ?? undefined });
+    s.plus = got.plus;
+    s.minus = got.minus;
+    s.stands = got.standsUnderGravity;
+    s.evaluated = got.evaluated;
+    const low = [got.plus, got.minus].filter(Boolean).sort((a, b) => a.alpha - b.alpha)[0];
+    s.show = low ? (low === got.plus ? 'plus' : 'minus') : 'none';
+    appendLog(`Activation multiplier: +x ${got.plus ? got.plus.alpha.toFixed(4) : '—'}, `
+      + `−x ${got.minus ? got.minus.alpha.toFixed(4) : '—'} `
+      + `(${got.evaluated} mechanisms, ${(performance.now() - t0).toFixed(0)} ms)`);
+  } catch (e) {
+    ui.alphaResult.className = 'verdict';
+    ui.alphaResult.textContent = e.message;
+    return;
+  }
+  showAlpha();
+}
+
+/** Put the selected alpha mechanism on the drawing, or take it off. */
+function showAlpha() {
+  if (shownAlphaMechanism() && !ui.showMech.checked) ui.showMech.checked = true;
+  reportMechanism();
+  draw();
+}
+
+/** A click on the drawing while picking: add or remove the hinge at that joint end. */
+function pickAlphaHinge(px) {
+  const s = currentAlpha();
+  const m = state.model;
+  if (!s?.picking || !m?.joints) return false;
+  const joint = pickJointAt(px);
+  // Off every joint the click is left to pan the drawing.
+  if (joint === null) return false;
+  const j = m.joints[joint];
+  const da = Math.hypot(...mainAx.toPx(j.a).map((v, i) => v - px[i]));
+  const db = Math.hypot(...mainAx.toPx(j.b).map((v, i) => v - px[i]));
+  const face = da <= db ? 'intrados' : 'extrados';
+  const at = s.picks.findIndex((p) => p.joint === joint);
+  if (at >= 0 && s.picks[at].face === face) s.picks.splice(at, 1);
+  else if (at >= 0) s.picks[at] = { joint, face };
+  else if (s.picks.length < 4) s.picks.push({ joint, face });
+  s.picks.sort((p, q) => p.joint - q.joint);
+  s.manual = s.picks.length === 4
+    ? mechanismMultiplier(multiplierInput(m, state.forces), s.picks)
+    : null;
+  s.show = s.manual && !s.manual.reason ? 'manual' : s.show === 'manual' ? 'none' : s.show;
+  showAlpha();
+  return true;
+}
+
+/** The hinges being picked, before they make a mechanism. */
+function drawAlphaPicks() {
+  const s = currentAlpha();
+  const m = state.model;
+  if (!s?.picking || !s.picks.length || !m?.joints) return;
+  drawHinges(mainAx, s.picks.map((p) => ({
+    point: p.face === 'extrados' ? m.joints[p.joint].b : m.joints[p.joint].a,
+    support: false,
+  })), { colour: '#D95319' });
+}
+
 function reportMechanism(thrustFraction) {
   const m = state.model;
+  // The activation-multiplier mechanism, when one is selected, takes the place
+  // of the one read off the line of thrust: the drawing, the displacement
+  // slider and the 3-D view all work from state.mech.
+  reportAlpha();
+  const alphaMech = m?.joints ? shownAlphaMechanism() : null;
+  if (alphaMech) {
+    state.mech = alphaMech;
+    ui.mechVerdict.className = `verdict ${alphaMech.alpha > 0 ? 'ok' : 'bad'}`;
+    ui.mechVerdict.textContent = `activation mechanism: ${alphaMech.verdict}`;
+    ui.mechCount.textContent = `4 hinges (${describeAlphaHinges(alphaMech)}) · 3 bodies · 3×3 − 8 = 1`;
+    ui.mechBand.textContent = '';
+    ui.mechAmp.disabled = false;
+    return;
+  }
   // An empty desk is a legitimate state: the app opens on one.
   if (!m) {
     state.mech = null;
@@ -2396,6 +2598,7 @@ function draw() {
     }
     drawHinges(mainAx, a.hinges);
   }
+  drawAlphaPicks();
   if (ui.showConstruction.checked && state.ends.construction) {
     const preliminary = state.ends.construction.preliminary.points;
     if (progress && constructing) {
@@ -5397,6 +5600,7 @@ function attachNavigation(ax) {
       draw();
       return;
     }
+    if (ax === mainAx && pickAlphaHinge([e.offsetX, e.offsetY])) return;
     if (selectEquilibriumBlockAt(ax, e)) return;
     if (ax === mainAx) {
       const picked = pickJointAt([e.offsetX, e.offsetY]);
@@ -6210,6 +6414,30 @@ ui.mechOn.addEventListener('change', () => {
   draw();
 });
 ui.mechAmp.addEventListener('input', draw);
+ui.alphaFind.addEventListener('click', findAlpha);
+ui.alphaPick.addEventListener('click', () => {
+  const s = alphaState();
+  s.picking = !s.picking;
+  // Starting from the minimum on show, so it can be edited a hinge at a time.
+  if (s.picking && !s.picks.length) {
+    const from = s.show === 'plus' ? s.plus : s.show === 'minus' ? s.minus : null;
+    if (from) {
+      s.picks = from.picks.map((p) => ({ ...p }));
+      s.manual = mechanismMultiplier(multiplierInput(state.model, state.forces), s.picks);
+      s.show = "manual";
+    }
+  }
+  showAlpha();
+});
+ui.alphaClear.addEventListener('click', () => {
+  state.alpha = null;
+  showAlpha();
+});
+ui.alphaShow.addEventListener('change', () => {
+  const s = alphaState();
+  s.show = ui.alphaShow.value;
+  showAlpha();
+});
 ui.traceProfile.addEventListener('click', armProfile);
 ui.clearProfiles.addEventListener('click', () => {
   state.profiles.list = [];

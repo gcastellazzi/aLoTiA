@@ -418,33 +418,10 @@ export function findHinges(crossings, joints, tol = TOUCH, supports = null) {
     return out;
   };
 
-  // Each hinge also carries what is needed to tell an opening joint from an
-  // interpenetrating one: the FAR end of its joint, which is the material that
-  // has to separate, and the direction along the arch from the body before the
-  // hinge to the body after it.
-  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
-  const along = (i) => {
-    if (i <= 0 || i >= last) return null;
-    const p = mid(joints[i - 1]);
-    const q = mid(joints[i + 1]);
-    const d = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
-    return [(q[0] - p[0]) / d, (q[1] - p[1]) / d];
-  };
-
   const hinge = (i, support) => {
     const c = crossings[i];
     const f = support && clearance(c) > tol ? 'interior' : faceOf(c);
-    const j = joints[i];
-    return {
-      joint: i,
-      s: c.s,
-      point: [c.point[0], c.point[1]],
-      face: f,
-      support,
-      // The end of the joint the hinge is NOT at: where the joint must open.
-      opposite: f === 'intrados' ? [j.b[0], j.b[1]] : [j.a[0], j.a[1]],
-      along: along(i),
-    };
+    return hingeAt(joints, i, f, { support, point: c.point, s: c.s });
   };
 
   // THE SUPPORTS ARE WHERE THE USER PUT THEM. With both ends imposed, A and B
@@ -464,6 +441,47 @@ export function findHinges(crossings, joints, tol = TOUCH, supports = null) {
   else if (crossings[last]) out.push(hinge(last, true));
   // Joint order, so the chain runs from one springing to the other.
   return out.sort((a, b) => a.joint - b.joint);
+}
+
+/**
+ * The unit direction along the arch at joint i, from the body before it to the
+ * body after it: from the middle of joint i - 1 to the middle of joint i + 1.
+ * At a springing there is no neighbour on one side, so the direction is null
+ * unless `ends` asks for the one-sided version, from or to the joint itself.
+ */
+export function jointAlong(joints, i, ends = false) {
+  const last = joints.length - 1;
+  if (!ends && (i <= 0 || i >= last)) return null;
+  const mid = (j) => [(j.a[0] + j.b[0]) / 2, (j.a[1] + j.b[1]) / 2];
+  const p = mid(joints[Math.max(0, i - 1)]);
+  const q = mid(joints[Math.min(last, i + 1)]);
+  const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+  return d > 0 ? [(q[0] - p[0]) / d, (q[1] - p[1]) / d] : null;
+}
+
+/**
+ * A hinge at joint i on the given face.
+ *
+ * Besides where it is, a hinge carries what is needed to tell an opening joint
+ * from an interpenetrating one: the FAR end of its joint, which is the material
+ * that has to separate, and the direction along the arch from the body before
+ * the hinge to the body after it. The point defaults to the end of the joint on
+ * that face (intrados `a`, extrados `b`); a line of thrust passes its own.
+ */
+export function hingeAt(joints, i, face, opt = {}) {
+  const { support = false, point = null, s = null, ends = false } = opt;
+  const j = joints[i];
+  const at = point ?? (face === 'extrados' ? j.b : j.a);
+  return {
+    joint: i,
+    s: s ?? (face === 'extrados' ? 1 : 0),
+    point: [at[0], at[1]],
+    face,
+    support,
+    // The end of the joint the hinge is NOT at: where the joint must open.
+    opposite: face === 'intrados' ? [j.b[0], j.b[1]] : [j.a[0], j.a[1]],
+    along: jointAlong(joints, i, ends),
+  };
 }
 
 /**

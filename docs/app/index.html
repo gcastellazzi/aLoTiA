@@ -318,6 +318,30 @@
       <p class="hint">Live only once the arch is a mechanism: the macro-blocks
         turn about their own instantaneous centres, and the hinges stay shut.</p>
     </section>
+    <section id="alphaSection">
+      <h2>Activation multiplier &alpha;<sub>0</sub></h2>
+      <p class="hint">Horizontal forces &alpha;&middot;W at the voussoir
+        centroids, in +x or &minus;x, added to the weights; applied forces are
+        kept but not amplified. By virtual work, over every mechanism of four
+        hinges at the ends of the joints, or over the four hinges you pick.
+        The mechanism found from the line of thrust above is not used: its
+        own line passes through its hinges, so its multiplier is zero.</p>
+      <div class="row">
+        <button id="alphaFind" type="button">Find &alpha;<sub>0</sub></button>
+        <button id="alphaPick" type="button">Pick hinges</button>
+        <button id="alphaClear" type="button">Clear</button>
+      </div>
+      <label class="inline">Show
+        <select id="alphaShow">
+          <option value="none">nothing</option>
+          <option value="plus">minimum, loads in +x</option>
+          <option value="minus">minimum, loads in &minus;x</option>
+          <option value="manual">picked hinges</option>
+        </select>
+      </label>
+      <p id="alphaResult" class="verdict">&mdash;</p>
+      <p id="alphaDetail" class="meta"></p>
+    </section>
       <section>
         <h2>Points A and B</h2>
         <label><input type="checkbox" id="imposeEnds2"> Impose both ends</label>
