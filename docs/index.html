@@ -5,18 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>aLOTofImaginArches — the line of thrust, in the browser</title>
   <meta name="description" content="How to use aLOTofImaginArches: graphical statics of masonry arches — the force polygon, the line of thrust and its three degrees of freedom, admissibility, hinges and collapse — with the theory each tool rests on.">
+  <!-- The house style shared with the application, with UnBaAct and with
+       StressRealm: colours, type and the shape of a button all come from
+       there. This page then sets its own reading layout below. -->
+  <link rel="stylesheet" href="css/ui-kit.css">
   <style>
     :root {
-      --bg: #f5f6f8;
+      --bg: var(--page);
       --surface: #ffffff;
-      --text: #1b2129;
-      --muted: #667081;
-      /* Brick. The application has always drawn in a red of its own, and the
-         guide used to answer it in blue; one warm accent for both is the whole
-         point of a house colour. Earthier than the university's crimson,
-         because the subject is fired clay. */
-      --accent: #9c3a29;
-      --accent-soft: #f8ece8;
+      --text: var(--foreground);
+      --muted: var(--muted-foreground);
+      /* The house accent, the same one the two sibling apps use. The drawing
+         inks below are untouched: the line of thrust is still its own red. */
+      --accent: var(--primary);
+      --accent-soft: var(--primary-soft);
       /* Equations are set in a cool slate instead, so that a formula is never
          mistaken for the emphasis colour sitting next to it. */
       --eq: #3f4a58;
@@ -28,8 +30,8 @@
       --cable-soft: #e7f1eb;
       --stone: #8a6a3f;        /* the voussoirs */
       --stone-soft: #f6f0e6;
-      --border: #e3e6ea;
-      --code-bg: #f2f4f6;
+      --border: #dce5e2;
+      --code-bg: var(--surface-muted);
       --shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
       --radius: 12px;
       --max: 980px;
@@ -37,12 +39,22 @@
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #14181d;
-        --surface: #1b2027;
-        --text: #e6e9ed;
-        --muted: #9aa4b1;
-        --accent: #e2957f;
-        --accent-soft: #2c1d18;
+        /* The kit's own tokens are re-pointed too, so anything it styles --
+           a button, a rule, a caption -- follows the page into the dark. */
+        --page: #121a1a;
+        --foreground: #e4ece9;
+        --foreground-soft: #c2d2cd;
+        --muted-foreground: #9aada9;
+        --primary: #5fc0ad;
+        --primary-strong: #7ed3c0;
+        --primary-soft: #1b3630;
+        --surface-muted: #1c2626;
+        --bg: #121a1a;
+        --surface: #1b2426;
+        --text: #e4ece9;
+        --muted: #9aada9;
+        --accent: #5fc0ad;
+        --accent-soft: #1b3630;
         --eq: #a9b7c6;
         --eq-soft: #212831;
         --lot: #e58198;
@@ -51,8 +63,8 @@
         --cable-soft: #17241c;
         --stone: #d2ae7c;
         --stone-soft: #262019;
-        --border: #2e353f;
-        --code-bg: #232931;
+        --border: #2c3a38;
+        --code-bg: #1c2626;
         --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
       }
     }
@@ -61,7 +73,7 @@
 
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--font-sans);
       font-size: 17px;
       line-height: 1.68;
       color: var(--text);
@@ -74,8 +86,11 @@
     .num, table td, code, kbd { font-variant-numeric: tabular-nums; }
 
     header {
-      background: linear-gradient(135deg, #5c2018 0%, #9c3a29 55%, #b8583f 100%);
+      /* The kit lays a header out as an application bar; this one is a hero. */
+      display: block;
+      background: linear-gradient(135deg, #12312f 0%, #157b70 55%, #35a48f 100%);
       color: #fff;
+      border: 0;
       padding: 2.5rem 1.25rem 2rem;
     }
 
@@ -244,15 +259,15 @@
       display: inline-block;
       margin-top: 0.9rem;
       padding: 0.6rem 1.15rem;
-      background: var(--surface);
-      color: var(--accent);
+      background: #fff;
+      color: #12312f;
       font-weight: 600;
       text-decoration: none;
-      border-radius: 8px;
+      border-radius: var(--radius);
       box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
     }
 
-    .launch:hover { background: var(--accent-soft); }
+    .launch:hover { background: #dff0ea; }
 
 
 
@@ -265,9 +280,11 @@
     }
 
     footer {
+      display: block;
       max-width: var(--max);
       margin: 0 auto;
       padding: 0 1.25rem 3rem;
+      border: 0;
       color: var(--muted);
       font-size: 0.92rem;
     }
@@ -277,6 +294,10 @@
     @media (max-width: 640px) {
       header .wrap { grid-template-columns: 1fr; text-align: center; }
       header img { margin: 0 auto; }
+      /* A four-column table does not fit a phone at this reading size, and a
+         page that scrolls sideways as a whole is worse than a table that does
+         it on its own. */
+      table { display: block; width: 100%; overflow-x: auto; }
     }
 
     /* ---------------------------------------------------- new components -- */

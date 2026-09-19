@@ -97,6 +97,7 @@ extrados at the crown — and four at maximum thrust.
 |---|---|
 | `docs/app/` | the application: `js/core/` is the mechanics, `js/render/` the drawing |
 | `docs/index.html` | the user guide |
+| `docs/css/ui-kit.css` | the interface kit shared with UnBaAct and StressRealm |
 | `tests/` | 180 tests, run by the Node test runner |
 | `tools/serve.js` | a static server for `docs/`, in the standard library and nothing else |
 | `tools/reproduce/` | the generators behind every computed figure and table of the paper, and `REPRODUCING.md` |
@@ -116,6 +117,17 @@ npm test
 only because browsers refuse ES modules and `fetch()` over `file://`. No
 dependencies are installed for either command — Node ≥ 18 is the only
 requirement, and the application itself needs nothing but a browser.
+
+## Shared interface
+
+The interface chrome — colours, type, buttons, inputs, panels, the header and
+the footer — is one house style shared with the two sibling teaching
+applications, [UnBaAct](https://github.com/gcastellazzi/UnBaAct) and
+[StressRealm](https://github.com/gcastellazzi/StressRealm). It lives in
+`docs/css/ui-kit.css`, which is vendored: the three copies are byte-for-byte identical and
+carry a version in their header. Change it in one repository and copy the file
+to the other two. Each application keeps its own layout, and its own drawing
+colours, below the kit.
 
 ## The examples
 

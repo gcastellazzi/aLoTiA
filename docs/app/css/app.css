@@ -1,33 +1,44 @@
-/* Deliberately plain: the page frames two MATLAB-looking figures and must not
-   compete with them. Everything is system fonts and flat greys. */
+/* The chrome -- colours, type, buttons, inputs, panels, header, footer -- is
+   the house style shared with UnBaAct and StressRealm and lives in
+   ../css/ui-kit.css. This file is the LAYOUT of the analysis page, plus the
+   few things only this page has: the plots, the tables and the tracing UI.
+   The DRAWING keeps its own inks (the thrust line is still #A2142F); only the
+   interface around it was brought into line. */
 
 :root {
-  --ink: #222;
-  --muted: #666;
-  --line: #d6d6d6;
-  --panel: #f6f6f6;
-  /* Brick: the same house colour the guide uses. Not the same as the red the
-     THRUST LINE is drawn in (#A2142F, kept as it is because every published
-     figure uses it); this one is chrome, that one is data. */
-  --accent: #9c3a29;
+  /* This page is dense, so its controls sit a notch tighter than the kit
+     default. */
+  --control-font: 12px;
+  --label-font: 12px;
+  --control-pad-y: 5px;
+  --control-pad-x: 8px;
+
+  /* The names this file has always used, now pointing at the shared tokens. */
+  --ink: var(--foreground);
+  --muted: var(--muted-foreground);
+  --line: var(--border);
+  --panel: var(--surface-muted);
+  --accent: var(--primary);
 }
 
-* { box-sizing: border-box; }
-
 body {
-  margin: 0;
-  font: 14px/1.5 Helvetica, Arial, sans-serif;
-  color: var(--ink);
-  background: #fff;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 header {
-  padding: 6px 16px 5px;
-  border-bottom: 1px solid var(--line);
+  gap: 14px;
+  flex-wrap: wrap;
 }
-header h1 { margin: 0; font-size: 16px; line-height: 1.15; letter-spacing: 0.2px; }
-header .sub { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.2; }
-a { color: var(--accent); }
+.header-note {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+@media (max-width: 1100px) {
+  .header-note { display: none; }
+}
 
 /* The page fills the window and never scrolls as a whole: the control panel
    scrolls inside itself, so the two plots stay put and stay as large as the
@@ -38,26 +49,32 @@ body {
   display: grid;
   grid-template-rows: auto 1fr auto;
   overflow: hidden;
+  background: var(--page);
 }
 
+/* Cards on the page, the same containers the other two apps use. */
 main {
   display: grid;
-  grid-template-columns: 260px 1fr;
-  gap: 0;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
   min-height: 0;
 }
 
 #panel {
-  border-right: 1px solid var(--line);
-  background: var(--panel);
-  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
   /* The one scrolling region on the page. */
   overflow-y: auto;
   min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #bbcec3 transparent;
 }
 /* The panel is three tabbed panes: Geometry, LoT, Mechanism. The tab strip
    is the same one the right-hand pane uses. */
-#panel .tabs { position: sticky; top: -14px; background: var(--panel); z-index: 2;
+#panel .tabs { position: sticky; top: -14px; background: var(--surface); z-index: 2;
   /* top:-14px, and the padding put back, because `top: 0` sticks BELOW the
      panel's own 14px top padding and leaves a gap for the scrolled content to
      show through above the tabs. */
@@ -66,22 +83,15 @@ main {
 #panel section { margin-bottom: 20px; }
 #panel h2 {
   margin: 0 0 7px;
-  font-size: 12px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
-  color: var(--muted);
+  letter-spacing: 1.2px;
+  color: var(--muted-foreground);
 }
-#panel label { display: block; margin: 3px 0; font-size: 13px; }
+#panel label { display: block; margin: 3px 0; font-size: 12px; }
 #panel select,
 #panel input[type=range],
 #panel button { width: 100%; }
-#panel select, #panel button {
-  padding: 5px 6px;
-  font: inherit;
-  border: 1px solid var(--line);
-  background: #fff;
-  border-radius: 3px;
-}
 /* The two tab strips inside the panel are NOT panel buttons: the rule above
    is an id selector and would otherwise win over `.tabs .tab` and
    `.methodtabs button`, handing them a 14px font and a 21px line box. That
@@ -89,16 +99,12 @@ main {
    to read as one control came out at three different heights. */
 #panel .tabs .tab,
 #panel .methodtabs button {
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 5px 8px;
+  font-size: 11px;
   line-height: 1.35;
 }
-/* `font: inherit` in the id rule above also resets the weight, so the active
-   tab has to say so again from a selector that outranks it. */
 #panel .tabs .tab.active,
-#panel .methodtabs button.active { font-weight: 600; }
-#panel button { cursor: pointer; }
-#panel button:hover { background: #eee; }
+#panel .methodtabs button.active { font-weight: 700; }
 /* A full-width select sits in the same stack as the full-width buttons, so it
    is given their height rather than its own intrinsic 30px. */
 #panel section > select { min-height: 33px; }
@@ -109,9 +115,9 @@ main {
   margin: 8px 0 0;
   padding: 7px 9px;
   font-size: 12px;
-  border-left: 3px solid #c8860a;
-  background: #fdf6e6;
-  color: #6b4a03;
+  border-left: 3px solid var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 /* The right-hand column: the two plots, and the toolbar under them. */
@@ -125,8 +131,8 @@ main {
 #plots {
   display: grid;
   grid-template-columns: 1.55fr 1fr;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 0 0 10px;
   min-height: 0;
 }
 /* The tab strip over the second plot: force polygon or block arch. */
@@ -135,23 +141,8 @@ main {
   gap: 4px;
   margin-bottom: 6px;
 }
-.tabs .tab {
-  padding: 3px 10px;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  border: 1px solid var(--line);
-  border-bottom-color: transparent;
-  background: var(--panel);
-  border-radius: 4px 4px 0 0;
-  color: var(--muted);
-}
-.tabs .tab.active {
-  background: #fff;
-  color: inherit;
-  font-weight: 600;
-}
-.tabs .tab:hover { background: #eee; }
+/* The tab itself is the shared one; only its rhythm is set here. */
+.tabs .tab { padding: 5px 10px; }
 .methodtabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -213,14 +204,10 @@ main {
   width: 100%;
   min-height: 260px;
   resize: none;
-  border: 1px solid var(--line);
-  border-radius: 4px;
   padding: 8px 10px;
-  font: inherit;
+  font-family: inherit;
   font-size: 13px;
   line-height: 1.45;
-  background: #fff;
-  color: inherit;
 }
 /* The notes pane is a column: a strip of tools, then the writing or the
    reading of what was written. */
@@ -232,26 +219,9 @@ main {
   gap: 4px;
   margin-bottom: 5px;
 }
-.notetools button {
-  min-width: 26px;
-  padding: 2px 7px;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: #fff;
-  cursor: pointer;
-}
-.notetools button:hover { background: #eee; }
-.notetools select {
-  font: inherit;
-  font-size: 12px;
-  padding: 2px 4px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: #fff;
-}
+.notetools { --control-font: 12px; --control-pad-y: 2px; --control-pad-x: 7px; }
+.notetools button { min-width: 26px; }
+.notetools select { width: auto; padding: 2px 22px 2px 6px; }
 /* The writing tools appear only while writing; the button that turns them on
    stays at the right-hand end whether they are there or not. */
 .notetools .noteedit {
@@ -262,11 +232,11 @@ main {
 .notetools .noteedit[hidden] { display: none; }
 .notetools .notedone { margin-left: auto; }
 .notetools .notedone.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
 }
-.notetools .notedone.on:hover { background: #8e1f26; }
+.notetools .notedone.on:hover { background: var(--primary-strong); }
 /* Reading is the default, so the reading view has to look like somewhere to
    click when there is nothing in it yet. */
 .noteread { cursor: text; }
@@ -276,10 +246,10 @@ main {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 8px 12px;
-  background: #fff;
+  background: var(--surface);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -304,8 +274,8 @@ main {
 .noteread a { color: var(--accent); }
 
 .texttab textarea[readonly] {
-  color: #444;
-  background: #f7f7f7;
+  color: var(--foreground-soft);
+  background: var(--surface-sunken);
 }
 /* The tab strip over the second plot now carries eight entries; on a narrow
    window they wrap rather than being squeezed into illegibility. */
@@ -348,25 +318,11 @@ main {
 .blockgroups input[type=text] {
   flex: 1 1 auto;
   min-width: 0;
-  font: inherit;
-  font-size: 12px;
   padding: 2px 5px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: #fff;
-  color: inherit;
+  font-size: 12px;
 }
 .blockgroups .count { color: var(--muted); white-space: nowrap; }
-.blockgroups button {
-  font: inherit;
-  font-size: 12px;
-  padding: 3px 8px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: #fff;
-  cursor: pointer;
-}
-.blockgroups button:hover { background: #eee; }
+.blockgroups { --control-font: 12px; --control-pad-y: 3px; --control-pad-x: 8px; }
 
 .blockrows {
   display: flex;
@@ -381,21 +337,16 @@ main {
   margin-bottom: 5px;
   color: var(--muted);
 }
-.blockrows .showing select {
-  font: inherit;
-  font-size: 12px;
-  padding: 2px 4px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-}
+.blockrows .showing select { width: auto; font-size: 12px; padding: 2px 22px 2px 6px; }
 /* The scroll lives on the rows, so the head stays put on a long arch. */
 .tablescroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  scrollbar-width: thin;
 }
 table#blockTable {
   border-collapse: collapse;
@@ -430,26 +381,22 @@ table#blockTable {
 }
 #blockTable td.num { text-align: right; }
 #blockTable select {
-  font: inherit;
-  font-size: 11px;
+  width: auto;
   max-width: 130px;
-  padding: 1px 3px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: #fff;
+  font-size: 11px;
+  padding: 1px 20px 1px 5px;
+  background-position: right 5px center;
 }
 #blockTable button.drop {
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--accent);
-  border-radius: 3px;
-  cursor: pointer;
-  font: inherit;
+  color: var(--destructive);
   font-size: 11px;
   line-height: 1.2;
   padding: 0 5px;
 }
-#blockTable button.drop:hover { background: #f0e2e3; }
+#blockTable button.drop:hover {
+  background: var(--destructive-soft);
+  border-color: var(--destructive);
+}
 
 .plot-status {
   min-height: 18px;
@@ -464,22 +411,11 @@ table#blockTable {
   margin-top: 4px;
 }
 .plotmetric[hidden] { display: none; }
-.plotmetric button {
-  padding: 3px 9px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.plotmetric button:first-child { border-radius: 4px 0 0 4px; }
-.plotmetric button:last-child { border-radius: 0 4px 4px 0; }
-.plotmetric button.active {
-  background: #fff;
-  color: inherit;
-  font-weight: 600;
-}
+.plotmetric { --control-font: 12px; --control-pad-y: 3px; --control-pad-x: 9px; }
+.plotmetric button { border-radius: 0; }
+.plotmetric button:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.plotmetric button:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.plotmetric button.active { font-weight: 700; }
 .plotmetric label {
   display: inline-flex;
   align-items: center;
@@ -487,13 +423,7 @@ table#blockTable {
   font-size: 12px;
   color: var(--muted);
 }
-.plotmetric input {
-  width: 46px;
-  padding: 2px 4px;
-  border: 1px solid var(--line);
-  font: inherit;
-  font-size: 12px;
-}
+.plotmetric input { width: 46px; padding: 2px 4px; font-size: 12px; }
 
 figure {
   margin: 0;
@@ -501,6 +431,10 @@ figure {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding: 10px 12px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
 }
 /* The per-plot view tools, tucked under the canvas. */
 .viewtools {
@@ -510,22 +444,8 @@ figure {
   margin-top: 4px;
   flex-wrap: wrap;
 }
-.viewtools button {
-  padding: 1px 7px;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1.6;
-  cursor: pointer;
-  border: 1px solid var(--line);
-  background: #fff;
-  border-radius: 3px;
-}
-.viewtools button:hover { background: #eee; }
-.viewtools button.active {
-  background: #262626;
-  color: #fff;
-  font-weight: 600;
-}
+.viewtools { --control-font: 11px; --control-pad-y: 2px; --control-pad-x: 7px; }
+.viewtools button { line-height: 1.6; }
 .viewtools label.inline {
   display: inline-flex;
   gap: 4px;
@@ -536,12 +456,8 @@ figure {
 .viewtools label.inline input {
   width: 44px;
   padding: 1px 4px;
-  font: inherit;
   font-size: 11px;
   line-height: 1.6;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: #fff;
 }
 .viewtools .hint { margin: 0 0 0 4px; font-size: 11px; }
 .viewtools[hidden] { display: none; }
@@ -562,21 +478,13 @@ canvas {
   width: 100%;
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   touch-action: none;
   cursor: grab;
 }
 canvas:active { cursor: grabbing; }
 
-footer {
-  padding: 3px 16px;
-  border-top: 1px solid var(--line);
-  font-size: 10px;
-  line-height: 1.15;
-  color: var(--muted);
-}
-footer p { margin: 0; }
+footer { padding: 6px 18px; line-height: 1.3; }
 
 /* The toolbar: units and what to draw, under the view and always in reach,
    so that neither is buried in the scrolling panel. */
@@ -585,9 +493,10 @@ footer p { margin: 0; }
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 20px;
-  padding: 7px 12px;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   font-size: 12px;
 }
 #toolbar .group {
@@ -609,16 +518,8 @@ footer p { margin: 0; }
   white-space: nowrap;
 }
 #toolbar input[type=checkbox] { margin: 0; }
-#toolbar select,
-#toolbar button {
-  padding: 2px 5px;
-  font: inherit;
-  border: 1px solid var(--line);
-  background: #fff;
-  border-radius: 3px;
-}
-#toolbar button { cursor: pointer; }
-#toolbar button:hover { background: #eee; }
+#toolbar { --control-font: 12px; --control-pad-y: 3px; --control-pad-x: 7px; }
+#toolbar select { width: auto; padding: 3px 22px 3px 7px; }
 
 @media (max-width: 900px) {
   /* Narrow: let the page scroll normally again, and give the canvases a
@@ -627,7 +528,7 @@ footer p { margin: 0; }
   html, body { height: auto; }
   body { display: block; overflow: visible; }
   main { display: block; }
-  #panel { border-right: none; border-bottom: 1px solid var(--line); overflow: visible; }
+  #panel { overflow: visible; }
   #stage { display: block; }
   #plots { grid-template-columns: 1fr; }
   figure { display: block; }
@@ -655,8 +556,7 @@ footer p { margin: 0; }
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px; margin: 5px 0; font-size: 13px;
 }
-#panel label.inline input { width: 76px; padding: 3px 5px; font: inherit;
-  border: 1px solid var(--line); border-radius: 3px; }
+#panel label.inline input { width: 76px; padding: 3px 5px; }
 #panel label.image-perspective input[type=range] {
   width: 128px;
   padding: 0;
@@ -666,13 +566,10 @@ footer p { margin: 0; }
   color: var(--muted);
 }
 #panel label.image-lock input { width: auto; }
-#panel button.armed {
-  background: var(--accent); color: #fff; border-color: var(--accent);
-}
-#panel button.armed:hover { background: #8e1f26; }
+#panel button.armed:hover { background: var(--primary-strong); }
 
-#panel label.inline select { width: 110px; padding: 3px 5px; font: inherit;
-  border: 1px solid var(--line); border-radius: 3px;
+#panel label.inline select { width: 110px; padding: 3px 20px 3px 6px;
+  background-position: right 5px center;
   /* The number input beside it is 27.5px tall; a select left to its own
      intrinsic height is 25px, and the row reads as misaligned. */
   height: 27.5px; }
@@ -697,13 +594,7 @@ ul.forces .force-scale {
   gap: 6px;
 }
 ul.forces .force-row span { min-width: 0; }
-ul.forces .force-components input {
-  width: 72px;
-  padding: 2px 4px;
-  font: inherit;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-}
+ul.forces .force-components input { width: 72px; padding: 2px 4px; }
 ul.forces .force-scale input[type="range"] {
   flex: 1 1 auto;
   min-width: 90px;
@@ -716,18 +607,20 @@ ul.forces .force-scale output {
 }
 ul.forces button {
   width: auto; padding: 0 6px; line-height: 1.4; font-size: 11px;
-  border: 1px solid var(--line); background: #fff; cursor: pointer;
-  border-radius: 3px; color: var(--accent);
+  color: var(--destructive);
 }
-ul.forces button:hover { background: #f0e2e3; }
+ul.forces button:hover {
+  background: var(--destructive-soft); border-color: var(--destructive);
+}
 
 .verdict {
   margin: 4px 0 0; padding: 7px 9px; font-size: 12.5px; border-radius: 3px;
   border-left: 3px solid var(--line); background: #fff; color: var(--muted);
 }
-.verdict.ok { border-left-color: #2e7d32; background: #edf7ee; color: #1b5e20; }
-.verdict.bad { border-left-color: var(--accent); background: #fbecec;
-  color: #7d1c22; }
+.verdict.ok { border-left-color: var(--success); background: var(--success-soft);
+  color: var(--success); }
+.verdict.bad { border-left-color: var(--destructive);
+  background: var(--destructive-soft); color: var(--destructive); }
 
 /* Where a stored example's size came from. Quieter than the warning, because
    it is not a problem -- but present, because "nominal" and "measured" look
