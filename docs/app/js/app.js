@@ -143,6 +143,8 @@ const ui = {
   resetImagePerspective: el('resetImagePerspective'),
   traceOuter: el('traceOuter'), traceHint: el('traceHint'),
   nBlocks: el('nBlocks'), traceCountLabel: el('traceCountLabel'),
+  traceThicknessBlocks: el('traceThicknessBlocks'),
+  traceThicknessRow: el('traceThicknessRow'), traceThicknessHint: el('traceThicknessHint'),
   traceCutMode: el('traceCutMode'), subnormalWidth: el('subnormalWidth'),
   subnormalWidthRow: el('subnormalWidthRow'),
   subnormalWidthLabel: el('subnormalWidthLabel'),
@@ -3557,6 +3559,22 @@ function drawNormalPreview() {
     });
     c.setLineDash([]);
 
+    const layers = Number(ui.traceThicknessBlocks.value);
+    if (Number.isInteger(layers) && layers > 1 && layers <= 200) {
+      for (let layer = 1; layer < layers; layer++) {
+        c.beginPath();
+        made.joints.forEach((j, k) => {
+          const [x, y] = mainAx.toPx([
+            j.a[0] + (j.b[0] - j.a[0]) * layer / layers,
+            j.a[1] + (j.b[1] - j.a[1]) * layer / layers,
+          ]);
+          if (k === 0) c.moveTo(x, y);
+          else c.lineTo(x, y);
+        });
+        c.stroke();
+      }
+    }
+
     // The oriented normal at every station, intrados towards extrados.
     made.frames.forEach((f, k) => {
       const failed = k === made.failed;
@@ -4274,7 +4292,9 @@ function reportTrace() {
   if (cutMode === 'normal-outer') bits.push('normals from the extrados (highlighted)');
   if (cutMode === 'normal-midline') bits.push('normals from the mean line (dashed)');
   ui.traceCountLabel.textContent = ui.traceCutMode?.value === 'subnormal'
-    ? 'Courses' : 'Blocks';
+    ? 'Courses' : 'Blocks along arch';
+  ui.traceThicknessRow.hidden = cutMode === 'subnormal';
+  ui.traceThicknessHint.hidden = cutMode === 'subnormal';
   ui.subnormalWidthRow.hidden = ui.traceCutMode?.value !== 'subnormal';
   let problems = [];
   if (t.inner.length >= 2 && t.outer.length >= 2) {
@@ -4282,6 +4302,7 @@ function reportTrace() {
       problems = checkTrace(t.inner, t.outer, n, {
         cutMode: ui.traceCutMode?.value ?? 'stations',
         blockWidth: Number(ui.subnormalWidth.value) || 0,
+        thicknessBlocks: cutMode === 'subnormal' ? 1 : Number(ui.traceThicknessBlocks.value),
       });
     } catch (e) {
       problems = [e.message];
@@ -5050,7 +5071,7 @@ function supportPointsForExport() {
   // A running-bond assembly is not one voussoir chain, so the graphical
   // funicular endpoints are not its physical support points. Keep the supports
   // on the two end faces recorded when the traced ring was coursed.
-  if (m?.stereotomy?.mode === 'subnormal') {
+  if (m?.stereotomy?.mode === 'subnormal' || m?.stereotomy?.thicknessBlocks > 1) {
     return [m.pointA, m.pointB].filter(Boolean);
   }
   const pts = state.lot?.points ?? [];
@@ -5085,7 +5106,7 @@ async function exportAbaqus() {
       thickness: exportThickness,
       supports: supportPointsForExport(),
       supportMode: ui.abaqusSupports?.value ?? 'hinges',
-      generalContact: m.stereotomy?.mode === 'subnormal',
+      generalContact: m.stereotomy?.mode === 'subnormal' || m.stereotomy?.thicknessBlocks > 1,
       // The joints, so that each contact pair is the two faces that actually
       // abut rather than two whole outlines.
       joints: m.joints ?? null,
@@ -5394,9 +5415,10 @@ function generateBlocks() {
   const thickness = Math.max(0, Number(ui.thick.value) || 1);
   const cutMode = ui.traceCutMode?.value ?? 'stations';
   const blockWidth = Math.max(0, Number(ui.subnormalWidth?.value) || 0);
+  const thicknessBlocks = cutMode === 'subnormal' ? 1 : Number(ui.traceThicknessBlocks.value);
   let built;
   try {
-    built = blocksBetween(t.inner, t.outer, n, { cutMode, blockWidth });
+    built = blocksBetween(t.inner, t.outer, n, { cutMode, blockWidth, thicknessBlocks });
   } catch (e) {
     // A click that throws used to do nothing at all.
     ui.warn.hidden = false;
@@ -5434,7 +5456,7 @@ function generateBlocks() {
     stereotomy: cutMode === 'subnormal' ? {
       mode: cutMode, courseHeight: built.courseHeight, meanWidth: built.meanWidth,
       courses: built.courses, requestedWidth: blockWidth,
-    } : { mode: cutMode },
+    } : { mode: cutMode, thicknessBlocks },
     forcePolygon: null, thrustLine: null,
     units: previous?.units ?? null,
     frame,
@@ -5484,6 +5506,7 @@ function generateBlocks() {
   const slivers = built.slivers;
   appendLog(`${replacedGroup ? 'Regenerated' : 'Generated'} ${built.blocks.length} traced blocks`
     + (hasOtherBlocks ? ` (${blocks.length} total)` : '') + ` · ${cutMode}`
+    + (thicknessBlocks > 1 ? ` · ${thicknessBlocks} blocks through thickness` : '')
     + (slivers?.merged ? ` · ${slivers.merged} sliver(s) merged into their neighbour` : '')
     + (slivers?.dropped ? ` · ${slivers.dropped} isolated sliver(s) dropped` : ''));
   draw();
@@ -5838,6 +5861,8 @@ ui.traceOuter.addEventListener('click', () => arm('outer'));
 ui.makeBlocks.addEventListener('click', generateBlocks);
 // The normal preview follows the block count and the cut mode as they change.
 const retrace = () => { reportTrace(); draw(); };
+ui.traceThicknessBlocks.addEventListener('input', retrace);
+ui.traceThicknessBlocks.addEventListener('change', retrace);
 ui.nBlocks.addEventListener('input', retrace);
 ui.nBlocks.addEventListener('change', retrace);
 ui.traceCutMode.addEventListener('change', retrace);
@@ -6619,6 +6644,7 @@ function openWork(text, { source = null } = {}) {
   state.consistent = { ok: true, problems: [] };
 
   ui.system.value = data.system;
+  ui.traceThicknessBlocks.value = String(data.model?.stereotomy?.thicknessBlocks ?? 1);
   const savedCutMode = data.model?.stereotomy?.mode;
   if ([...ui.traceCutMode.options].some((o) => o.value === savedCutMode)) {
     ui.traceCutMode.value = savedCutMode;

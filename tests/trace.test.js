@@ -431,3 +431,47 @@ test('an arch with a point load reaches a thrust line, and it is heavier', () =>
   assert.ok(laden.weights.reduce((s, v) => s + v, 0)
     > bare.weights.reduce((s, v) => s + v, 0) + 499);
 });
+
+test('layers share faces and conserve area, weight and springings', () => {
+  const inner = arc(4);
+  const outer = arc(6);
+  for (const cutMode of ['stations', 'normal-midline', 'normal-outer', 'supernormal']) {
+    const a = cutMode === 'supernormal' ? [[0, 0], [8, 0]] : inner;
+    const b = cutMode === 'supernormal' ? [[0, 2], [8, 4]] : outer;
+    const single = blocksBetween(a, b, 8, { cutMode });
+    const made = blocksBetween(a, reverse(b), 8, { cutMode, thicknessBlocks: 3 });
+    assert.equal(made.blocks.length, 24);
+    assert.equal(made.joints, null);
+    assert.equal(made.flipped, true);
+    assert.deepEqual(springings(made.endJoints), springings(single.joints));
+    assert.deepEqual(checkTrace(a, b, 8, { cutMode, thicknessBlocks: 3 }), []);
+    const sum = (xs) => xs.reduce((s, x) => s + x, 0);
+    assert.ok(Math.abs(sum(made.blocks.map(area)) - sum(single.blocks.map(area))) < 1e-9);
+    assert.ok(Math.abs(sum(weighBlocks(made.blocks)) - sum(weighBlocks(single.blocks))) < 1e-8);
+    for (let layer = 0; layer < 2; layer++) {
+      for (let j = 0; j < 8; j++) {
+        const lo = made.blocks[layer * 8 + j];
+        const hi = made.blocks[(layer + 1) * 8 + j];
+        for (const axis of ['x', 'y']) {
+          assert.equal(lo[axis][1], hi[axis][0]);
+          assert.equal(lo[axis][2], hi[axis][3]);
+        }
+        assert.ok(signedArea(lo) * signedArea(single.blocks[j]) > 0);
+      }
+    }
+  }
+});
+
+test('one layer preserves existing geometry and invalid layer counts are rejected', () => {
+  const a = [[0, 0], [8, 0]];
+  const b = [[0, 2], [8, 4]];
+  assert.deepEqual(blocksBetween(a, b, 4, { thicknessBlocks: 1 }), blocksBetween(a, b, 4));
+  for (const thicknessBlocks of [0, -1, 1.5, NaN, Infinity, 201]) {
+    assert.throws(() => blocksBetween(a, b, 4, { thicknessBlocks }), /integer/);
+    assert.ok(checkTrace(a, b, 4, { thicknessBlocks }).length);
+  }
+  const made = blocksBetween(a, b, 4, { thicknessBlocks: 2 });
+  // First station is 2 units deep; the last is 4. Each is halved locally.
+  assert.equal(made.blocks[0].y[1], 1);
+  assert.equal(made.blocks[3].y[2], 2);
+});

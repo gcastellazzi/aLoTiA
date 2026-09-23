@@ -706,12 +706,18 @@ function mergeSlivers(outline, pieces, y0, y1, minArea, tol) {
  *
  * @param {number[][]} inner  the intrados, traced end to end
  * @param {number[][]} outer  the extrados
- * @param {number} n          how many blocks
+ * @param {number} n          blocks along each layer
+ * @param {object} opt        thicknessBlocks: equal divisions across each cut (default 1);
+ *                           subnormal courses use blockWidth instead
  * @returns {{blocks: Array<{x:number[],y:number[]}>, joints: Array,
  *            flipped: boolean}}
  */
 export function blocksBetween(inner, outer, n, opt = {}) {
-  if (n < 1) throw new Error('need at least one block');
+  if (!Number.isInteger(n) || n < 1) throw new Error('need a positive integer block count');
+  const layers = opt.thicknessBlocks ?? 1;
+  if (!Number.isInteger(layers) || layers < 1 || layers > 200) {
+    throw new Error('blocks through thickness must be an integer between 1 and 200');
+  }
   let out = outer;
   let flipped = false;
   if (!sameDirection(inner, outer)) {
@@ -731,14 +737,27 @@ export function blocksBetween(inner, outer, n, opt = {}) {
 
   const blocks = [];
   const joints = [];
-  for (let j = 0; j < n; j++) {
-    blocks.push({
-      x: [a[j][0], b[j][0], b[j + 1][0], a[j + 1][0]],
-      y: [a[j][1], b[j][1], b[j + 1][1], a[j + 1][1]],
-    });
+  // Subdivide the same cuts so neighbouring layers share exact vertices.
+  const levels = Array.from({ length: layers + 1 }, (_, layer) =>
+    a.map((p, j) => layer === 0 ? p : layer === layers ? b[j] : [
+      p[0] + (b[j][0] - p[0]) * layer / layers,
+      p[1] + (b[j][1] - p[1]) * layer / layers,
+    ]));
+  for (let layer = 0; layer < layers; layer++) {
+    const lo = levels[layer];
+    const hi = levels[layer + 1];
+    for (let j = 0; j < n; j++) {
+      blocks.push({
+        x: [lo[j][0], hi[j][0], hi[j + 1][0], lo[j + 1][0]],
+        y: [lo[j][1], hi[j][1], hi[j + 1][1], lo[j + 1][1]],
+      });
+    }
   }
   for (let j = 0; j <= n; j++) joints.push(computed?.[j] ?? { a: a[j], b: b[j] });
 
+  // Multiple layers are an assembly, not a single chain of voussoirs.
+  if (layers > 1) return { blocks, joints: null,
+    endJoints: [joints[0], joints[n]], flipped };
   return { blocks, joints, flipped };
 }
 
@@ -767,7 +786,7 @@ export function checkTrace(inner, outer, n, opt = {}) {
     problems.push('the two curves coincide: there is no masonry between them');
     return problems;
   }
-  if (mode !== 'stations') {
+  if (mode !== 'stations' || (opt.thicknessBlocks ?? 1) !== 1) {
     try {
       const built = blocksBetween(inner, outer, n, opt);
       // Coursed blocks are normalised polygons, not ordered quadrilaterals:

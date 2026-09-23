@@ -319,3 +319,20 @@ test('a joint list of the wrong length is still refused', () => {
 
   assert.throws(() => deserialise(JSON.stringify(saved)), /joints against/);
 });
+
+test('the number of blocks through thickness survives reopening', () => {
+  const { state } = session();
+  const made = blocksBetween(arc(4), arc(5), 12,
+    { cutMode: 'normal-midline', thicknessBlocks: 3 });
+  state.model.blocks = made.blocks;
+  state.model.centroids = made.blocks.map(centroid);
+  state.model.areas = made.blocks.map(area);
+  state.model.weights = weighBlocks(made.blocks);
+  state.model.thickness = made.blocks.map(() => 1);
+  state.model.joints = made.joints;
+  state.model.stereotomy = { mode: 'normal-midline', thicknessBlocks: 3 };
+  const back = deserialise(JSON.stringify(serialise(state)));
+  assert.equal(back.model.stereotomy.thicknessBlocks, 3);
+  assert.equal(back.model.blocks.length, 36);
+  assert.equal(back.model.joints, null);
+});

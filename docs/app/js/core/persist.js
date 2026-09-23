@@ -96,6 +96,8 @@ export function serialise(state, controls = {}, imageName = null) {
         blockGroups: m.blockGroups?.length ? m.blockGroups.map((id) => Number(id)) : undefined,
         stereotomy: m.stereotomy ? {
           mode: String(m.stereotomy.mode ?? 'stations'),
+          ...(m.stereotomy.thicknessBlocks != null
+            ? { thicknessBlocks: Number(m.stereotomy.thicknessBlocks) } : {}),
           courseHeight: Number(m.stereotomy.courseHeight ?? 0),
           meanWidth: Number(m.stereotomy.meanWidth ?? 0),
           requestedWidth: Number(m.stereotomy.requestedWidth ?? 0),
