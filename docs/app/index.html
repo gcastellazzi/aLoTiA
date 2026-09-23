@@ -120,7 +120,15 @@
         <input type="number" id="traceThicknessBlocks" min="1" max="200" step="1" value="1">
       </label>
       <p class="hint" id="traceThicknessHint">Equal divisions from intrados to extrados.
-        Total blocks = blocks along the arch × blocks through thickness.</p>
+        Without staggering: total blocks = blocks along the arch × blocks through thickness.</p>
+      <div id="traceStaggerRow" hidden>
+        <label class="inline"><input type="checkbox" id="traceStagger"> Stagger alternate layers</label>
+        <label class="inline">Stagger (%)
+          <input type="number" id="traceStaggerPercent" min="0" max="100" step="1" value="50" disabled>
+        </label>
+        <p class="hint">50% = half a block. Shifted layers have shorter end blocks;
+          0% and 100% align the joints. Click Generate blocks to apply.</p>
+      </div>
       <label class="inline" id="subnormalWidthRow" hidden><span id="subnormalWidthLabel">Approx. block width</span>
         <input type="number" id="subnormalWidth" min="0" step="0.1"
           placeholder="automatic">

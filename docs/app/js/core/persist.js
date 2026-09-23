@@ -98,6 +98,11 @@ export function serialise(state, controls = {}, imageName = null) {
           mode: String(m.stereotomy.mode ?? 'stations'),
           ...(m.stereotomy.thicknessBlocks != null
             ? { thicknessBlocks: Number(m.stereotomy.thicknessBlocks) } : {}),
+          ...(m.stereotomy.staggerPercent != null ? {
+            staggerPercent: Number(m.stereotomy.staggerPercent),
+            staggerEnabled: !!m.stereotomy.staggerEnabled,
+            staggerInput: Number(m.stereotomy.staggerInput ?? 50),
+          } : {}),
           courseHeight: Number(m.stereotomy.courseHeight ?? 0),
           meanWidth: Number(m.stereotomy.meanWidth ?? 0),
           requestedWidth: Number(m.stereotomy.requestedWidth ?? 0),

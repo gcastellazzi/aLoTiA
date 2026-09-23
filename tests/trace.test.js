@@ -475,3 +475,54 @@ test('one layer preserves existing geometry and invalid layer counts are rejecte
   assert.equal(made.blocks[0].y[1], 1);
   assert.equal(made.blocks[3].y[2], 2);
 });
+
+test('staggered layers have half end blocks and alternate with aligned layers', () => {
+  const inner = [[0, 0], [8, 0]];
+  const outer = [[0, 3], [8, 3]];
+  const made = blocksBetween(inner, outer, 4, { thicknessBlocks: 3, staggerPercent: 50 });
+  assert.equal(made.blocks.length, 13);
+  const widths = made.blocks.map((b) => Math.max(...b.x) - Math.min(...b.x));
+  assert.deepEqual(widths, [2, 2, 2, 2, 1, 2, 2, 2, 1, 2, 2, 2, 2]);
+  assert.equal(made.joints, null);
+  assert.equal(made.blocks.reduce((s, b) => s + area(b), 0), 24);
+  const quarter = blocksBetween(inner, outer, 4, { thicknessBlocks: 2, staggerPercent: 25 });
+  assert.equal(Math.max(...quarter.blocks[4].x), 0.5);
+  assert.equal(Math.min(...quarter.blocks[8].x), 6.5);
+});
+
+test('staggering preserves curved boundaries, area and first moments for all cut modes', () => {
+  for (const cutMode of ['stations', 'normal-midline', 'normal-outer', 'supernormal']) {
+    const inner = cutMode === 'supernormal' ? [[0, 0], [4, 0.2], [8, 0]] : arc(4);
+    const outer = cutMode === 'supernormal' ? [[0, 3], [4, 4], [8, 3]] : arc(6);
+    const opt = { cutMode, thicknessBlocks: 3 };
+    const base = blocksBetween(inner, outer, 8, opt);
+    const moments = (blocks) => blocks.reduce((s, b) => {
+      const a = area(b), c = centroid(b);
+      return [s[0] + a, s[1] + a * c[0], s[2] + a * c[1]];
+    }, [0, 0, 0]);
+    for (const staggerPercent of [1, 25, 50, 75, 99]) {
+      const options = { ...opt, staggerPercent };
+      const made = blocksBetween(inner, outer, 8, options);
+      assert.equal(made.blocks.length, 25);
+      assert.deepEqual(made.endJoints, base.endJoints);
+      const want = moments(base.blocks);
+      moments(made.blocks).forEach((v, i) => assert.ok(Math.abs(v - want[i]) < 1e-8));
+      assert.deepEqual(checkTrace(inner, outer, 8, options), []);
+      assert.deepEqual(blocksBetween(inner, reverse(outer), 8, options).blocks, made.blocks);
+      assert.ok(made.blocks.some((b) => b.x.length === 6), 'boundary bends must be preserved');
+    }
+    for (const staggerPercent of [0, 100]) {
+      assert.deepEqual(blocksBetween(inner, outer, 8, { ...opt, staggerPercent }), base);
+    }
+  }
+});
+
+test('stagger percentages are validated and a single layer remains unchanged', () => {
+  const inner = [[0, 0], [8, 0]], outer = [[0, 2], [8, 2]];
+  for (const staggerPercent of [-1, 101, NaN, Infinity]) {
+    assert.throws(() => blocksBetween(inner, outer, 4, { staggerPercent }), /percentage/);
+    assert.ok(checkTrace(inner, outer, 4, { staggerPercent }).length);
+  }
+  assert.deepEqual(blocksBetween(inner, outer, 4, { staggerPercent: 50 }),
+    blocksBetween(inner, outer, 4));
+});

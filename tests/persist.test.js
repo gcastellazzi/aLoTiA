@@ -336,3 +336,15 @@ test('the number of blocks through thickness survives reopening', () => {
   assert.equal(back.model.blocks.length, 36);
   assert.equal(back.model.joints, null);
 });
+
+test('stagger toggle and percentage survive reopening, including a disabled preference', () => {
+  for (const enabled of [false, true]) {
+    const { state, controls } = session();
+    state.model.stereotomy = { mode: 'normal-midline', thicknessBlocks: 3,
+      staggerEnabled: enabled, staggerPercent: enabled ? 25 : 0, staggerInput: 25 };
+    const back = deserialise(JSON.stringify(serialise(state, controls)));
+    assert.equal(back.model.stereotomy.staggerEnabled, enabled);
+    assert.equal(back.model.stereotomy.staggerPercent, enabled ? 25 : 0);
+    assert.equal(back.model.stereotomy.staggerInput, 25);
+  }
+});

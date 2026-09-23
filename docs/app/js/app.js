@@ -143,6 +143,8 @@ const ui = {
   resetImagePerspective: el('resetImagePerspective'),
   traceOuter: el('traceOuter'), traceHint: el('traceHint'),
   nBlocks: el('nBlocks'), traceCountLabel: el('traceCountLabel'),
+  traceStagger: el('traceStagger'), traceStaggerPercent: el('traceStaggerPercent'),
+  traceStaggerRow: el('traceStaggerRow'),
   traceThicknessBlocks: el('traceThicknessBlocks'),
   traceThicknessRow: el('traceThicknessRow'), traceThicknessHint: el('traceThicknessHint'),
   traceCutMode: el('traceCutMode'), subnormalWidth: el('subnormalWidth'),
@@ -3524,6 +3526,14 @@ function drawNormalPreview() {
   } catch {
     return;
   }
+  let staggered = null;
+  if (!made.error && traceStaggerPercent() > 0) {
+    try {
+      staggered = blocksBetween(t.inner, t.outer, n, { cutMode: mode,
+        thicknessBlocks: Number(ui.traceThicknessBlocks.value),
+        staggerPercent: traceStaggerPercent() }).blocks;
+    } catch { /* Invalid settings are reported by reportTrace. */ }
+  }
   const arrowPx = 28;
   mainAx.clipped((c) => {
     // The reference: a wide translucent band under the extrados, or the mean
@@ -3549,7 +3559,18 @@ function drawNormalPreview() {
     c.strokeStyle = NORMAL_COLOUR.reference;
     c.lineWidth = 1.2;
     c.setLineDash([4, 3]);
-    made.joints.forEach((j) => {
+    if (staggered) {
+      for (const block of staggered) {
+        c.beginPath();
+        block.x.forEach((x, k) => {
+          const p = mainAx.toPx([x, block.y[k]]);
+          if (k === 0) c.moveTo(...p);
+          else c.lineTo(...p);
+        });
+        c.closePath();
+        c.stroke();
+      }
+    } else made.joints.forEach((j) => {
       const [x0, y0] = mainAx.toPx(j.a);
       const [x1, y1] = mainAx.toPx(j.b);
       c.beginPath();
@@ -3560,7 +3581,7 @@ function drawNormalPreview() {
     c.setLineDash([]);
 
     const layers = Number(ui.traceThicknessBlocks.value);
-    if (Number.isInteger(layers) && layers > 1 && layers <= 200) {
+    if (!staggered && Number.isInteger(layers) && layers > 1 && layers <= 200) {
       for (let layer = 1; layer < layers; layer++) {
         c.beginPath();
         made.joints.forEach((j, k) => {
@@ -4283,6 +4304,12 @@ function finishTrace() {
   draw();
 }
 
+function traceStaggerPercent() {
+  return ui.traceCutMode.value !== 'subnormal'
+    && Number(ui.traceThicknessBlocks.value) > 1 && ui.traceStagger.checked
+    ? Number(ui.traceStaggerPercent.value || NaN) : 0;
+}
+
 function reportTrace() {
   const t = state.trace;
   const n = Number(ui.nBlocks.value) || 1;
@@ -4295,6 +4322,8 @@ function reportTrace() {
     ? 'Courses' : 'Blocks along arch';
   ui.traceThicknessRow.hidden = cutMode === 'subnormal';
   ui.traceThicknessHint.hidden = cutMode === 'subnormal';
+  ui.traceStaggerRow.hidden = cutMode === 'subnormal' || Number(ui.traceThicknessBlocks.value) <= 1;
+  ui.traceStaggerPercent.disabled = ui.traceStaggerRow.hidden || !ui.traceStagger.checked;
   ui.subnormalWidthRow.hidden = ui.traceCutMode?.value !== 'subnormal';
   let problems = [];
   if (t.inner.length >= 2 && t.outer.length >= 2) {
@@ -4303,6 +4332,7 @@ function reportTrace() {
         cutMode: ui.traceCutMode?.value ?? 'stations',
         blockWidth: Number(ui.subnormalWidth.value) || 0,
         thicknessBlocks: cutMode === 'subnormal' ? 1 : Number(ui.traceThicknessBlocks.value),
+        staggerPercent: traceStaggerPercent(),
       });
     } catch (e) {
       problems = [e.message];
@@ -5416,9 +5446,10 @@ function generateBlocks() {
   const cutMode = ui.traceCutMode?.value ?? 'stations';
   const blockWidth = Math.max(0, Number(ui.subnormalWidth?.value) || 0);
   const thicknessBlocks = cutMode === 'subnormal' ? 1 : Number(ui.traceThicknessBlocks.value);
+  const staggerPercent = traceStaggerPercent();
   let built;
   try {
-    built = blocksBetween(t.inner, t.outer, n, { cutMode, blockWidth, thicknessBlocks });
+    built = blocksBetween(t.inner, t.outer, n, { cutMode, blockWidth, thicknessBlocks, staggerPercent });
   } catch (e) {
     // A click that throws used to do nothing at all.
     ui.warn.hidden = false;
@@ -5456,7 +5487,8 @@ function generateBlocks() {
     stereotomy: cutMode === 'subnormal' ? {
       mode: cutMode, courseHeight: built.courseHeight, meanWidth: built.meanWidth,
       courses: built.courses, requestedWidth: blockWidth,
-    } : { mode: cutMode, thicknessBlocks },
+    } : { mode: cutMode, thicknessBlocks, staggerPercent,
+      staggerEnabled: ui.traceStagger.checked, staggerInput: Number(ui.traceStaggerPercent.value) },
     forcePolygon: null, thrustLine: null,
     units: previous?.units ?? null,
     frame,
@@ -5861,6 +5893,8 @@ ui.traceOuter.addEventListener('click', () => arm('outer'));
 ui.makeBlocks.addEventListener('click', generateBlocks);
 // The normal preview follows the block count and the cut mode as they change.
 const retrace = () => { reportTrace(); draw(); };
+ui.traceStagger.addEventListener('change', retrace);
+ui.traceStaggerPercent.addEventListener('input', retrace);
 ui.traceThicknessBlocks.addEventListener('input', retrace);
 ui.traceThicknessBlocks.addEventListener('change', retrace);
 ui.nBlocks.addEventListener('input', retrace);
@@ -6645,6 +6679,8 @@ function openWork(text, { source = null } = {}) {
 
   ui.system.value = data.system;
   ui.traceThicknessBlocks.value = String(data.model?.stereotomy?.thicknessBlocks ?? 1);
+  ui.traceStagger.checked = data.model?.stereotomy?.staggerEnabled ?? false;
+  ui.traceStaggerPercent.value = String(data.model?.stereotomy?.staggerInput ?? 50);
   const savedCutMode = data.model?.stereotomy?.mode;
   if ([...ui.traceCutMode.options].some((o) => o.value === savedCutMode)) {
     ui.traceCutMode.value = savedCutMode;

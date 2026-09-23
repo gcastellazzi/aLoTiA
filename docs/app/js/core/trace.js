@@ -708,6 +708,7 @@ function mergeSlivers(outline, pieces, y0, y1, minArea, tol) {
  * @param {number[][]} outer  the extrados
  * @param {number} n          blocks along each layer
  * @param {object} opt        thicknessBlocks: equal divisions across each cut (default 1);
+ *                           staggerPercent: alternating-layer offset (0–100, default 0);
  *                           subnormal courses use blockWidth instead
  * @returns {{blocks: Array<{x:number[],y:number[]}>, joints: Array,
  *            flipped: boolean}}
@@ -717,6 +718,10 @@ export function blocksBetween(inner, outer, n, opt = {}) {
   const layers = opt.thicknessBlocks ?? 1;
   if (!Number.isInteger(layers) || layers < 1 || layers > 200) {
     throw new Error('blocks through thickness must be an integer between 1 and 200');
+  }
+  const staggerPercent = opt.staggerPercent ?? 0;
+  if (!Number.isFinite(staggerPercent) || staggerPercent < 0 || staggerPercent > 100) {
+    throw new Error('layer stagger must be a percentage between 0 and 100');
   }
   let out = outer;
   let flipped = false;
@@ -743,14 +748,34 @@ export function blocksBetween(inner, outer, n, opt = {}) {
       p[0] + (b[j][0] - p[0]) * layer / layers,
       p[1] + (b[j][1] - p[1]) * layer / layers,
     ]));
+  // Keep every intervening vertex on a layer boundary. Connecting only the
+  // shifted endpoints would cut across a curved boundary, leaving gaps or overlaps.
+  const along = (points, t) => {
+    if (Number.isInteger(t)) return points[t];
+    const j = Math.floor(t);
+    const f = t - j;
+    return points[j].map((v, axis) => v + f * (points[j + 1][axis] - v));
+  };
+  const boundary = (points, start, end) => {
+    const path = [along(points, start)];
+    for (let j = Math.floor(start) + 1; j < end; j++) path.push(points[j]);
+    path.push(along(points, end));
+    return path;
+  };
   for (let layer = 0; layer < layers; layer++) {
     const lo = levels[layer];
     const hi = levels[layer + 1];
-    for (let j = 0; j < n; j++) {
-      blocks.push({
-        x: [lo[j][0], hi[j][0], hi[j + 1][0], lo[j + 1][0]],
-        y: [lo[j][1], hi[j][1], hi[j + 1][1], lo[j + 1][1]],
-      });
+    const offset = layer % 2 ? (staggerPercent / 100) % 1 : 0;
+    const stops = offset > 0
+      ? [0, ...Array.from({ length: n }, (_, j) => j + offset), n]
+      : Array.from({ length: n + 1 }, (_, j) => j);
+    for (let j = 0; j + 1 < stops.length; j++) {
+      const start = stops[j];
+      const end = stops[j + 1];
+      const lower = boundary(lo, start, end);
+      const upper = boundary(hi, start, end);
+      const pts = [lower[0], ...upper, ...lower.slice(1).reverse()];
+      blocks.push({ x: pts.map((p) => p[0]), y: pts.map((p) => p[1]) });
     }
   }
   for (let j = 0; j <= n; j++) joints.push(computed?.[j] ?? { a: a[j], b: b[j] });
@@ -786,7 +811,7 @@ export function checkTrace(inner, outer, n, opt = {}) {
     problems.push('the two curves coincide: there is no masonry between them');
     return problems;
   }
-  if (mode !== 'stations' || (opt.thicknessBlocks ?? 1) !== 1) {
+  if (mode !== 'stations' || (opt.thicknessBlocks ?? 1) !== 1 || opt.staggerPercent != null) {
     try {
       const built = blocksBetween(inner, outer, n, opt);
       // Coursed blocks are normalised polygons, not ordered quadrilaterals:
@@ -811,9 +836,12 @@ export function checkTrace(inner, outer, n, opt = {}) {
       'of the blocks come out inside out');
   }
 
+  // Short end blocks are intentional in a staggered layer, even at small offsets.
+  const staggered = (opt.thicknessBlocks ?? 1) > 1
+    && opt.staggerPercent > 0 && opt.staggerPercent < 100;
   const tiny = mode === 'subnormal' ? 0 : signed
     .map(Math.abs)
-    .filter((v) => v < total / (blocks.length * 50)).length;
+    .filter((v) => v < (staggered ? total * 1e-12 : total / (blocks.length * 50))).length;
   if (tiny) {
     problems.push(`${tiny} block(s) come out almost degenerate`);
   }
