@@ -14,6 +14,10 @@ Node ≥ 18, no dependencies. The scripts write `.dat` files into
 `tools/reproduce/data/`, which is not committed: the point is that you generate
 them, not that you trust ours.
 
+For the independent static–kinematic activation-multiplier check, run
+`node tools/reproduce/checkalpha.js`. See [the audit](ALPHA_AUDIT.md) for the
+results and the identified false rejections in the graphical static check.
+
 ## What each script produces, and what it should say
 
 | Paper | Script output | Expected |
