@@ -172,6 +172,8 @@ const ui = {
   abaqusRefine: el('abaqusRefine'), abaqusSupports: el('abaqusSupports'),
   system: el('system'), pickRef: el('pickRef'), refLength: el('refLength'),
   applyScale: el('applyScale'), scaleStatus: el('scaleStatus'),
+  measureDistance: el('measureDistance'),
+  clearMeasurements: el('clearMeasurements'), measureStatus: el('measureStatus'),
 };
 
 const mainAx = new Axes(el('main'), { equal: true, yUp: true });
@@ -248,6 +250,9 @@ const state = {
   threePointRing: { inner: [null, null, null], outer: [null, null, null], picking: null },
   // Scale: the two picked reference points, and the system in force.
   ref: { points: [], picking: false },
+  // Dimensions added after calibration. The picked endpoints stay in model
+  // coordinates, so their displayed value follows zoom and unit conversion.
+  measurements: { items: [], draft: [], picking: false },
   system: 'SI',
   // Applied point loads: where they act, how big, and whether we are placing.
   forces: { points: [], magnitudes: [], x: [], bases: [], placing: false },
@@ -1183,6 +1188,7 @@ function newWork() {
   state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
   state.ends = { A: null, B: null, picking: null, construction: null };
   state.ref = { points: [], picking: false };
+  state.measurements = { items: [], draft: [], picking: false };
   state.newBlock = null;
   state.basePole = null;
   state.pole = null;
@@ -1217,6 +1223,7 @@ function newWork() {
   ui.imageAspectLocked.checked = true;
   reportImageLock();
   reportScale();
+  reportMeasurements();
   listForces();
   reportProfiles();
   reportMechanism();
@@ -1286,9 +1293,11 @@ async function loadExample(file) {
     state.trace = { inner: [], outer: [], armed: null, cursor: null };
     clearThreePointRing();
     state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
+    state.measurements = { items: [], draft: [], picking: false };
     appendLog(`Failed to load example ${file}: ${err.message}`);
     assessAdmissibility();
     reportMechanism();
+    reportMeasurements();
     draw();
     return;
   }
@@ -1325,6 +1334,7 @@ async function loadExample(file) {
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   clearThreePointRing();
   state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
+  state.measurements = { items: [], draft: [], picking: false };
   // The collapse band belongs to the arch that was on screen, not to this one.
   // The signature guard recomputes it for another arch WITH joints, but an
   // arch without them never reaches that branch and inherited the last band
@@ -1804,6 +1814,7 @@ function reportImposed(got) {
 
 /** Arm a click on the arch to place one of the two ends. */
 function armEnd(which) {
+  if (state.measurements?.picking) stopMeasuring();
   state.ends.picking = state.ends.picking === which ? null : which;
   if (state.ends.picking) {
     if (traceArmed()) finishTrace();
@@ -2655,6 +2666,7 @@ function draw() {
   drawProfiles();
   drawForces();
   drawReference();
+  drawMeasurements();
   mainAx.decorate();
   const blockEq = selectedBlockEquilibrium();
   if (blockEq) drawBlockEquilibrium(mainAx, blockEq.block, blockEq);
@@ -3738,6 +3750,7 @@ function drawForces() {
 }
 
 function armForce() {
+  if (state.measurements?.picking) stopMeasuring();
   state.forces.placing = !state.forces.placing;
   if (state.forces.placing) {
     if (state.trace?.armed) finishTrace();
@@ -3887,6 +3900,156 @@ function drawReference() {
   });
 }
 
+/** Draw one measured distance in the visual language of a drafting dimension. */
+function drawDimension(c, item) {
+  const p0 = mainAx.toPx(item.a);
+  const p1 = mainAx.toPx(item.b);
+  const dx = p1[0] - p0[0];
+  const dy = p1[1] - p0[1];
+  const lengthPx = Math.hypot(dx, dy);
+  if (!(lengthPx > 0)) return;
+
+  const ux = dx / lengthPx;
+  const uy = dy / lengthPx;
+  // Keep the dimension clear of the two picked points. This offset is in CSS
+  // pixels, so the annotation remains legible and does not grow with zoom.
+  let nx = -uy;
+  let ny = ux;
+  if (ny > 0) { nx = -nx; ny = -ny; }
+  const offset = 16;
+  const overshoot = 4;
+  const a = [p0[0] + nx * offset, p0[1] + ny * offset];
+  const b = [p1[0] + nx * offset, p1[1] + ny * offset];
+  const colour = '#7E2F8E';
+
+  c.save();
+  c.strokeStyle = colour;
+  c.fillStyle = colour;
+  c.lineWidth = 1.5;
+
+  // Witness lines identify the exact picked points; the offset line carries
+  // the arrows and value, as a conventional architectural dimension does.
+  c.beginPath();
+  c.moveTo(p0[0], p0[1]);
+  c.lineTo(a[0] + nx * overshoot, a[1] + ny * overshoot);
+  c.moveTo(p1[0], p1[1]);
+  c.lineTo(b[0] + nx * overshoot, b[1] + ny * overshoot);
+  c.moveTo(a[0], a[1]);
+  c.lineTo(b[0], b[1]);
+  c.stroke();
+
+  const arrow = (tip, direction) => {
+    const back = 8;
+    const wing = 3.5;
+    c.beginPath();
+    c.moveTo(tip[0], tip[1]);
+    c.lineTo(tip[0] + direction[0] * back + nx * wing,
+      tip[1] + direction[1] * back + ny * wing);
+    c.lineTo(tip[0] + direction[0] * back - nx * wing,
+      tip[1] + direction[1] * back - ny * wing);
+    c.closePath();
+    c.fill();
+  };
+  arrow(a, [ux, uy]);
+  arrow(b, [-ux, -uy]);
+
+  const value = Math.hypot(item.b[0] - item.a[0], item.b[1] - item.a[1]);
+  const label = format(value, 'length', state.system);
+  let angle = Math.atan2(dy, dx);
+  if (angle > Math.PI / 2 || angle < -Math.PI / 2) angle += Math.PI;
+  const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  c.translate(mid[0], mid[1]);
+  c.rotate(angle);
+  c.font = 'bold 11px Helvetica, Arial, sans-serif';
+  c.textAlign = 'center';
+  c.textBaseline = 'bottom';
+  const textWidth = c.measureText(label).width;
+  c.globalAlpha = 0.9;
+  c.fillStyle = '#fff';
+  c.fillRect(-textWidth / 2 - 3, -15, textWidth + 6, 15);
+  c.globalAlpha = 1;
+  c.fillStyle = colour;
+  c.fillText(label, 0, -2);
+  c.restore();
+}
+
+function drawMeasurements() {
+  const measurements = state.measurements
+    ?? { items: [], draft: [], picking: false };
+  const items = [...measurements.items];
+  if (measurements.draft.length === 2) {
+    items.push({ a: measurements.draft[0], b: measurements.draft[1] });
+  }
+  if (!items.length && !measurements.draft.length) return;
+  mainAx.clipped((c) => {
+    for (const item of items) drawDimension(c, item);
+    for (const point of measurements.draft) {
+      const [x, y] = mainAx.toPx(point);
+      c.strokeStyle = '#7E2F8E';
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(x - 6, y); c.lineTo(x + 6, y);
+      c.moveTo(x, y - 6); c.lineTo(x, y + 6);
+      c.stroke();
+    }
+  });
+}
+
+function reportMeasurements() {
+  const scaled = state.model?.frame?.coordinates === 'physical';
+  const measurements = state.measurements
+    ?? { items: [], draft: [], picking: false };
+  state.measurements = measurements;
+  ui.measureDistance.disabled = !scaled;
+  ui.clearMeasurements.disabled = !measurements.items.length && !measurements.draft.length;
+  ui.measureDistance.classList.toggle('armed', measurements.picking);
+  ui.measureDistance.textContent = measurements.picking
+    ? (measurements.draft.length ? 'Pick the second point…' : 'Pick the first point…')
+    : 'Measure distance';
+  ui.measureStatus.textContent = !scaled
+    ? 'set the scale before measuring'
+    : measurements.picking
+      ? (measurements.draft.length ? 'click the other end of the distance' : 'click the first endpoint')
+      : measurements.items.length
+        ? `${measurements.items.length} measurement${measurements.items.length === 1 ? '' : 's'} on drawing`
+        : 'no measurements';
+}
+
+function stopMeasuring({ discardDraft = true } = {}) {
+  if (!state.measurements) return;
+  state.measurements.picking = false;
+  if (discardDraft) state.measurements.draft = [];
+  reportMeasurements();
+}
+
+function armMeasurement() {
+  if (state.model?.frame?.coordinates !== 'physical') return;
+  const wasPicking = state.measurements?.picking;
+  if (!state.measurements) state.measurements = { items: [], draft: [], picking: false };
+  state.measurements.draft = [];
+  if (!wasPicking) {
+    if (state.ref.picking) disarmReference();
+    if (traceArmed()) finishTrace();
+    if (state.forces.placing) armForce();
+    if (state.ends.picking) armEnd(state.ends.picking);
+    if (state.pickingAxis) ui.pickAxis.click();
+    if (state.threePointRing.picking) {
+      state.threePointRing.picking = null;
+      reportThreePointRing();
+    }
+    if (state.profiles.current) armProfile();
+    if (state.profiles.picking) {
+      state.profiles.picking = false;
+      ui.pickCutCentre.classList.remove('armed');
+      ui.pickCutCentre.textContent = 'Pick the centre of the cuts';
+    }
+    if (state.newBlock) armBlock();
+  }
+  state.measurements.picking = !wasPicking;
+  reportMeasurements();
+  draw();
+}
+
 function updateReferencePickerUi() {
   ui.pickRef.classList.toggle('armed', state.ref.picking);
   ui.pickImageRef.classList.toggle('armed', state.ref.picking);
@@ -3908,6 +4071,7 @@ function armReference() {
   state.ref.picking = !state.ref.picking;
   if (state.ref.picking) {
     state.ref.points = [];
+    if (state.measurements?.picking) stopMeasuring();
     // Picking a reference and tracing a curve would fight over the clicks.
     if (state.trace?.armed) finishTrace();
   }
@@ -3931,6 +4095,7 @@ function reportBlocks(n, flipped) {
 function reportScale() {
   const m = state.model;
   const sys = SYSTEMS[state.system];
+  reportMeasurements();
   const refCount = state.ref?.points?.length ?? 0;
   ui.applyScale.disabled = refCount !== 2;
   ui.applyImageRefScale.disabled = refCount !== 2;
@@ -4036,6 +4201,12 @@ function scalePixelWorkspace(k, source) {
   }
   state.ref = state.ref ?? { points: [], picking: false };
   state.ref.points = scalePoints(state.ref.points, k);
+  state.measurements = state.measurements
+    ?? { items: [], draft: [], picking: false };
+  state.measurements.items = state.measurements.items.map((item) => ({
+    a: scaleMaybePoint(item.a, k), b: scaleMaybePoint(item.b, k),
+  }));
+  state.measurements.draft = scalePoints(state.measurements.draft, k);
   state.forces = state.forces ?? { points: [], magnitudes: [], x: [], placing: false };
   state.forces.points = scalePoints(state.forces.points, k);
   state.ends = state.ends ?? { A: null, B: null, picking: null, construction: null };
@@ -4096,6 +4267,7 @@ function applyScale() {
   recompute();
   fitViews();
   appendLog(`Applied reference scale: ${real} ${SYSTEMS[state.system].length.label}`);
+  reportMeasurements();
   draw();
   ui.warn.hidden = true;
 }
@@ -4276,6 +4448,7 @@ function flipBackgroundImage() {
 }
 
 function arm(which) {
+  if (state.measurements?.picking) stopMeasuring();
   ensureTraceModel();
   const t = state.trace;
   t.armed = t.armed === which ? null : which;
@@ -4370,6 +4543,7 @@ function reportThreePointRing() {
 }
 
 function armThreePointRing(which) {
+  if (state.measurements?.picking) stopMeasuring();
   state.threePointRing.picking = state.threePointRing.picking === which ? null : which;
   if (state.threePointRing.picking) {
     state.threePointRing[which] = [null, null, null];
@@ -4424,6 +4598,7 @@ function reportProfiles() {
 
 /** Start, or finish, a closed outline. */
 function armProfile() {
+  if (state.measurements?.picking) stopMeasuring();
   const p = state.profiles;
   if (p.current) {
     if (p.current.length >= 3) p.list.push(p.current);
@@ -4736,6 +4911,7 @@ function recoverJoints() {
 
 /** Arm the free-hand block tool. */
 function armBlock() {
+  if (state.measurements?.picking) stopMeasuring();
   if (!state.newBlock && !state.model) ensureTraceModel();
   state.newBlock = state.newBlock ? null : [];
   state.snap = null;
@@ -5639,6 +5815,24 @@ function attachNavigation(ax) {
       draw();
       return;
     }
+    if (ax === mainAx && state.measurements?.picking) {
+      const point = mainAx.toData([e.offsetX, e.offsetY]);
+      state.measurements.draft.push(point);
+      if (state.measurements.draft.length >= 2) {
+        const [a, b] = state.measurements.draft;
+        const value = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (value > 0) {
+          state.measurements.items.push({ a: [...a], b: [...b] });
+          appendLog(`Measured distance ${format(value, 'length', state.system)}`);
+          stopMeasuring();
+        } else {
+          state.measurements.draft = [a];
+        }
+      }
+      reportMeasurements();
+      draw();
+      return;
+    }
     if (ax === mainAx && state.ref.picking) {
       state.ref.points.push(mainAx.toData([e.offsetX, e.offsetY]));
       if (state.ref.points.length >= 2) {
@@ -5724,6 +5918,10 @@ attachNavigation(plotAx);
 el('main').addEventListener('dblclick', (e) => { e.preventDefault(); finishTrace(); });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') finishTrace();
+  if (e.key === 'Escape' && state.measurements?.picking) {
+    stopMeasuring();
+    draw();
+  }
   if (e.key === 'Escape' && traceArmed()) {
     state.trace[state.trace.armed] = [];
     finishTrace();
@@ -5746,6 +5944,14 @@ ui.clearForces.addEventListener('click', () => {
 
 ui.pickRef.addEventListener('click', armReference);
 ui.pickImageRef.addEventListener('click', armReference);
+ui.measureDistance.addEventListener('click', armMeasurement);
+ui.clearMeasurements.addEventListener('click', () => {
+  const n = state.measurements?.items.length ?? 0;
+  state.measurements = { items: [], draft: [], picking: false };
+  if (n) appendLog(`Cleared ${n} measurement${n === 1 ? '' : 's'}`);
+  reportMeasurements();
+  draw();
+});
 ui.applyScale.addEventListener('click', applyScale);
 ui.applyImageRefScale.addEventListener('click', applyScale);
 ui.refLength.addEventListener('input', () => {
@@ -5844,6 +6050,13 @@ ui.system.addEventListener('change', () => {
       centre: pt(profiles.centre),
     };
     state.ref = { ...state.ref, points: poly(state.ref.points) };
+    state.measurements = state.measurements
+      ?? { items: [], draft: [], picking: false };
+    state.measurements = {
+      ...state.measurements,
+      items: state.measurements.items.map((item) => ({ a: pt(item.a), b: pt(item.b) })),
+      draft: poly(state.measurements.draft),
+    };
     state.newBlock = state.newBlock ? poly(state.newBlock) : null;
     // The band is a FRACTION of the total load and so is dimensionless, but
     // its key is keyed on the load, which has just changed.
@@ -5880,6 +6093,7 @@ ui.system.addEventListener('change', () => {
   }
 
   reportScale();
+  reportMeasurements();
   reportDome();
   listForces();
   recompute();
@@ -6006,6 +6220,7 @@ ui.imageFile.addEventListener('change', (e) => {
         state.consistent = { ok: true, reason: null, extraRows: 0 };
         state.fp = null; state.lot = null; state.basePole = null;
         state.trace = { inner: [], outer: [], armed: null, cursor: null };
+        state.measurements = { items: [], draft: [], picking: false };
         ui.thrustValue.textContent = 'trace the arch first';
         ui.thrustValueM.textContent = ui.thrustValue.textContent;
         ui.thrustValueP.textContent = ui.thrustValue.textContent;
@@ -6442,6 +6657,7 @@ for (const f of [ui.domeAngle, ui.domeAxis]) {
   });
 }
 ui.pickAxis.addEventListener('click', () => {
+  if (state.measurements?.picking) stopMeasuring();
   state.pickingAxis = !state.pickingAxis;
   if (state.pickingAxis) {
     if (traceArmed()) finishTrace();
@@ -6670,6 +6886,9 @@ function openWork(text, { source = null } = {}) {
     vertical: Number(data.imagePerspective?.vertical) || 0,
     horizontal: Number(data.imagePerspective?.horizontal) || 0,
   };
+  state.measurements = {
+    items: data.measurements ?? [], draft: [], picking: false,
+  };
   state.notes = data.notes ?? '';
   state.log = data.log ?? [];
   appendLog(source
@@ -6743,6 +6962,7 @@ function openWork(text, { source = null } = {}) {
   describe();
   reportBlocks();
   reportScale();
+  reportMeasurements();
   reportGroups();
   if (source) {
     ui.saveStatus.textContent = `example — ${source}`;

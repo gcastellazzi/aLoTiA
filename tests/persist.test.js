@@ -209,6 +209,27 @@ test('the scale and frame come back, so lengths keep their meaning', () => {
   assert.equal(back.model.frame.units_per_pixel, 0.01);
 });
 
+test('measured distances survive reopening with their endpoints unchanged', () => {
+  const { state } = session();
+  state.measurements = {
+    items: [
+      { a: [-3.25, 1.5], b: [2.75, 4.5] },
+      { a: [0, 0], b: [0, 2.4] },
+    ],
+    draft: [[9, 9]],
+    picking: true,
+  };
+  const back = deserialise(JSON.stringify(serialise(state)));
+  assert.deepEqual(back.measurements, state.measurements.items);
+});
+
+test('a malformed measured distance is refused', () => {
+  const { state } = session();
+  const saved = serialise(state);
+  saved.measurements = [{ a: [0, 1], b: ['far', 2] }];
+  assert.throws(() => deserialise(saved), /malformed measurement/);
+});
+
 test('a file from somewhere else is refused, not half-loaded', () => {
   assert.throws(() => deserialise('not json at all'), /not a JSON file/);
   assert.throws(() => deserialise('{"hello": 1}'), /not saved by/);

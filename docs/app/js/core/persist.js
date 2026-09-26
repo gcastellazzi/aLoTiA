@@ -86,6 +86,9 @@ export function serialise(state, controls = {}, imageName = null) {
     trace: state.trace
       ? { inner: points(state.trace.inner), outer: points(state.trace.outer) }
       : null,
+    measurements: (state.measurements?.items ?? []).map((item) => ({
+      a: [...item.a], b: [...item.b],
+    })),
     model: state.model
       ? {
         name: m.name ?? null,
@@ -243,6 +246,13 @@ export function deserialise(text) {
   if (data.log && !Array.isArray(data.log)) {
     throw new Error('the file has a malformed project log');
   }
+  if (data.measurements && (!Array.isArray(data.measurements)
+    || !data.measurements.every((item) => item
+      && Array.isArray(item.a) && item.a.length === 2
+      && Array.isArray(item.b) && item.b.length === 2
+      && [...item.a, ...item.b].every(Number.isFinite)))) {
+    throw new Error('the file has a malformed measurement');
+  }
   if (data.image && (
     typeof data.image.dataUrl !== 'string'
     || !data.image.dataUrl.startsWith('data:image/')
@@ -286,6 +296,9 @@ export function deserialise(text) {
     },
     notes: String(data.notes ?? ''),
     log: (data.log ?? []).map((row) => String(row)),
+    measurements: (data.measurements ?? []).map((item) => ({
+      a: [...item.a], b: [...item.b],
+    })),
   };
 }
 
