@@ -1426,7 +1426,7 @@ export function abaqusInput(model, opt = {}) {
 
   const supportSets = supports.map((p) => activeLineSets(meshes, p, { limit: 10 }));
   const forceSets = (forces.points ?? []).map((p) => activeLineSets(meshes, p, { limit: 12 }));
-  const faceRollers = supportMode === 'face-rollers'
+  const faceSupports = supportMode === 'face-rollers' || supportMode === 'face-hinges'
     ? rollerFaces(meshes, supports, chain) : [];
 
   supportSets.forEach((sets, si) => {
@@ -1446,9 +1446,12 @@ export function abaqusInput(model, opt = {}) {
   // The hinge nodes are fixed in all three translations, which is the same in
   // any system, so they stay in the face set.
   const transformed = new Map();
-  const rollerRows = faceRollers.map((row) => {
+  const faceRows = faceSupports.map((row) => {
     const { support, block, normal } = row;
     const name = `SUPPORT_${support === 0 ? 'A' : 'B'}_FACE_B${block + 1}`;
+    if (supportMode === 'face-hinges') {
+      return { ...row, name, dof: null, clash: [] };
+    }
     const dof = Math.abs(normal[1]) < 1e-9 ? 1 : Math.abs(normal[0]) < 1e-9 ? 3 : null;
     const system = dof ? `global-${dof}` : `${fmt(normal[0])},${fmt(normal[1])}`;
     // A node carries one nodal transformation only. Where two roller faces of
@@ -1468,14 +1471,21 @@ export function abaqusInput(model, opt = {}) {
     return { ...row, name, dof, ids, clash };
   }).filter((row) => row.ids.length);
 
-  rollerRows.forEach(({ name, block, ids }) => {
+  faceRows.forEach(({ name, block, ids }) => {
     out.push(`*Nset, nset=${name}, instance=BLOCK_${block + 1}_I`);
     out.push(...linesOf(ids));
   });
-  if (supportMode === 'face-rollers' && !rollerRows.length) {
+  if (supportMode === 'face-rollers' && !faceRows.length) {
     out.push('** Face rollers requested, but no exterior face connected to A/B could be identified.');
   }
-  rollerRows.forEach(({ name, support, dof, normal, clash }) => {
+  if (supportMode === 'face-hinges' && !faceRows.length) {
+    out.push('** Face hinges requested, but no exterior face connected to A/B could be identified.');
+  }
+  faceRows.forEach(({ name, support, dof, normal, clash }) => {
+    if (supportMode === 'face-hinges') {
+      out.push(`** End face ${support === 0 ? 'A' : 'B'}: every node is hinged in U1-U3.`);
+      return;
+    }
     out.push(`** End face ${support === 0 ? 'A' : 'B'}: roller bed blocks U.normal; tangential motion remains free.`);
     if (clash.length) {
       out.push(`** ${clash.length} corner node(s) already belong to another roller face and keep its system.`);
@@ -1535,13 +1545,18 @@ export function abaqusInput(model, opt = {}) {
       out.push(`SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}, 1, 3, 0.`);
     });
   });
-  if (rollerRows.length) {
+  if (supportMode === 'face-rollers' && faceRows.length) {
     out.push('** Roller beds: every node coplanar with and connected to the A/B face,');
     out.push('** restrained normal to that face (local 1 where the face is inclined).');
   }
-  rollerRows.forEach(({ name, dof }) => {
+  if (supportMode === 'face-hinges' && faceRows.length) {
+    out.push('** Hinged end faces: every connected node on each A/B face is restrained in U1-U3.');
+  }
+  faceRows.forEach(({ name, dof }) => {
     out.push('*Boundary');
-    out.push(`${name}, ${dof ?? 1}, ${dof ?? 1}, 0.`);
+    out.push(supportMode === 'face-hinges'
+      ? `${name}, 1, 3, 0.`
+      : `${name}, ${dof ?? 1}, ${dof ?? 1}, 0.`);
   });
   meshes.forEach((_, i) => {
     out.push('*Dload');

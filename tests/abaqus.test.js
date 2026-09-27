@@ -207,6 +207,25 @@ test('optional end-face roller beds block only the face-normal displacement', ()
   assert.deepEqual(face, onFace);
 });
 
+test('optional end-face hinges fix every face node in all translations', () => {
+  const inp = twoBlockModel({ supportMode: 'face-hinges' });
+  assert.match(inp, /End face A: every node is hinged in U1-U3/);
+  assert.match(inp, /End face B: every node is hinged in U1-U3/);
+  assert.match(inp, /^\*Boundary\nSUPPORT_A_FACE_B1, 1, 3, 0\.$/m);
+  assert.match(inp, /^\*Boundary\nSUPPORT_B_FACE_B2, 1, 3, 0\.$/m);
+  assert.doesNotMatch(inp, /^\*Transform/m,
+    'a hinge fixes global translations and needs no face-normal system');
+
+  const parts = parseParts(inp);
+  const face = (name) => inp.match(new RegExp(`\\*Nset, nset=${name}[^\\n]*\\n([^*]+)`))[1]
+    .match(/\d+/g).map(Number).sort((a, b) => a - b);
+  const nodesAt = (part, x) => [...parts.get(part).nodes]
+    .filter(([, p]) => Math.abs(p[0] - x) < 1e-12)
+    .map(([id]) => id).sort((a, b) => a - b);
+  assert.deepEqual(face('SUPPORT_A_FACE_B1'), nodesAt('BLOCK_1', 0));
+  assert.deepEqual(face('SUPPORT_B_FACE_B2'), nodesAt('BLOCK_2', 2));
+});
+
 test('an inclined roller face is restrained in a nodal system along its normal', () => {
   // A skew-back springing: the end face of block 1 runs from (0,0) to (1,1),
   // so its normal is (-1, 1)/sqrt(2) (or its opposite).

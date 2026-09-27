@@ -529,10 +529,11 @@ Plain text, with **bold**, *emph*, _underline_ and
         <label class="inline" title="Elements across the ring thickness of one voussoir. Two is the least that shows a stress gradient.">mesh
           <input id="abaqusRefine" type="number" min="2" max="12" step="1" value="3">
         </label>
-        <label class="inline" title="Optionally support each whole end face on rollers normal to that face, while A and B remain hinge lines.">supports
+        <label class="inline" title="Choose hinge lines only, add face-normal rollers, or hinge every node of both end faces.">supports
           <select id="abaqusSupports">
             <option value="hinges">A/B hinge lines</option>
             <option value="face-rollers">A/B hinges + face rollers</option>
+            <option value="face-hinges">All end-face nodes hinged</option>
           </select>
         </label>
         <button id="exportAbaqus" type="button" title="Export an Abaqus .inp model">export</button>
