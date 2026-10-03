@@ -194,3 +194,143 @@ export function makeBlock(pieces) {
   const first = pieces[0];
   return { x: first.x, y: first.y, pieces };
 }
+
+/**
+ * Where one straight cut meets one closed profile, as [enter, leave] pairs.
+ *
+ * The companion of `materialSpans` for a cut that is not a ray from a centre.
+ * A stereotomy is a family of lines -- normal to the mean curve, or turned
+ * part of the way onto the horizontal -- and a dome section is cut by all of
+ * them alike, so the cutter has to take a line rather than an angle.
+ *
+ * The parameter runs along `dir` from `origin`, both ways: a cut is a line,
+ * not a half-line, because the station it is drawn from may lie outside the
+ * masonry it crosses.
+ */
+export function lineSpans(profile, origin, dir) {
+  const hits = [];
+  const n = profile.length;
+  const len = Math.hypot(dir[0], dir[1]) || 1;
+  const dx = dir[0] / len;
+  const dy = dir[1] / len;
+  for (let i = 0; i < n; i++) {
+    const p = profile[i];
+    const q = profile[(i + 1) % n];
+    const ex = q[0] - p[0];
+    const ey = q[1] - p[1];
+    const den = ex * dy - dx * ey;
+    if (Math.abs(den) < 1e-15) continue;              // parallel to the cut
+    const rx = p[0] - origin[0];
+    const ry = p[1] - origin[1];
+    const u = (dx * ry - dy * rx) / den;
+    if (u < 0 || u >= 1) continue;                    // outside the edge
+    hits.push((ex * ry - ey * rx) / den);
+  }
+  hits.sort((a, b) => a - b);
+  const spans = [];
+  for (let i = 0; i + 1 < hits.length; i += 2) spans.push([hits[i], hits[i + 1]]);
+  return spans;
+}
+
+/**
+ * Cut a section into voussoirs along a given family of lines.
+ *
+ * THE PROFILES ARE KEPT APART. `cutRadially` merges the material of every
+ * outline it is given and pairs the spans in order, which is right for one
+ * section traced as several curves. Here each profile is cut on its own and
+ * its spans are paired with its own, so a piece knows which profile -- which
+ * MATERIAL GROUP -- it came from, and a rib four metres wide out of plane is
+ * not paired with the shell beside it.
+ *
+ * @param {Array<{points: number[][], group?: object}>} profiles
+ *        closed outlines, each with whatever the caller wants carried through
+ * @param {Array<{origin: number[], dir: number[]}>} lines  the cuts, in order
+ * @returns {{blocks: Array, joints: Array, pieceGroups: Array<Array>,
+ *            warnings: string[]}}
+ *          `blocks[k]` spans lines k and k+1; `pieceGroups[k][m]` is the
+ *          profile that piece m of that block was cut from.
+ */
+export function cutAlongLines(profiles, lines) {
+  const warnings = [];
+  const list = (profiles ?? []).filter((p) => p?.points?.length >= 3);
+  if (!list.length) return { blocks: [], joints: [], pieceGroups: [], warnings: ['no profile'] };
+  if (!(lines?.length >= 2)) {
+    return { blocks: [], joints: [], pieceGroups: [], warnings: ['at least two cuts'] };
+  }
+
+  const at = (line, s) => {
+    const len = Math.hypot(line.dir[0], line.dir[1]) || 1;
+    return [line.origin[0] + (s * line.dir[0]) / len,
+      line.origin[1] + (s * line.dir[1]) / len];
+  };
+
+  // THE EXTREME CUTS LIE IN THE END FACES. A section ends where the first and
+  // the last cut are drawn, and a cut collinear with the face it lies in
+  // crosses nothing: the two end voussoirs went missing. Each end cut is drawn
+  // a hair inside instead, a millionth of the way to its neighbour, which is
+  // far below anything that can be seen or measured. `cutRadially` insets its
+  // own fan for the same reason.
+  const inset = (k) => {
+    const other = k === 0 ? lines[1] : lines[lines.length - 2];
+    const line = lines[k];
+    const dx = other.origin[0] - line.origin[0];
+    const dy = other.origin[1] - line.origin[1];
+    return {
+      dir: line.dir,
+      origin: [line.origin[0] + dx * 1e-6, line.origin[1] + dy * 1e-6],
+    };
+  };
+  const drawn = lines.map((line, k) => (
+    k === 0 || k === lines.length - 1 ? inset(k) : line));
+
+  // Every cut, and the material of every profile along it.
+  const cuts = drawn.map((line, k) => {
+    const spans = list.map((p) => lineSpans(p.points, line.origin, line.dir));
+    if (!spans.some((s) => s.length)) warnings.push(`cut ${k} misses the section`);
+    return { line, spans };
+  });
+
+  // The joint at a cut runs from the first material entered to the last left,
+  // over all the profiles together, with the gaps between shells inside it.
+  const joints = cuts.map(({ line, spans }) => {
+    const flat = spans.flat().sort((a, b) => a[0] - b[0]);
+    if (!flat.length) return null;
+    return {
+      a: at(line, flat[0][0]),
+      b: at(line, flat[flat.length - 1][1]),
+      segments: flat.map(([s0, s1]) => ({ a: at(line, s0), b: at(line, s1) })),
+    };
+  });
+
+  const blocks = [];
+  const pieceGroups = [];
+  for (let k = 0; k + 1 < cuts.length; k++) {
+    const A = cuts[k];
+    const B = cuts[k + 1];
+    const pieces = [];
+    const from = [];
+    list.forEach((profile, pi) => {
+      const sa = A.spans[pi];
+      const sb = B.spans[pi];
+      const pairs = Math.min(sa.length, sb.length);
+      if (sa.length !== sb.length) {
+        warnings.push(`${profile.group?.name ?? `profile ${pi + 1}`}: between cuts `
+          + `${k} and ${k + 1} it changes from ${sa.length} to ${sb.length} pieces`);
+      }
+      for (let m = 0; m < pairs; m++) {
+        const [a0, a1] = sa[m];
+        const [b0, b1] = sb[m];
+        const quad = [at(A.line, a0), at(A.line, a1), at(B.line, b1), at(B.line, b0)];
+        const poly = { x: quad.map((p) => p[0]), y: quad.map((p) => p[1]) };
+        if (area(poly) < 0) { poly.x.reverse(); poly.y.reverse(); }
+        pieces.push(poly);
+        from.push(profile);
+      }
+    });
+    if (!pieces.length) continue;
+    blocks.push(makeBlock(pieces));
+    pieceGroups.push(from);
+  }
+
+  return { blocks, joints: joints.filter(Boolean), pieceGroups, warnings };
+}

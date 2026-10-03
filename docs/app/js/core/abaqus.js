@@ -1284,7 +1284,21 @@ export function abaqusInput(model, opt = {}) {
     forces = { points: [], magnitudes: [] },
     friction = 0.6, system = 'SI', title = 'aLoTiA export',
     joints = null, refine = {}, supportMode = 'hinges', generalContact = false,
+    domeSectors = 1, domeAxisX = 0,
   } = opt;
+
+  // THE WHOLE DOME, OR ONE LUNE OF IT. Poleni's reading of St Peter's is
+  // sixteen independent arches, and the section drawn here is one of them.
+  // Asked for the whole dome, the parts are not rebuilt: each is instanced
+  // once per lune, turned about the vertical axis of the dome, so the file
+  // carries one mesh per block however many lunes stand on it. The
+  // approximation of the lune by a prism of its own width is the one the
+  // export already makes, and repeating it leaves the meridian faces of
+  // neighbouring lunes apart by the same amount.
+  const sectors = Math.max(1, Math.round(Number(domeSectors) || 1));
+  const instanceNames = (i) => (sectors === 1
+    ? [`BLOCK_${i + 1}_I`]
+    : Array.from({ length: sectors }, (_, s) => `BLOCK_${i + 1}_S${s + 1}`));
   if (!model?.blocks?.length || !solids.length) {
     throw new Error('no 3D blocks available to export');
   }
@@ -1418,10 +1432,23 @@ export function abaqusInput(model, opt = {}) {
   out.push('*Surface Behavior, pressure-overclosure=HARD');
 
   out.push('*Assembly, name=ASSEMBLY');
+  if (sectors > 1) {
+    out.push(`** The dome is ${sectors} lunes of ${fmt(360 / sectors)} degrees, `
+      + `turned about the vertical axis at X = ${fmt(domeAxisX)}.`);
+  }
   meshes.forEach((_, i) => {
     const part = `BLOCK_${i + 1}`;
-    out.push(`*Instance, name=${part}_I, part=${part}`);
-    out.push('*End Instance');
+    instanceNames(i).forEach((name, s) => {
+      out.push(`*Instance, name=${name}, part=${part}`);
+      if (sectors > 1) {
+        // Translation first, then the rotation: the axis runs from
+        // (axisX, 0, 0) to (axisX, 0, 1), which is vertical in the model.
+        out.push('0., 0., 0.');
+        out.push(`${fmt(domeAxisX)}, 0., 0., ${fmt(domeAxisX)}, 0., 1., `
+          + `${fmt((360 * s) / sectors)}`);
+      }
+      out.push('*End Instance');
+    });
   });
 
   const supportSets = supports.map((p) => activeLineSets(meshes, p, { limit: 10 }));
@@ -1429,10 +1456,19 @@ export function abaqusInput(model, opt = {}) {
   const faceSupports = supportMode === 'face-rollers' || supportMode === 'face-hinges'
     ? rollerFaces(meshes, supports, chain) : [];
 
+  // A set is written for every lune: the springings, the loads and the roller
+  // beds belong to each of them, the dome being the same section repeated.
+  const setNames = (base, bi) => instanceNames(bi)
+    .map((inst, s) => (sectors === 1 ? base : `${base}_L${s + 1}`))
+    .map((name, s) => ({ name, instance: instanceNames(bi)[s] }));
+
   supportSets.forEach((sets, si) => {
     sets.forEach(({ block: bi, ids }) => {
-      out.push(`*Nset, nset=SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}, instance=BLOCK_${bi + 1}_I`);
-      out.push(...linesOf(ids));
+      const base = `SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}`;
+      setNames(base, bi).forEach(({ name, instance }) => {
+        out.push(`*Nset, nset=${name}, instance=${instance}`);
+        out.push(...linesOf(ids));
+      });
     });
   });
 
@@ -1472,8 +1508,10 @@ export function abaqusInput(model, opt = {}) {
   }).filter((row) => row.ids.length);
 
   faceRows.forEach(({ name, block, ids }) => {
-    out.push(`*Nset, nset=${name}, instance=BLOCK_${block + 1}_I`);
-    out.push(...linesOf(ids));
+    setNames(name, block).forEach((row) => {
+      out.push(`*Nset, nset=${row.name}, instance=${row.instance}`);
+      out.push(...linesOf(ids));
+    });
   });
   if (supportMode === 'face-rollers' && !faceRows.length) {
     out.push('** Face rollers requested, but no exterior face connected to A/B could be identified.');
@@ -1481,7 +1519,7 @@ export function abaqusInput(model, opt = {}) {
   if (supportMode === 'face-hinges' && !faceRows.length) {
     out.push('** Face hinges requested, but no exterior face connected to A/B could be identified.');
   }
-  faceRows.forEach(({ name, support, dof, normal, clash }) => {
+  faceRows.forEach(({ name, support, block, dof, normal, clash }) => {
     if (supportMode === 'face-hinges') {
       out.push(`** End face ${support === 0 ? 'A' : 'B'}: every node is hinged in U1-U3.`);
       return;
@@ -1493,14 +1531,24 @@ export function abaqusInput(model, opt = {}) {
     if (dof) return;
     out.push('** Inclined face: nodal system with local 1 = face normal, local 2 = Y.');
     out.push('** U, RF and concentrated loads on these nodes are expressed in that system.');
-    out.push(`*Transform, nset=${name}, type=R`);
-    out.push(`${fmt(normal[0])}, 0., ${fmt(normal[1])}, 0., 1., 0.`);
+    // A lune turned about the axis carries its face normal with it, so every
+    // repeat needs the transform written in its own turned system.
+    setNames(name, block).forEach((row, sct) => {
+      const t = (2 * Math.PI * sct) / sectors;
+      const c = Math.cos(t);
+      const sn = Math.sin(t);
+      out.push(`*Transform, nset=${row.name}, type=R`);
+      out.push(`${fmt(normal[0] * c)}, ${fmt(normal[0] * sn)}, ${fmt(normal[1])}, `
+        + `${fmt(-sn)}, ${fmt(c)}, 0.`);
+    });
   });
 
   forceSets.forEach((sets, fi) => {
     sets.forEach(({ block: bi, ids }) => {
-      out.push(`*Nset, nset=${forceName(fi)}_B${bi + 1}, instance=BLOCK_${bi + 1}_I`);
-      out.push(...linesOf(ids));
+      setNames(`${forceName(fi)}_B${bi + 1}`, bi).forEach(({ name, instance }) => {
+        out.push(`*Nset, nset=${name}, instance=${instance}`);
+        out.push(...linesOf(ids));
+      });
     });
   });
 
@@ -1533,16 +1581,21 @@ export function abaqusInput(model, opt = {}) {
     for (let i = 0; i + 1 < meshes.length; i++) {
       out.push('*Contact Pair, interaction=STONE_FRICTION, type=SURFACE TO SURFACE, '
         + `small sliding, adjust=${fmt(adjust)}`);
-      out.push(`BLOCK_${i + 2}_I.BLOCK_${i + 2}_CONTACT_LO, `
-        + `BLOCK_${i + 1}_I.BLOCK_${i + 1}_CONTACT_HI`);
+      instanceNames(i + 1).forEach((slave, sct) => {
+        out.push(`${slave}.BLOCK_${i + 2}_CONTACT_LO, `
+          + `${instanceNames(i)[sct]}.BLOCK_${i + 1}_CONTACT_HI`);
+      });
     }
   }
   out.push('** Cylindrical hinge lines: solid elements have translational DOFs only,');
   out.push('** so constraining the line nodes in U1-U3 leaves block rotation to contact kinematics.');
   supportSets.forEach((sets, si) => {
     sets.forEach(({ block: bi }) => {
-      out.push('*Boundary');
-      out.push(`SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}, 1, 3, 0.`);
+      const base = `SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}`;
+      setNames(base, bi).forEach(({ name }) => {
+        out.push('*Boundary');
+        out.push(`${name}, 1, 3, 0.`);
+      });
     });
   });
   if (supportMode === 'face-rollers' && faceRows.length) {
@@ -1552,15 +1605,19 @@ export function abaqusInput(model, opt = {}) {
   if (supportMode === 'face-hinges' && faceRows.length) {
     out.push('** Hinged end faces: every connected node on each A/B face is restrained in U1-U3.');
   }
-  faceRows.forEach(({ name, dof }) => {
-    out.push('*Boundary');
-    out.push(supportMode === 'face-hinges'
-      ? `${name}, 1, 3, 0.`
-      : `${name}, ${dof ?? 1}, ${dof ?? 1}, 0.`);
+  faceRows.forEach(({ name, block, dof }) => {
+    setNames(name, block).forEach((row) => {
+      out.push('*Boundary');
+      out.push(supportMode === 'face-hinges'
+        ? `${row.name}, 1, 3, 0.`
+        : `${row.name}, ${dof ?? 1}, ${dof ?? 1}, 0.`);
+    });
   });
   meshes.forEach((_, i) => {
     out.push('*Dload');
-    out.push(`BLOCK_${i + 1}_I.BLOCK_${i + 1}_ALL, GRAV, ${fmt(gravity)}, 0., 0., -1.`);
+    instanceNames(i).forEach((inst) => {
+      out.push(`${inst}.BLOCK_${i + 1}_ALL, GRAV, ${fmt(gravity)}, 0., 0., -1.`);
+    });
   });
   forceSets.forEach((sets, fi) => {
     const [fx, fy] = forceComponent(forces, fi);
@@ -1575,8 +1632,10 @@ export function abaqusInput(model, opt = {}) {
         const n = transformed.get(`${bi}:${id}`)?.normal;
         const c1 = n ? nodalX * n[0] + nodalZ * n[1] : nodalX;
         const c3 = n ? -nodalX * n[1] + nodalZ * n[0] : nodalZ;
-        if (c1) out.push(`BLOCK_${bi + 1}_I.${id}, 1, ${fmt(c1)}`);
-        if (c3) out.push(`BLOCK_${bi + 1}_I.${id}, 3, ${fmt(c3)}`);
+        instanceNames(bi).forEach((inst) => {
+          if (c1) out.push(`${inst}.${id}, 1, ${fmt(c1)}`);
+          if (c3) out.push(`${inst}.${id}, 3, ${fmt(c3)}`);
+        });
       });
     });
   });

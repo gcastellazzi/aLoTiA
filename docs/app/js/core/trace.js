@@ -173,7 +173,49 @@ function segmentsCross(p1, p2, p3, p4, tol) {
  * reference and the extrados on the other, rather than at whichever crossing
  * of an infinite line happens to be nearest.
  */
-export function normalFrames(inner, outer, n, mode = 'normal-midline') {
+/**
+ * A joint direction turned part of the way toward a bed or toward a cut.
+ *
+ * THE STEREOTOMY IS NOT ONE CHOICE BUT A FAMILY. A joint normal to the mean
+ * line is the usual arch; shallower than normal is Jannasch's SUB-NORMAL,
+ * whose extreme is the horizontal bed of a corbelled section; steeper than
+ * normal is SUPER-NORMAL, whose extreme is the vertical joint of a lintel.
+ * The two extremes are not one rotation away from the radial cut by the same
+ * angle everywhere: at the crown of an arch the radial joint already stands
+ * vertical, at the springing it already lies horizontal. What is constant
+ * along the arch is the FRACTION of the way from the radial direction to the
+ * limiting one, and that fraction is what `bias` sets:
+ *
+ *   bias =  0   the joint of the mode itself, normal to the reference curve
+ *   bias -> +1  every joint turned onto the horizontal: the corbelled bed
+ *   bias -> -1  every joint turned onto the vertical: the lintel cut
+ *
+ * The rotation is the smaller of the two that carry the direction onto the
+ * target, so a joint never turns the long way round and the family is
+ * continuous in `bias`.
+ */
+function tilted(direction, bias) {
+  const b = Math.max(-1, Math.min(1, Number(bias) || 0));
+  if (!b) return direction.slice();
+  const target = b > 0 ? [1, 0] : [0, 1];
+  // The signed angle from the direction to the target, taken within a right
+  // angle: a joint is a segment, and turning it by pi gives the same segment.
+  let angle = Math.atan2(
+    direction[0] * target[1] - direction[1] * target[0],
+    direction[0] * target[0] + direction[1] * target[1],
+  );
+  if (angle > Math.PI / 2) angle -= Math.PI;
+  if (angle < -Math.PI / 2) angle += Math.PI;
+  const turn = Math.abs(b) * angle;
+  const c = Math.cos(turn);
+  const s = Math.sin(turn);
+  return [
+    direction[0] * c - direction[1] * s,
+    direction[0] * s + direction[1] * c,
+  ];
+}
+
+export function normalFrames(inner, outer, n, mode = 'normal-midline', bias = 0) {
   const out = sameDirection(inner, outer) ? outer : reverse(outer);
   const si = arcLengths(inner);
   const so = arcLengths(out);
@@ -232,7 +274,7 @@ export function normalFrames(inner, outer, n, mode = 'normal-midline') {
     const d = Math.hypot(t[0], t[1]) || 1;
     const tangent = [t[0] / d, t[1] / d];
     const normal = [-tangent[1], tangent[0]];
-    const direction = mode === 'supernormal' ? [0, 1] : normal.slice();
+    const direction = mode === 'supernormal' ? [0, 1] : tilted(normal, bias);
     const pi = pointAtLength(inner, si, (innerLength * k) / n);
     const po = pointAtLength(out, so, (outerLength * k) / n);
     const across = [po[0] - pi[0], po[1] - pi[1]];
@@ -259,8 +301,8 @@ export function normalFrames(inner, outer, n, mode = 'normal-midline') {
  * an impossible construction, so the interface can draw how far it got and
  * which cut failed.
  */
-export function normalCutsPreview(inner, outer, n, mode = 'normal-midline') {
-  const { reference, frames, out } = normalFrames(inner, outer, n, mode);
+export function normalCutsPreview(inner, outer, n, mode = 'normal-midline', bias = 0) {
+  const { reference, frames, out } = normalFrames(inner, outer, n, mode, bias);
   const si = arcLengths(inner);
   const so = arcLengths(out);
   const scale = Math.max(si[si.length - 1], so[so.length - 1], 1e-12);
@@ -340,8 +382,8 @@ export function normalCutsPreview(inner, outer, n, mode = 'normal-midline') {
 }
 
 /** The joints of `normalCutsPreview`, or an error naming the cut that fails. */
-export function normalCuts(inner, outer, n, mode = 'normal-midline') {
-  const made = normalCutsPreview(inner, outer, n, mode);
+export function normalCuts(inner, outer, n, mode = 'normal-midline', bias = 0) {
+  const made = normalCutsPreview(inner, outer, n, mode, bias);
   if (made.error) throw new Error(made.error);
   return made.joints;
 }
@@ -736,7 +778,8 @@ export function blocksBetween(inner, outer, n, opt = {}) {
       blockWidth: opt.blockWidth, minBlockFraction: opt.minBlockFraction,
     }), flipped };
   }
-  const computed = mode === 'stations' ? null : normalCuts(inner, out, n, mode);
+  const computed = mode === 'stations' ? null
+    : normalCuts(inner, out, n, mode, opt.jointBias ?? 0);
   const a = computed ? computed.map((j) => j.a) : resample(inner, n + 1);
   const b = computed ? computed.map((j) => j.b) : resample(out, n + 1);
 

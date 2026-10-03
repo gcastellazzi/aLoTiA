@@ -427,3 +427,64 @@ export function jointCrossings(lot, joints) {
   }
   return out;
 }
+
+/**
+ * What each joint asks of friction.
+ *
+ * Heyman's third assumption is that the stones do not slide, and the line of
+ * thrust is drawn as though that were free. It is not. At a joint the force
+ * the line carries resolves into a component N across the joint and a
+ * component T along it, and the joint holds only while |T| <= mu N. WHAT THIS
+ * RETURNS IS THE MU THE ARCH DEMANDS, not the mu the masonry has; comparing
+ * the two is the reader's step, and it is the step the assumption hides.
+ *
+ * It is the companion of the geometrical factor of safety. The GSF measures
+ * how far the line runs from the FACES of a joint; mu measures how far the
+ * force runs from its NORMAL. A radial joint of an arch asks little of
+ * friction; a horizontal bed, as in a corbelled section, asks the tangent of
+ * the angle the thrust makes with the vertical; a vertical joint, as in a
+ * lintel, cannot be crossed at all without shear.
+ *
+ * The force between two joints is the ray of the force polygon that the
+ * segment there is parallel to, and `jointCrossings` already reports which
+ * segment crosses each joint: `fp.rays[segment]` is that force as a vector,
+ * the rays running from the pole to the divisions of the load line.
+ *
+ * @param {object} fp        the result of forcePolygon
+ * @param {Array} crossings  the result of jointCrossings, in the joints' order
+ * @param {Array<{a:number[], b:number[]}>} joints
+ * @returns {{joints: Array<{N:number, T:number, mu:number, angle:number}|null>,
+ *            muReq: number, worst: number}}
+ *          `muReq` is the largest demand over the joints and `worst` the joint
+ *          that makes it. A joint carrying no compression demands Infinity,
+ *          reported as such rather than as a large number, so that a caller
+ *          cannot mistake it for a demanding but possible joint.
+ */
+export function jointForces(fp, crossings, joints) {
+  const rows = [];
+  let muReq = 0;
+  let worst = -1;
+
+  (joints ?? []).forEach((joint, i) => {
+    const c = crossings?.[i];
+    const F = c && fp?.rays?.[c.segment];
+    if (!joint?.a || !joint?.b || !F) { rows.push(null); return; }
+
+    // The joint direction and its normal. Which of the two normals is taken
+    // does not matter: only the magnitudes are reported.
+    const ux = joint.b[0] - joint.a[0];
+    const uy = joint.b[1] - joint.a[1];
+    const len = Math.hypot(ux, uy);
+    if (!(len > 0)) { rows.push(null); return; }
+
+    const T = (F[0] * ux + F[1] * uy) / len;
+    const N = Math.abs((F[0] * -uy + F[1] * ux) / len);
+    const force = Math.hypot(F[0], F[1]);
+    const mu = N > force * 1e-12 ? Math.abs(T) / N : Infinity;
+
+    rows.push({ N, T, mu, angle: Math.atan2(Math.abs(T), N) });
+    if (mu > muReq) { muReq = mu; worst = i; }
+  });
+
+  return { joints: rows, muReq, worst };
+}

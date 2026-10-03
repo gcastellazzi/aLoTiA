@@ -319,16 +319,68 @@ export function extrude(poly, thickness) {
 export function solids(polys, opt = {}) {
   const {
     poleni = false, axisX = 0, angleDeg = 15, thickness = [], steps = 6,
-    align = 'left',
+    align = 'left', full = false,
   } = opt;
   const scaled = poleni && Array.isArray(thickness) && thickness.length
     ? scaledChordWidths(polys, { axisX, angleDeg, thickness })
     : null;
+  const round = poleni && full ? wholeDome(angleDeg) : null;
   // One solid per PIECE, flattened per block, so a double shell shows as the
   // two rings it is.
-  return polys.map((block, k) => piecesOf(block).flatMap((p) => (poleni
-    ? revolve(p, axisX, angleDeg, steps, { scale: scaled?.scales[k] ?? 1, align })
-    : extrude(p, thickness[k] ?? 1))));
+  return polys.map((block, k) => piecesOf(block).flatMap((p) => {
+    if (!poleni) return extrude(p, thickness[k] ?? 1);
+    const sector = revolve(p, axisX, round ? round.angleDeg : angleDeg, steps,
+      { scale: scaled?.scales[k] ?? 1, align });
+    // The whole dome is the sector repeated, one block of the section
+    // standing for one block of every lune: the faces are the same solid
+    // turned about the axis, so the block keeps its identity, its group and
+    // its colour, and gains its companions round the dome.
+    return round ? repeatAboutAxis(sector, axisX, round.sectors) : sector;
+  }));
+}
+
+/**
+ * How many lunes the dome is made of, and the angle that closes it.
+ *
+ * POLENI'S OWN NUMBER IS 22.5 DEGREES, from the sixteen meridian cracks he
+ * surveyed in 1743: sixteen lunes, or eight of the pairs the section draws.
+ * An angle typed by hand will not divide 360 exactly, and repeating it would
+ * leave the dome open by the remainder or overlap it by as much. The nearest
+ * whole number of PAIRS is taken instead, and the angle that closes the dome
+ * with that many lunes is what is drawn -- reported by the caller, so that a
+ * request for 23 degrees is not silently answered with 22.5.
+ */
+export function wholeDome(angleDeg) {
+  const asked = Math.abs(Number(angleDeg) || 0);
+  if (!(asked > 0)) return { sectors: 1, angleDeg: 0, pairs: 0, asked };
+  const pairs = Math.max(1, Math.round(180 / asked));
+  const sectors = 2 * pairs;
+  return { sectors, pairs, angleDeg: 360 / sectors, asked };
+}
+
+/**
+ * One sector's faces repeated round the axis, `sectors` of them in all.
+ *
+ * The axis is the vertical line x = axisX, y = 0, so a turn of t carries
+ * (x, y) about it and leaves z alone.
+ */
+export function repeatAboutAxis(faces, axisX, sectors) {
+  const n = Math.max(1, Math.round(sectors));
+  if (n === 1) return faces;
+  const out = [];
+  for (let s = 0; s < n; s++) {
+    if (s === 0) { out.push(...faces); continue; }
+    const t = (2 * Math.PI * s) / n;
+    const cos = Math.cos(t);
+    const sin = Math.sin(t);
+    for (const face of faces) {
+      out.push(face.map(([x, y, z]) => {
+        const r = x - axisX;
+        return [axisX + r * cos - y * sin, r * sin + y * cos, z];
+      }));
+    }
+  }
+  return out;
 }
 
 /**

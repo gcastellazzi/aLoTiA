@@ -20,6 +20,7 @@ import {
 } from './core/geometry.js';
 import {
   forcePolygon, funicular, poleFromForcePolygon, hangingCable, jointCrossings,
+  jointForces,
   freeThrustLine, poleForEnds, thrustRangeFactor,
 } from './core/statics.js';
 import { fromExample, poleOf, consistency } from './core/model.js';
@@ -55,7 +56,7 @@ import {
   heymanGeometricalSafety,
 } from './core/study.js';
 import {
-  defaultAxis, luneWeights, solids, widthRange, endParallels,
+  defaultAxis, luneWeights, solids, widthRange, endParallels, wholeDome,
 } from './core/dome.js';
 import { cutRadially, blockCentroid, blockArea } from './core/profile.js';
 import {
@@ -87,6 +88,7 @@ const ui = {
   mechOn: el('mechOn'), mechVerdict: el('mechVerdict'),
   mechCount: el('mechCount'), mechBand: el('mechBand'),
   mechAmp: el('mechAmp'), goHmin: el('goHmin'), goHmax: el('goHmax'),
+  full3D: el('full3D'),
   alphaFind: el('alphaFind'), alphaPick: el('alphaPick'), alphaClear: el('alphaClear'),
   alphaShow: el('alphaShow'), alphaResult: el('alphaResult'), alphaDetail: el('alphaDetail'),
   poleni: el('poleni'), domeAngle: el('domeAngle'), domeAxis: el('domeAxis'),
@@ -2232,7 +2234,28 @@ function assessAdmissibility() {
   ui.admissible.textContent =
     `Admissible — the line stays inside all ${cr.length} joints, closest ` +
     `approach ${(100 * margin).toFixed(0)}% of the joint from a face. ` +
-    'By the safe theorem, the arch stands.';
+    'By the safe theorem, the arch stands.' + frictionNote(cr);
+}
+
+/**
+ * What the joints ask of friction, appended to the verdict.
+ *
+ * The safe theorem says nothing about sliding: Heyman's third assumption
+ * grants it. The number is therefore reported beside the verdict rather than
+ * folded into it, and the comparison with the friction the masonry actually
+ * has is left to the reader.
+ */
+function frictionNote(crossings) {
+  const m = state.model;
+  if (!state.fp || !m?.joints) return '';
+  const got = jointForces(state.fp, crossings, m.joints);
+  if (!(got.muReq > 0)) return '';
+  if (!Number.isFinite(got.muReq)) {
+    return ` Joint ${got.worst + 1} carries no compression: no coefficient of `
+      + 'friction holds it.';
+  }
+  return ` Friction demanded: ${got.muReq.toFixed(2)} at joint ${got.worst + 1}`
+    + ' (sliding is not part of the safe theorem).';
 }
 
 function imageBounds(m) {
@@ -5096,6 +5119,7 @@ function drawSolidView() {
     thickness: assignedThicknesses(),
     steps: dome.poleni ? Math.max(2, Math.round(dome.angleDeg / 4)) : 1,
     align: state.solidAlign,
+    full: dome.poleni && !!ui.full3D?.checked,
   });
   const centre3 = dome.poleni ? structuralSolidCentre(shown) : solidCentre(rawList);
   const list = recenteredSolids(rawList, centre3);
@@ -5262,6 +5286,9 @@ function blocksForAbaqusExport() {
 function currentSolidsForExport() {
   const m = state.model;
   const dome = domeOptions();
+  // The exported mesh is built from the section, one part per block; the whole
+  // dome is those parts instanced once per lune (see abaqusInput), so the
+  // solids handed over here stay the single lune whatever the flag says.
   return solids(blocksForAbaqusExport(), {
     poleni: dome.poleni,
     axisX: dome.axisX,
@@ -5283,6 +5310,19 @@ function supportPointsForExport() {
   const pts = state.lot?.points ?? [];
   if (pts.length >= 2) return [pts[pts.length - 1], pts[0]];
   return [m?.pointA, m?.pointB].filter(Boolean);
+}
+
+/**
+ * The lunes the exported model stands on, and the axis they turn about.
+ *
+ * Only when the dome idealisation is on and the flag is set; otherwise one
+ * sector, which is what the file has always carried.
+ */
+function domeRepetition() {
+  const dome = domeOptions();
+  if (!dome.poleni || !ui.full3D?.checked) return { domeSectors: 1 };
+  const { sectors } = wholeDome(dome.angleDeg);
+  return { domeSectors: sectors, domeAxisX: dome.axisX };
 }
 
 function abaqusFileName() {
@@ -5320,6 +5360,9 @@ async function exportAbaqus() {
       // where the gradient is, so that is what the control sets; along the
       // arch follows it, and never drops below two either.
       refine: abaqusRefinement(),
+      // The whole dome: the parts are instanced once per lune, turned about
+      // the axis, rather than meshed again.
+      ...domeRepetition(),
       forces: state.forces,
       friction: 0.6,
       system: state.system,
@@ -5453,9 +5496,18 @@ function reportDome() {
   const scaled = m.frame && m.frame.coordinates === 'physical';
   const show = (v) => (scaled ? format(v, 'length', state.system)
     : `${v.toPrecision(3)} px`);
+  // With the whole dome asked for, say how many lunes it stands on and at
+  // what angle: an angle typed by hand seldom divides 360, and the one that
+  // closes the dome is the one drawn.
+  let whole = '';
+  if (ui.full3D?.checked) {
+    const w = wholeDome(dome.angleDeg);
+    whole = ` · whole dome: ${w.sectors} lunes of ${w.angleDeg.toFixed(2)}°`
+      + (Math.abs(w.angleDeg - w.asked) > 5e-3 ? ` (${w.asked}° asked)` : '');
+  }
   ui.domeStatus.textContent =
     `scaled chord ${show(r.max)} at the major parallel, `
-    + `${show(r.min)} at the crown`;
+    + `${show(r.min)} at the crown${whole}`;
 }
 
 /**
@@ -6379,6 +6431,14 @@ el('solidTools').addEventListener('click', (e) => {
   draw();
 });
 ui.exportAbaqus.addEventListener('click', exportAbaqus);
+ui.full3D?.addEventListener('change', () => {
+  drawSolidView();
+  reportDome();
+  if (sideView() === 'solid' && ui.poleni.checked) {
+    ui.sideCaption.textContent = ui.full3D.checked
+      ? 'Blocks — whole dome' : 'Blocks — dome lune';
+  }
+});
 
 function updateSolidAlignButtons() {
   for (const [id, align] of [
@@ -6521,7 +6581,9 @@ function showSide(which) {
   ui.sideCaption.textContent = table
     ? 'The blocks, their groups and their weights'
     : solid
-    ? (ui.poleni.checked ? 'Blocks — dome lune' : 'Blocks — constant thickness')
+    ? (ui.poleni.checked
+      ? (ui.full3D?.checked ? 'Blocks — whole dome' : 'Blocks — dome lune')
+      : 'Blocks — constant thickness')
     : heyman ? 'Heyman N-M diagram'
       : radius ? 'Thickness study'
         : notes ? 'Project notes'
@@ -6632,7 +6694,9 @@ ui.poleni.addEventListener('change', () => {
   state.band = null; state.bandKey = null;
   state.solidFit = null;
   ui.sideCaption.textContent = sideView() === 'solid'
-    ? (ui.poleni.checked ? 'Blocks — dome lune' : 'Blocks — constant thickness')
+    ? (ui.poleni.checked
+      ? (ui.full3D?.checked ? 'Blocks — whole dome' : 'Blocks — dome lune')
+      : 'Blocks — constant thickness')
     : sideView() === 'heyman' ? 'Heyman N-M diagram'
       : sideView() === 'radius' ? 'Thickness study'
         : sideView() === 'notes' ? 'Project notes'

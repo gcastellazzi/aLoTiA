@@ -5,6 +5,78 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### What the joints ask of friction
+
+The admissibility verdict now also reports the coefficient of friction the
+joints demand: at each joint the force the line of thrust carries is resolved
+across the joint and along it, and the largest ratio of the two is named with
+the joint that makes it. Heyman's third assumption grants sliding for free, so
+the number is reported beside the verdict rather than folded into it, and the
+comparison with the friction the masonry has is left to the reader. A joint
+that carries no compression demands an infinite coefficient, and says so.
+
+### Stereotomy as a continuous family
+
+The joints cut between a traced intrados and extrados can be turned a fraction
+of the way from the normal of the reference curve onto the horizontal, or onto
+the vertical: Jannasch's sub-normal and super-normal families, whose limits are
+the bed of a corbelled section and the joint of a lintel. The fraction is one
+number, `jointBias`, and the previous `supernormal` mode is its extreme. What
+is held constant along the arch is the fraction of the way to the limit, not
+the angle, because the radial joint already stands vertical at the crown and
+already lies horizontal at the springing.
+
+Turned far enough, the beds stop crossing the intrados in order and the
+voussoirs cease to be a chain at all; the construction says so, with the cut
+that failed, rather than returning a geometry it cannot defend. Past that point
+the section is a bonded assembly, which is what the horizontal courses build.
+
+### The profile recovered from the blocks
+
+A session carries voussoirs, not the curves they were cut from, and Poleni's
+dome is eighty-three blocks in five material groups whose profiles were never
+saved. `core/outline.js` recovers them: two blocks that abut share the edge
+between them exactly, because the cut that made them wrote the same numbers
+into both, so the boundary of a group is what is left when every edge walked
+twice, once each way, is struck out.
+
+The recovery is exact rather than tolerant on purpose. A tolerance wide enough
+to merge two faces drawn separately is also wide enough to swallow a real gap:
+the lower dome of St Peter's is a left half and a right half that do not touch,
+and each comes back as its own loop, as do the holes. Blocks that overlap along
+part of an edge, as courses in running bond do, are not joined this way.
+
+Each group keeps its identity, and with it the out-of-plane thickness and the
+unit weight that make a rib a rib.
+
+`core/profile.js` gains the cutter that goes with it: `cutAlongLines` cuts a
+section along any given family of lines, not only along rays from a centre, so
+a section can be cut again with its joints turned sub-normal. Each profile is
+cut on its own and its spans are paired with its own, so a piece knows which
+material group it came from and the rib is never paired with the shell beside
+it. The end cuts are drawn a millionth inside the end faces, as the radial
+cutter already does, or a cut lying in a face would cross nothing.
+
+### The whole dome
+
+Poleni read St Peter's as sixteen independent arches, and the section the
+application draws is one of them. The **full dome** flag repeats it: the lune is
+turned about the axis until the dome closes, in the three-dimensional view and,
+when the flag is set, in the exported model as well.
+
+The number of lunes is the nearest whole number of pairs, and the angle drawn
+is the one that closes the dome with that many: 22.5 degrees gives sixteen
+lunes, and 23 degrees gives sixteen lunes of 22.5 degrees rather than a dome
+open by eight. The panel says which, so that an angle typed by hand is not
+silently answered with another.
+
+In the exported model nothing is meshed twice. Each block remains one part, and
+the dome is those parts instanced once per lune, each turned about the vertical
+axis; the node sets, the boundary conditions, the loads and the contact pairs
+are written for every lune. The meridian faces of neighbouring lunes are left
+unpaired, as Poleni's reading has them, and the prism that stands for a lune in
+the exported mesh is the approximation the export already made.
+
 ### The Abaqus export
 
 The support selector can now keep the original A/B hinge lines or add a roller
