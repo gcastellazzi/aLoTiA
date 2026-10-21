@@ -63,7 +63,7 @@ import sys
 from odbAccess import openOdb
 
 
-REVISION = 11                # printed, so a stale copy is visible at once
+REVISION = 12                # printed, so a stale copy is visible at once
 STEP = 'Lateral_action'
 KE_FRACTION = 1.0e-3        # ALLKE / ALLIE above which the blocks are moving
 
@@ -95,6 +95,19 @@ def read_deck(path):
     if found:
         out['mu'] = float(found.group(1))
     return out
+
+
+def first_not_none(*values):
+    """The first value that is not None --- NOT the first truthy one.
+
+    `a or b` is wrong here and was: a multiplier of zero is a result, and the
+    most important one there is. It says the arch was already moving before the
+    action was applied, and `or` quietly replaced it with whatever came next.
+    """
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 def lookup(repository, name):
@@ -541,6 +554,22 @@ def main(argv):
                      or 'nothing open',
                      mark))
 
+        # A MODEL THAT WAS NEVER HELD. If the first frame already shows
+        # openings of a size that means something, nothing was measured: the
+        # arch had a mechanism under its own weight and the step recorded it
+        # falling. No multiplier can be read from such a run, and saying so is
+        # the only honest output.
+        if rows and most_open(rows[0]) > 1.0e-3 * scale:
+            print('')
+            print('THE MODEL WAS NOT HELD. At the first increment, before any')
+            print('lateral action, the joints were already open by %.3g --- a'
+                  % most_open(rows[0]))
+            print('thousandth of the arch is %.3g. The arch has a mechanism'
+                  % (1.0e-3 * scale))
+            print('under its own weight, so the step recorded it falling and no')
+            print('multiplier can be read from it. Check the boundary')
+            print('conditions: a support removed, a node set with no members,')
+            print('or a face left free that has to bear.')
         print('')
         print('THE SPRINGING JOINTS CANNOT BE SEEN HERE. Only the joints between')
         print('two voussoirs are contact pairs; the two end faces bear on the')
@@ -633,7 +662,11 @@ def main(argv):
             # are far apart. The openings say WHERE the mechanism is; the
             # energy says WHEN it formed.
             print('')
-            if result.get('alpha_energy') is not None:
+            if result.get('alpha_energy') == 0:
+                print('the kinetic energy was above the threshold at the first')
+                print('frame: the model was moving before the action was applied,')
+                print('and there is no multiplier here to compare.')
+            elif result.get('alpha_energy') is not None:
                 lo_e = result.get('alpha_energy_before')
                 print('THE COLLAPSE, from the energy balance:')
                 print('  alpha in (%s, %.6f]'
@@ -661,12 +694,19 @@ def main(argv):
             # carried that much, and an upper bound, because it did not carry
             # the next. A single figure quoted from the middle of it would be
             # an arithmetic mean of two frame numbers passing for a result.
-            lo = result.get('alpha_energy_before') or result.get('alpha_before')
-            hi = result.get('alpha_energy') or result.get('alpha_motion')
+            lo = first_not_none(result.get('alpha_energy_before'),
+                                result.get('alpha_before'))
+            hi = first_not_none(result.get('alpha_energy'),
+                                result.get('alpha_motion'))
             if result.get('alpha_kinematic') is not None:
                 k = result['alpha_kinematic']
                 print('alpha from the kinematic theorem:   %.6f' % k)
-                if hi is None:
+                if hi == 0:
+                    print('Abaqus gave no multiplier to compare: the model was'
+                          ' already')
+                    print('moving at the first increment, so nothing was'
+                          ' measured. See above.')
+                elif hi is None:
                     print('Abaqus gave no multiplier to compare: nothing ran'
                           ' away and the')
                     print('energy never rose, so the arch stood to the ceiling'

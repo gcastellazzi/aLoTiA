@@ -309,6 +309,12 @@ console.log(`    kinematic, every four-hinge mechanism   α0 = ${f4(governing.al
 if (odb) {
   // An interval, not a figure: the model carried the one frame and not the
   // next, so that is what it establishes.
+  if (alphaAbaqus === 0) {
+    console.log('    Abaqus                                 — the model was'
+      + ' already moving');
+    console.log('      at the first increment, before the action: nothing was'
+      + ' measured.');
+  }
   console.log(`    Abaqus, the ramped body force          α `
     + (alphaAbaqus == null
       ? ' — (nothing ran away: the arch stood to the ceiling of the ramp)'

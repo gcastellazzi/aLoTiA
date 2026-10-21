@@ -74,22 +74,32 @@ moved out of the step for. One of the two was corrected and the other left
 behind, which is what comes of fixing the case in front of one instead of the
 rule. The suite now checks the placement of both.
 
-### A roller bed over a hinge
+### What a roller bed over a hinge costs
 
-A face that carries a hinge of the mechanism is left free of rollers. The
-roller bed blocks every node of the face in the direction normal to it, and
-turning the block about a hinge at one corner of that face swings the rest of
-the face out of its plane --- which is the direction the rollers forbid. So the
-hinge could not turn, and the arch hinged at the next joint inboard: the
-circular arch of the first example, whose kinematic mechanism hinges at joints
-0 and 15, hinged at 1 and 14 in the exported model.
+A face that carries a hinge of the mechanism keeps its roller bed, and the deck
+now says why, because it is the wrong restraint and that is worth recording
+rather than hiding.
 
-The fault underneath is that a `*Boundary` is bilateral. A face bearing on an
-abutment can only push; blocking its normal direction stops it lifting off as
-well, which is a restraint the masonry does not have. Where the mechanism names
-a hinge on that face the pin at the hinge is the whole of the support, so the
-rollers go; a face with no hinge on it keeps them, the block beyond the hinge
-being part of the ground.
+The bed blocks every node of the abutment face in the direction normal to it.
+Turning the block about a hinge at one corner of that face swings the rest of
+the face out of its plane --- which is the direction the bed forbids --- so the
+hinge cannot turn and the arch hinges at the next joint inboard. The circular
+arch of the first example, whose kinematic mechanism hinges at joints 0 and 15,
+hinges at 1 and 14 in the exported model.
+
+Removing the bed from the face that carries the hinge was tried, and it is
+worse. A pinned line at one corner leaves the block free to rotate INTO the
+abutment as well as away from it, and the model then has a mechanism under
+gravity alone: the first increment opened the joints of that same arch by a
+hundred and fifteen units and the step ran on to fourteen hundred. A free face
+is not a better approximation of masonry than a held one.
+
+The restraint an abutment actually is, is unilateral: it can push and not pull,
+so the face may lift off and may not penetrate. A `*Boundary` cannot express
+that in either direction. Expressing it needs a contact pair against a rigid
+surface, or gap elements along the face normal, and until that is written the
+displacement of the springing hinge by one joint is a known property of the
+exported model rather than a result of it.
 
 ### The hinges that do not move
 

@@ -246,28 +246,22 @@ test('the step carries the loads and the boundaries, and no interaction', () => 
   assert.match(step, /^\*Dload/m);
 });
 
-test('a face that carries a hinge of the mechanism is left free of rollers', () => {
-  // A roller bed blocks every node of the face in the face-normal direction.
-  // Turning the block about a hinge at one corner of that face swings the rest
-  // of the face out of its plane, which is the direction the rollers forbid:
-  // the hinge cannot turn and the arch hinges one joint inboard instead. The
-  // circular arch did exactly that --- hinges at 1 and 14 where the kinematic
-  // mechanism has 0 and 15 --- until the face carrying the pin was freed.
+test('the roller bed stays over a face that carries a hinge, and is marked as such', () => {
+  // Removing it was tried and is worse: a pinned line at one corner leaves the
+  // block free to rotate INTO the abutment, and the model then has a mechanism
+  // under gravity alone --- the first increment of the circular arch opened its
+  // joints by a hundred and fifteen units. The restraint an abutment is, is
+  // unilateral, which a *Boundary cannot express; until that is written the bed
+  // stays and the deck says what it costs.
   const m = ringModel(4, 4.6, 8);
   const mech = governing(m);
   const centres = rotationCentres(mech.hinges, mech.motion).filter((c) => c.fixed);
   const faces = (inp) => [...inp.matchAll(/\*Nset, nset=(SUPPORT_\w*_FACE_B\d+),/g)]
     .map((r) => r[1]);
-
   const plain = faces(exported(m, { supportMode: 'face-rollers' }));
   const onMech = faces(exported(m, { supportMode: 'mechanism-rollers', centres }));
-  assert.ok(plain.length > 0, 'face rollers alone give a roller bed per end');
-  assert.ok(onMech.length < plain.length,
-    `${onMech.length} roller faces against ${plain.length}: one carries a hinge`);
-
+  assert.ok(plain.length > 0);
+  assert.deepEqual(onMech, plain, 'the same beds, whatever the pins are');
   const inp = exported(m, { supportMode: 'mechanism-rollers', centres });
-  assert.match(inp, /carries a hinge of the mechanism/);
-  assert.match(inp, /a roller bed over it would block the very/);
-  // The pin itself stays, and so does the face at the other end.
   assert.match(inp, /\*Boundary\nSUPPORT_C1_B\d+, 1, 3, 0\./);
 });
