@@ -154,7 +154,58 @@ function abaqusHinges(rows) {
   }
   return out.sort((p, q) => q.gap - p.gap);
 }
-const abaqusAll = abaqusHinges(odb?.joints);
+/**
+ * The joints at the frame the arch last held, from the evolution alone.
+ *
+ * WHY THIS PATH EXISTS. An extraction that chose its frame by a threshold
+ * reports the openings of the first frame of the step, where nothing has
+ * happened yet; and an older one wrote the last frame, where everything has.
+ * The frame-by-frame table it also wrote is enough to find the right frame
+ * here: the collapse is where the widest opening in the arch runs away from
+ * the frame before it, and the state to read is the one before that.
+ *
+ * The faces cannot be recovered this way --- the table carries the size of
+ * each opening and not the coordinates of the node that stayed shut --- so the
+ * joints come back with their face unknown, and the comparison says so rather
+ * than guessing between the intrados and the extrados.
+ */
+function fromEvolution(evolution, jump = 5) {
+  const rows = (evolution ?? []).map((row) => ({
+    t: Number(row.t),
+    joints: Object.entries(row.joints ?? {}).map(([key, v]) => ({
+      joint: Number(key), max: Number(v.max), min: Number(v.min),
+    })),
+    widest: Math.max(0, ...Object.values(row.joints ?? {}).map((v) => Number(v.max))),
+  }));
+  if (rows.length < 2) return null;
+  let diverged = null;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].widest > 0 && (rows[i - 1].widest <= 0
+      || rows[i].widest > jump * rows[i - 1].widest)) {
+      diverged = i;
+      break;
+    }
+  }
+  const held = diverged === null ? rows.length - 1 : diverged - 1;
+  return { rows, diverged, held };
+}
+
+// The extraction's own choice of frame is trusted only when it is not the
+// first frame of the step, which is the signature of the threshold mistake.
+const evolution = fromEvolution(odb?.evolution);
+const trustJoints = odb?.joints && Object.keys(odb.joints).length
+  && odb.onset_frame !== 0 && odb.held_frame !== 0;
+const abaqusAll = trustJoints
+  ? abaqusHinges(odb.joints)
+  : (evolution?.held != null
+    ? evolution.rows[evolution.held].joints
+      .filter((r) => r.max > 0)
+      .map((r) => ({
+        joint: r.joint, face: null, gap: r.max, closed: r.min,
+        hinge: r.min < 0.05 * r.max,
+      }))
+      .sort((p, q) => q.gap - p.gap)
+    : []);
 // THE HINGES FIRST, AND ONLY THEN THE WIDEST. A joint that has lifted at both
 // ends is a block coming away, not a hinge, and taking the four widest
 // openings without that distinction reads a mechanism of four hinges off an
@@ -165,23 +216,51 @@ const abaqusFour = (abaqusHinging.length >= 4 ? abaqusHinging : abaqusAll)
 
 // ------------------------------------------------------------------ the report --
 const f4 = (v) => (Number.isFinite(v) ? v.toFixed(4) : '—');
+// i and e are the two faces. A hinge the line of thrust puts INSIDE the
+// thickness of an end joint is marked *: it is where the thrust meets the
+// abutment, not a hinge at a face, and calling it one of the two would invent
+// a face the construction never chose. A face that is simply not in the file,
+// as in an extraction that carries opening sizes without coordinates, is ?.
+const faceMark = (h) => {
+  if (h.face === 'intrados') return 'i';
+  if (h.face === 'extrados') return 'e';
+  if (h.face === 'interior') return '*';
+  return '?';
+};
 const pattern = (hinges) => (hinges?.length
-  ? hinges.map((h) => `${h.joint}${h.face === 'intrados' ? 'i' : 'e'}`).join(' ')
+  ? hinges.map((h) => `${h.joint}${faceMark(h)}`).join(' ')
   : '—');
 // The step time is the multiplier over the ceiling of the ramp, so either the
 // extraction has already scaled it or it is scaled here; a file carrying only
 // the step times is still readable.
 const scaled = (named, time) => odb?.[named]
   ?? (odb?.alpha_max != null && odb?.[time] != null ? odb.alpha_max * odb[time] : null);
-const alphaMotion = scaled('alpha_motion', 'step_time_motion');
+// Where the extraction's own frame is not trusted, the times come from the
+// evolution table on the same footing as the joints do.
+const atFrame = (index) => (index == null || odb?.alpha_max == null
+  ? null
+  : odb.alpha_max * evolution.rows[index].t);
+const alphaMotion = trustJoints
+  ? scaled('alpha_motion', 'step_time_motion')
+  : atFrame(evolution?.diverged);
+// THE ENERGY IS THE COLLAPSE INDICATOR. The kinetic energy leaves zero as soon
+// as the blocks begin to move; a gap has to grow to a visible size before a
+// ratio between consecutive frames can see it diverge, so the openings run away
+// a frame or two later and reading the multiplier off them overstates it. The
+// openings say where the mechanism is, the energy says when it formed.
 const alphaEnergy = scaled('alpha_energy', 'step_time_energy');
-const alphaBefore = scaled('alpha_before', 'step_time_before');
+const alphaEnergyBefore = scaled('alpha_energy_before', 'step_time_energy_before');
+const alphaRunaway = trustJoints
+  ? scaled('alpha_motion', 'step_time_motion')
+  : atFrame(evolution?.diverged);
+const alphaBefore = alphaEnergyBefore
+  ?? (trustJoints ? scaled('alpha_before', 'step_time_before') : atFrame(evolution?.held));
 const alphaLast = scaled('alpha_last', 'step_time_last');
 // NOT alpha_last as a fallback. When the step runs to its end -- which an
 // implicit quasi-static step does whether or not the arch gave way -- that
 // number is the ceiling of the ramp, chosen before the analysis. Reporting it
 // as the multiplier would report the question as the answer.
-const alphaAbaqus = alphaMotion ?? alphaEnergy ?? null;
+const alphaAbaqus = alphaEnergy ?? alphaMotion ?? null;
 const same = (a, b) => pattern(a) === pattern(b);
 
 /**
@@ -236,7 +315,10 @@ if (odb) {
       : alphaBefore != null
         ? ` ∈ [${f4(alphaBefore)}, ${f4(alphaAbaqus)}]`
         : ` = ${f4(alphaAbaqus)}`)
-    + (alphaMotion == null && alphaAbaqus != null ? '  (from the energy balance)' : ''));
+    + (alphaAbaqus != null && alphaEnergy != null ? '  (the kinetic energy)' : ''));
+  if (alphaRunaway != null && alphaEnergy != null && alphaRunaway > alphaEnergy) {
+    console.log(`      the openings run away later, by α = ${f4(alphaRunaway)}`);
+  }
   if (alphaAbaqus != null) {
     // `band` below is the thrust band; this one is the spread of the bracket.
     const spread = [alphaBefore, alphaAbaqus].filter((v) => v != null)
@@ -249,7 +331,8 @@ if (odb) {
 }
 
 console.log('');
-console.log('  the hinges  (joint number, i = intrados, e = extrados)');
+console.log('  the hinges  (joint number, i = intrados, e = extrados,');
+console.log('   * = inside the thickness of an end joint, ? = face not in the file)');
 if (band && Math.abs(bandAlpha - governing.alpha) > 1e-12) {
   console.log(`    the thrust line is read at α = ${f4(bandAlpha)}, `
     + `${(100 * bandAlpha / governing.alpha).toFixed(0)} per cent of α0:`);
@@ -288,14 +371,20 @@ if (odb) {
   const inner = (hinges) => (hinges ?? []).filter((h) => h.joint > 0 && h.joint < last);
   const kin = inner(governing.hinges);
   const abq = inner(abaqusFour);
-  const agree = kin.filter((h) => abq.some((k) => k.joint === h.joint && k.face === h.face));
+  const faced = abq.some((k) => k.face);
+  const agree = faced
+    ? kin.filter((h) => abq.some((k) => k.joint === h.joint && k.face === h.face))
+    : [];
   const place = kin.filter((h) => abq.some((k) => k.joint === h.joint));
   console.log('');
   console.log('    on the joints a contact pair can see — 1 to '
     + `${last - 1}, the springings excluded:`);
   console.log(`      kinematic ${pattern(kin)}   ·   Abaqus ${pattern(abq)}`);
-  console.log(`      ${agree.length} of ${kin.length} agree in joint and face, `
-    + `${place.length} in joint alone`);
+  console.log(faced
+    ? `      ${agree.length} of ${kin.length} agree in joint and face, `
+      + `${place.length} in joint alone`
+    : `      ${place.length} of ${kin.length} agree in joint; the faces are not `
+      + 'in this file');
 }
 
 console.log('');
@@ -335,7 +424,10 @@ if (texPath) {
     `\\def\\valBlocks{${model.blocks.length}}`,
     `\\def\\valDirection{${dir > 0 ? '+x' : '-x'}}`,
     `\\def\\valAlphaKin{${f4(governing.alpha)}}`,
-    `\\def\\valAlphaAbq{${f4(alphaAbaqus ?? NaN)}}`,
+    // The bracket, both ends: the model carried the one frame and not the
+    // next, and a table that printed one end would claim the other.
+    `\\def\\valAlphaAbqLo{${f4(alphaBefore ?? NaN)}}`,
+    `\\def\\valAlphaAbqHi{${f4(alphaAbaqus ?? NaN)}}`,
     `\\def\\valHingesKin{${pattern(governing.hinges)}}`,
     `\\def\\valHingesThrust{${pattern(governingEdge()?.[1]?.hinges)}}`,
     `\\def\\valAlphaThrust{${f4(governingEdge()?.[2]?.alpha ?? NaN)}}`,
@@ -343,9 +435,15 @@ if (texPath) {
     `\\def\\valHingesAbq{${pattern(abaqusFour)}}`,
     `\\def\\valCentres{${centres.filter((c) => c.fixed)
       .map((c) => `${c.joint}${c.face === 'intrados' ? 'i' : 'e'}`).join(', ')}}`,
+    alphaBefore != null
+      ? `\\def\\valAbqRatioLo{${(100 * (alphaBefore / governing.alpha - 1)).toFixed(1)}}`
+      : '\\def\\valAbqRatioLo{--}',
     alphaAbaqus != null
-      ? `\\def\\valAbqRatio{${(100 * (alphaAbaqus / governing.alpha - 1)).toFixed(1)}}`
-      : '\\def\\valAbqRatio{--}',
+      ? `\\def\\valAbqRatioHi{${(100 * (alphaAbaqus / governing.alpha - 1)).toFixed(1)}}`
+      : '\\def\\valAbqRatioHi{--}',
+    // The joints a contact pair can see: the springings are held by boundary
+    // conditions and open no contact.
+    `\\def\\valJointsSeen{1--${model.joints.length - 2}}`,
     '',
   ];
   fs.writeFileSync(texPath, lines.join('\n'));

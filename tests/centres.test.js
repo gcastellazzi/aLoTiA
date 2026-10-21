@@ -206,3 +206,42 @@ test('without the option the deck is the single step it always was', () => {
   assert.equal([...inp.matchAll(/^\*Step, /gm)].length, 1);
   assert.doesNotMatch(inp, /ALPHA_RAMP|Lateral_action|, BX, /);
 });
+
+// ------------------------------------------- where the keywords must stand --
+
+test('the contact pairs are model data, written before the first step', () => {
+  // Abaqus/Standard refuses a *Contact Pair inside a step --- "the contact pair
+  // keyword should be used before any *step keyword" --- and stops in the input
+  // file processor with one error per joint. Written inside the step, the deck
+  // ran only when Abaqus/CAE was asked to submit it, because CAE writes an
+  // input file of its own and puts them where they belong; run directly it
+  // never started. Nothing in the suite noticed, so this is here now.
+  const m = ringModel(4, 4.6, 8);
+  const inp = exported(m, { lateral: { alphaMax: 0.5, direction: 1 } });
+  const lines = inp.split('\n');
+  const firstStep = lines.findIndex((l) => l.startsWith('*Step'));
+  assert.ok(firstStep > 0, 'the deck has a step');
+  const pairs = lines
+    .map((l, i) => [l, i])
+    .filter(([l]) => l.startsWith('*Contact Pair'))
+    .map(([, i]) => i);
+  assert.equal(pairs.length, m.blocks.length - 1, 'one pair per interior joint');
+  pairs.forEach((at) => assert.ok(at < firstStep,
+    `*Contact Pair at line ${at} is inside the step that begins at ${firstStep}`));
+  // The amplitude of the ramp is model data for the same reason.
+  assert.ok(inp.indexOf('*Amplitude') < inp.indexOf('*Step'));
+});
+
+test('the step carries the loads and the boundaries, and no interaction', () => {
+  const m = ringModel(4, 4.6, 8);
+  const inp = exported(m, { lateral: { alphaMax: 0.5, direction: 1 } });
+  const step = inp.slice(inp.indexOf('*Step'));
+  // *Contact Output is an output request and belongs in the step; what must
+  // not be there is the interaction itself.
+  assert.doesNotMatch(step, /^\*Contact Pair/m);
+  assert.doesNotMatch(step, /^\*Contact,/m);
+  assert.doesNotMatch(step, /^\*Contact Inclusions/m);
+  assert.match(step, /^\*Contact Output/m, 'the output request stays');
+  assert.match(step, /^\*Boundary/m);
+  assert.match(step, /^\*Dload/m);
+});

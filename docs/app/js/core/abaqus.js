@@ -1615,19 +1615,17 @@ export function abaqusInput(model, opt = {}) {
     out.push(', , STONE_FRICTION');
   }
 
-  // The ramp of the lateral step, declared with the model. A *Dynamic step
-  // applies a load at its full value from the first increment unless an
-  // amplitude says otherwise -- RAMP is the default of *Static, not of this
-  // procedure -- and the multiplier has to grow from nothing for the step time
-  // to mean anything.
-  if (lateral) {
-    out.push('*Amplitude, name=ALPHA_RAMP');
-    out.push('0., 0., 1., 1.');
-  }
-
-  out.push('*Step, name=Gravity_and_applied_loads, nlgeom=YES, inc=1000');
-  out.push('*Dynamic, application=QUASI-STATIC');
-  out.push('0.01, 1., 1e-08, 0.05');
+  // THE CONTACT PAIRS ARE MODEL DATA, and they were written inside the first
+  // step. Abaqus/Standard refuses that --- "the contact pair keyword should be
+  // used before any *step keyword" --- and the whole analysis stops in the
+  // input file processor, one error per joint. The deck appeared to work only
+  // because Abaqus/CAE, asked to run it, writes an input file of its own and
+  // puts them where they belong; run directly, it never started.
+  //
+  // This is the same mistake the general contact block above was moved out of
+  // the step for. One of the two was fixed and the other left behind, which is
+  // what happens when a fix is applied to the case in front of one rather than
+  // to the rule.
   if (!generalContact) {
     out.push('** One pair per joint, and each pair is exactly the two faces that abut:');
     out.push('** the hi face of a voussoir against the lo face of the next.');
@@ -1646,6 +1644,20 @@ export function abaqusInput(model, opt = {}) {
       });
     }
   }
+
+  // The ramp of the lateral step, declared with the model. A *Dynamic step
+  // applies a load at its full value from the first increment unless an
+  // amplitude says otherwise -- RAMP is the default of *Static, not of this
+  // procedure -- and the multiplier has to grow from nothing for the step time
+  // to mean anything.
+  if (lateral) {
+    out.push('*Amplitude, name=ALPHA_RAMP');
+    out.push('0., 0., 1., 1.');
+  }
+
+  out.push('*Step, name=Gravity_and_applied_loads, nlgeom=YES, inc=1000');
+  out.push('*Dynamic, application=QUASI-STATIC');
+  out.push('0.01, 1., 1e-08, 0.05');
   if (onCentres) {
     out.push(`** The ${centreList.length} hinge(s) of the mechanism that do not move are pinned here:`);
     centreList.forEach((c, i) => {

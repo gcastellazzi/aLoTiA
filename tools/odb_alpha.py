@@ -62,7 +62,7 @@ import sys
 from odbAccess import openOdb
 
 
-REVISION = 7                # printed, so a stale copy is visible at once
+REVISION = 8                # printed, so a stale copy is visible at once
 STEP = 'Lateral_action'
 KE_FRACTION = 1.0e-3        # ALLKE / ALLIE above which the blocks are moving
 
@@ -150,6 +150,26 @@ def openings(frame, coords, orphans):
     if field is None:
         orphans[2] += 1
         return {}
+    # The tangential slip, beside the opening, so that the question of whether
+    # the masonry slid rather than hinged is answered from the output and not
+    # from an assumption. Heyman's third assumption grants friction without
+    # limit; the model is given 0.6, and if it slides it is not computing what
+    # the limit analysis computes.
+    slips = {}
+    for name in ('CSLIP1', 'CSLIP'):
+        got = lookup(frame.fieldOutputs, name)
+        if got is None:
+            continue
+        for value in got.values:
+            if value.instance is None:
+                continue
+            try:
+                size = abs(float(value.data))
+            except TypeError:                 # a vector: take its magnitude
+                size = max([abs(float(c)) for c in value.data])
+            key = (value.instance.name, int(value.nodeLabel))
+            slips[key] = max(slips.get(key, 0.0), size)
+        break
     per_joint = {}
     for value in field.values:
         instance = value.instance
@@ -179,8 +199,11 @@ def openings(frame, coords, orphans):
                 for n in instance.nodes
             )
         point = coords[instance.name].get(int(value.nodeLabel))
-        row = per_joint.setdefault(joint, {'max': None, 'min': None, 'nodes': 0})
+        row = per_joint.setdefault(joint, {'max': None, 'min': None, 'nodes': 0,
+                                           'slip': 0.0})
         row['nodes'] += 1
+        row['slip'] = max(row['slip'],
+                          slips.get((instance.name, int(value.nodeLabel)), 0.0))
         entry = {'gap': gap, 'node': int(value.nodeLabel),
                  'instance': instance.name,
                  'point': [point[0], point[2]] if point else None}
@@ -392,6 +415,12 @@ def main(argv):
                 result['alpha_motion'] = alpha_max * result['step_time_motion']
             if energy_time is not None:
                 result['alpha_energy'] = alpha_max * energy_time
+                # The frame before the energy rose, which is the lower end of
+                # the bracket that matters: see the report below.
+                quiet = [r['t'] for r in rows if r['t'] < energy_time]
+                if quiet:
+                    result['step_time_energy_before'] = quiet[-1]
+                    result['alpha_energy_before'] = alpha_max * quiet[-1]
             # The bracket the frame spacing leaves. The arch held at one frame
             # and was running away at the next, and quoting the upper end alone
             # would claim a resolution the output interval does not have.
@@ -457,14 +486,32 @@ def main(argv):
                     continue
                 shown += 1
                 where = row['min']['point'] or [float('nan')] * 2
-                print('  joint %-3d opened %.6g, far end %.3g at (%.4f, %.4f)  %s'
-                      % (joint, mx, mn, where[0], where[1],
+                slip = row.get('slip') or 0.0
+                print('  joint %-3d opened %.6g, far end %.3g at (%.4f, %.4f),'
+                      ' slip %.3g  %s'
+                      % (joint, mx, mn, where[0], where[1], slip,
                          'HINGE' if row.get('hinge') else 'open at both ends'))
             hinges = [j for j, r in result['joints'].items() if r.get('hinge')]
             print('  %d hinge(s), %d joint(s) parted at both ends'
                   % (len(hinges),
                      len([1 for r in result['joints'].values()
                           if r.get('parted') and not r.get('hinge')])))
+            slips = [r.get('slip') or 0.0 for r in result['joints'].values()]
+            opens = [r['max']['gap'] for r in result['joints'].values()
+                     if r.get('max')]
+            if any(slips):
+                print('  widest slip %.3g against widest opening %.3g: the'
+                      % (max(slips), max(opens) if opens else float('nan')))
+                print('  masonry %s'
+                      % ('hinged and did not slide'
+                         if max(slips) < 0.1 * max(opens or [1])
+                         else 'SLID as well as hinged --- which the limit'
+                              ' analysis excludes'))
+            else:
+                print('  no tangential slip is in the output: ask the deck for'
+                      ' CDISP, which')
+                print('  carries CSLIP beside COPEN, if the sliding is in'
+                      ' question.')
 
         print('')
         if alpha_max is None:
@@ -480,12 +527,26 @@ def main(argv):
             if energy_time is not None:
                 print('alpha where ALLKE leaves zero:      %.6f'
                       % (alpha_max * energy_time))
+            # TWO BRACKETS, AND THE ENERGY ONE IS THE ANSWER. The kinetic
+            # energy leaves zero as soon as the blocks begin to move, which is
+            # the collapse; the openings have to grow to a visible size before
+            # a ratio between consecutive frames can detect them, so they run
+            # away a frame or two later. Reading the multiplier off the
+            # openings therefore overstates it, and by as much as the frames
+            # are far apart. The openings say WHERE the mechanism is; the
+            # energy says WHEN it formed.
+            print('')
+            if result.get('alpha_energy') is not None:
+                lo_e = result.get('alpha_energy_before')
+                print('THE COLLAPSE, from the energy balance:')
+                print('  alpha in (%s, %.6f]'
+                      % ('%.6f' % lo_e if lo_e is not None else '0',
+                         result['alpha_energy']))
             if result.get('alpha_before') is not None:
-                print('')
-                print('the collapse lies between %.6f and %.6f: the frames are'
-                      % (result['alpha_before'],
-                         result.get('alpha_motion') or result.get('alpha_energy')))
-                print('that far apart, and no reading is sharper than their spacing.')
+                print('the openings run away later, in (%.6f, %.6f]: a gap has to'
+                      % (result['alpha_before'], result['alpha_motion']))
+                print('  be of a visible size before it can be seen to diverge.')
+            print('  Neither reading is sharper than the spacing of the frames.')
             # NOT alpha_last. If the step ran to its end, alpha_last is
             # the ceiling of the ramp and nothing else: a number chosen before
             # the analysis, which would then be reported as its result.
@@ -496,8 +557,8 @@ def main(argv):
             # carried that much, and an upper bound, because it did not carry
             # the next. A single figure quoted from the middle of it would be
             # an arithmetic mean of two frame numbers passing for a result.
-            lo = result.get('alpha_before')
-            hi = result.get('alpha_motion') or result.get('alpha_energy')
+            lo = result.get('alpha_energy_before') or result.get('alpha_before')
+            hi = result.get('alpha_energy') or result.get('alpha_motion')
             if result.get('alpha_kinematic') is not None:
                 k = result['alpha_kinematic']
                 print('alpha from the kinematic theorem:   %.6f' % k)
