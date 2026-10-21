@@ -98,6 +98,60 @@ export function openingRates(hinges, motion) {
 }
 
 /**
+ * The hinges of a mechanism that do not move: the absolute centres of rotation.
+ *
+ * WHAT IS BEING ASKED. A hinge of the chain is a point shared by the two bodies
+ * either side of it, so both bodies have the same velocity there. Where that
+ * velocity is zero the point is at rest while the arch collapses around it, and
+ * the body hinged to it turns about that point and no other: it is the absolute
+ * centre of rotation of that body, not a relative one.
+ *
+ * WHICH ONES THEY ARE. The two outer hinges of a four-hinge mechanism, the ones
+ * that bear on the abutments: `mechanismMotion` writes a single-term equation
+ * for a hinge with a body on one side only, which sets the velocity there to
+ * zero, and the two interior hinges then move. That is the answer in every
+ * ordinary case, and it is not assumed here -- the velocity is evaluated at
+ * every hinge and the zeros are reported -- because a middle body whose Kennedy
+ * centre falls on one of its own hinges has a third one, and a mechanism found
+ * by search can be of that kind.
+ *
+ * WHY IT MATTERS OUTSIDE THE KINEMATICS. These are the points the exported
+ * finite-element model has to hold. The velocity field is scaled arbitrarily by
+ * the null space, so a speed means nothing on its own and each is judged
+ * against the fastest hinge of the same mechanism.
+ *
+ * @param {Array} hinges  as `mechanismMultiplier` returns them
+ * @param {object} motion from `mechanismMotion`, after the sense is fixed
+ * @param {object} [opt]
+ * @param {number} [opt.tol]  a hinge is at rest below this fraction of the
+ *        fastest hinge speed of the mechanism
+ * @returns {Array<{index, joint, face, point, speed, fixed}>} every hinge, in
+ *          order, each saying whether it is at rest
+ */
+export function rotationCentres(hinges, motion, opt = {}) {
+  const { tol = 1e-9 } = opt;
+  const n = motion?.motions?.length ?? 0;
+  const speeds = (hinges ?? []).map((h, k) => {
+    // Either body gives the same velocity at the hinge, that being what the
+    // hinge equation says; a ground hinge has only one of the two.
+    const body = (k < n ? motion.motions[k] : null)
+      ?? (k - 1 >= 0 && k - 1 < n ? motion.motions[k - 1] : null);
+    if (!body || !h?.point) return 0;
+    const v = velocity(body, h.point);
+    return Math.hypot(v[0], v[1]);
+  });
+  const fastest = Math.max(...speeds, 0);
+  return (hinges ?? []).map((h, k) => ({
+    index: k,
+    joint: h?.joint ?? null,
+    face: h?.face ?? null,
+    point: h?.point ? [h.point[0], h.point[1]] : null,
+    speed: speeds[k],
+    fixed: !(fastest > 0) || speeds[k] <= fastest * tol,
+  }));
+}
+
+/**
  * The virtual work of the loads on a rigid-block motion: `Lh` of unit
  * horizontal forces W in +x, and `Lw` of the weights and the applied forces.
  *

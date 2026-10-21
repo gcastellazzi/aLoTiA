@@ -31,6 +31,49 @@ voussoirs cease to be a chain at all; the construction says so, with the cut
 that failed, rather than returning a geometry it cannot defend. Past that point
 the section is a bonded assembly, which is what the horizontal courses build.
 
+### The multiplier the exported model reports
+
+Asked for, the Abaqus deck carries a second step in which gravity is held at
+its full value and a horizontal body force proportional to the mass of each
+part is ramped from nothing: `rho * g * alphaMax` per unit volume, with a RAMP
+amplitude declared with the model, because a `*Dynamic` step applies a load
+whole on its first increment unless told otherwise. The step time is then the
+multiplier divided by that ceiling, and the ceiling is written into the deck in
+a form a script can read.
+
+Without it the exported model answered a different question from the one the
+Mechanism tab answers. It carried gravity and the forces placed by hand, so a
+step that stopped short reported the fraction of THOSE forces the arch could
+take --- not the multiple of the weights that is the activation multiplier, and
+not a number that can be set beside alpha0.
+
+`tools/odb_alpha.py` reads the answer back: `abaqus python tools/odb_alpha.py
+job.odb job.inp` reports the multiplier at the last converged frame, the
+multiplier at which the kinetic energy leaves zero, which is where the
+mechanism forms, and how far each joint parted and at which end.
+`tools/compare_alpha.mjs` puts that beside the two the application computes ---
+the least multiplier of the kinematic search, and the hinge pattern the line of
+thrust touches the boundary with at the edge of its band --- and gives the
+multiplier of each pattern, which is the sharp form of the comparison: a
+pattern differing from the kinematic one but carrying a multiplier a tenth of a
+per cent above it is the same answer reached another way.
+
+### The hinges that do not move
+
+The hinges of a mechanism where the velocity vanishes are the absolute centres
+of rotation: the points the collapsing arch turns about. `rotationCentres`
+evaluates the velocity field at every hinge and reports which are at rest
+rather than assuming it is the two outer ones, since a middle body whose centre
+falls on one of its own hinges has a third.
+
+The export can be held there instead of at the two points the panel calls A and
+B. A point at rest is pinned and the abutment face behind it is left on rollers,
+restrained only normal to itself: the voussoir has to be free to turn about that
+corner and not free to drive into the masonry it bears on. A roller at the point
+at rest, which is the obvious reading, would leave each springing free to slide
+along its joint and the two together free to drop --- a rigid-body motion under
+gravity, before any lateral action was applied.
+
 ### The profile recovered from the blocks
 
 A session carries voussoirs, not the curves they were cut from, and Poleni's

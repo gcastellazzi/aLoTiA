@@ -42,7 +42,7 @@ import {
 } from './core/persist.js';
 import { abaqusInput } from './core/abaqus.js';
 import {
-  multiplierInput, mechanismMultiplier, minimumMultiplier,
+  multiplierInput, mechanismMultiplier, minimumMultiplier, rotationCentres,
 } from './core/multiplier.js';
 import {
   parseNotes, toggleWrap, setBlockStyle, insertLink,
@@ -89,6 +89,7 @@ const ui = {
   mechCount: el('mechCount'), mechBand: el('mechBand'),
   mechAmp: el('mechAmp'), goHmin: el('goHmin'), goHmax: el('goHmax'),
   full3D: el('full3D'),
+  abaqusLateral: el('abaqusLateral'),
   alphaFind: el('alphaFind'), alphaPick: el('alphaPick'), alphaClear: el('alphaClear'),
   alphaShow: el('alphaShow'), alphaResult: el('alphaResult'), alphaDetail: el('alphaDetail'),
   poleni: el('poleni'), domeAngle: el('domeAngle'), domeAxis: el('domeAxis'),
@@ -5333,6 +5334,70 @@ function abaqusFileName() {
   return `${base}.inp`;
 }
 
+/**
+ * The mechanism the exported model is to be held at and loaded with.
+ *
+ * The hinges of the shown mechanism that do not move are its absolute centres
+ * of rotation, and they are what the arch turns about when it collapses; the
+ * multiplier and the direction that activate it are what the lateral step has
+ * to reach. Both come from the same mechanism, so the deck and the kinematic
+ * result answer the same question and can be set beside one another.
+ */
+function mechanismForExport() {
+  const shown = shownAlphaMechanism();
+  if (!shown?.hinges?.length || !shown.motion) return null;
+  const centres = rotationCentres(shown.hinges, shown.motion)
+    .filter((c) => c.fixed && c.point);
+  return {
+    centres,
+    alpha: Number.isFinite(shown.alpha) ? shown.alpha : null,
+    direction: shown.direction,
+    hinges: shown.hinges,
+  };
+}
+
+/**
+ * What the two mechanism options put into the exported deck.
+ *
+ * The supports selector asks for the centres of rotation, the checkbox beside
+ * the export button asks for the second step that ramps the lateral action,
+ * and both need a mechanism to have been found in the Mechanism tab. Asked for
+ * without one, the deck is written without them and the log says why rather
+ * than the file quietly coming out as any other.
+ *
+ * THE CEILING OF THE RAMP is half again the computed multiplier. The step time
+ * is the multiplier divided by that ceiling, so collapse falls at two thirds of
+ * the step: far enough in for the increment size to have settled, far enough
+ * from the end that a model standing above the kinematic value still shows
+ * where it fails.
+ */
+function abaqusMechanism() {
+  const wantCentres = ui.abaqusSupports?.value === 'mechanism-rollers';
+  const wantLateral = !!ui.abaqusLateral?.checked;
+  if (!wantCentres && !wantLateral) return {};
+  const mech = mechanismForExport();
+  if (!mech) {
+    appendLog('Abaqus export: no mechanism is shown, so neither the centres of '
+      + 'rotation nor the lateral step could be written. Find α0 first.');
+    return {};
+  }
+  const out = {};
+  if (wantCentres) {
+    out.centres = mech.centres;
+    appendLog(`Abaqus export: held at ${mech.centres.length} centre(s) of rotation — `
+      + `${mech.centres.map((c) => `joint ${c.joint} ${c.face}`).join(', ')}`);
+  }
+  if (wantLateral) {
+    const alphaMax = mech.alpha > 0 ? mech.alpha * 1.5 : 1;
+    out.lateral = { alphaMax, direction: mech.direction, alpha0: mech.alpha };
+    appendLog(`Abaqus export: second step ramps a horizontal body force to `
+      + `${alphaMax.toFixed(4)} g in ${mech.direction > 0 ? '+x' : '−x'}; `
+      + `α0 = ${(mech.alpha ?? 0).toFixed(4)} falls at step time `
+      + `${(((mech.alpha ?? 0) / alphaMax) || 0).toFixed(3)}.`);
+  }
+  return out;
+}
+
 /** The mesh density asked for in the panel, as the exporter wants it. */
 function abaqusRefinement() {
   const across = Math.min(12, Math.max(2, Math.round(Number(ui.abaqusRefine?.value) || 3)));
@@ -5363,6 +5428,9 @@ async function exportAbaqus() {
       // The whole dome: the parts are instanced once per lune, turned about
       // the axis, rather than meshed again.
       ...domeRepetition(),
+      // The mechanism: where to hold the model, and the lateral action that
+      // activates it. See mechanismForExport.
+      ...abaqusMechanism(),
       forces: state.forces,
       friction: 0.6,
       system: state.system,

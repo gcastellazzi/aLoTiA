@@ -529,14 +529,16 @@ Plain text, with **bold**, *emph*, _underline_ and
         <label class="inline" title="Elements across the ring thickness of one voussoir. Two is the least that shows a stress gradient.">mesh
           <input id="abaqusRefine" type="number" min="2" max="12" step="1" value="3">
         </label>
-        <label class="inline" title="Choose hinge lines only, add face-normal rollers, or hinge every node of both end faces.">supports
+        <label class="inline" title="Hinge lines only, face-normal rollers, every end-face node hinged, or the hinges of the mechanism that do not move, pinned, with the abutment faces on rollers.">supports
           <select id="abaqusSupports">
             <option value="hinges">A/B hinge lines</option>
             <option value="face-rollers">A/B hinges + face rollers</option>
             <option value="face-hinges">All end-face nodes hinged</option>
+            <option value="mechanism-rollers">Mechanism centres + face rollers</option>
           </select>
         </label>
         <label class="inline" title="Repeat the lune round the axis: the whole dome, in the view and in the exported model."><input type="checkbox" id="full3D"> full dome</label>
+        <label class="inline" title="Add a second step that holds gravity and ramps a horizontal body force proportional to the masses, so the model reports its own activation multiplier."><input type="checkbox" id="abaqusLateral"> lateral &alpha;</label>
         <button id="exportAbaqus" type="button" title="Export an Abaqus .inp model">export</button>
         <span class="hint">drag to turn &middot; wheel to zoom &middot; shift-drag to pan</span>
       </div>

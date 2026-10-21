@@ -1284,8 +1284,47 @@ export function abaqusInput(model, opt = {}) {
     forces = { points: [], magnitudes: [] },
     friction = 0.6, system = 'SI', title = 'aLoTiA export',
     joints = null, refine = {}, supportMode = 'hinges', generalContact = false,
-    domeSectors = 1, domeAxisX = 0,
+    domeSectors = 1, domeAxisX = 0, lateral = null, centres = [],
   } = opt;
+
+  // THE SUPPORTS OF THE MECHANISM. Asked for, the model is held not at the two
+  // points the panel calls A and B but at the hinges of the collapse mechanism
+  // that do not move -- the absolute centres of rotation, which
+  // multiplier.js: rotationCentres picks out of the velocity field. A hinge at
+  // rest is a point the collapsing arch turns about, so it is pinned, and the
+  // rest of the abutment face behind it is left on rollers: the voussoir has to
+  // be free to turn about that corner and not free to drive into the masonry
+  // it bears on.
+  //
+  // A ROLLER AT A POINT OF ZERO VELOCITY WOULD BE WRONG, which is worth saying
+  // because it is the obvious reading of the request. Blocked only normal to
+  // its joint, each springing would still be free to slide along it, the two
+  // together free to drop, and the model would have a rigid-body motion under
+  // gravity before any lateral action was applied. The point at rest carries
+  // the pin; the rollers are what stands beside it.
+  const mechanismSupports = supportMode === 'mechanism-rollers';
+  // A centre is given either as a bare point or as rotationCentres returns it;
+  // the joint it belongs to is written into the deck as a comment, so a reader
+  // of the file can see which hinge of the mechanism each support is.
+  const centreList = (centres ?? []).filter(Boolean)
+    .map((c) => (Array.isArray(c)
+      ? { point: [Number(c[0]), Number(c[1])] }
+      : { point: [Number(c.point?.[0]), Number(c.point?.[1])], joint: c.joint, face: c.face }))
+    .filter((c) => Number.isFinite(c.point[0]) && Number.isFinite(c.point[1]));
+  const onCentres = mechanismSupports && centreList.length > 0;
+  const pinPoints = onCentres
+    ? centreList.map((c) => c.point)
+    : supports.filter(Boolean);
+  const faceMode = supportMode === 'face-rollers' || supportMode === 'face-hinges'
+    || mechanismSupports;
+  const pinTag = (i) => (onCentres ? `C${i + 1}` : (i === 0 ? 'A' : 'B'));
+  // THE ROLLER BEDS STAY ON THE ABUTMENTS. The hinge of a mechanism need not
+  // form at a springing -- the search may place it several joints in, leaving
+  // the blocks beyond it part of the ground -- and the masonry those blocks
+  // bear on is still there. So the faces are found from A and B whatever the
+  // pins are found from, and the end block cannot slide out along its own
+  // abutment plane for want of anything behind it.
+  const faceTag = (i) => (i === 0 ? 'A' : 'B');
 
   // THE WHOLE DOME, OR ONE LUNE OF IT. Poleni's reading of St Peter's is
   // sixteen independent arches, and the section drawn here is one of them.
@@ -1309,6 +1348,7 @@ export function abaqusInput(model, opt = {}) {
   const out0 = [];
   const anchors = [
     ...supports.filter(Boolean),
+    ...pinPoints,
     ...(forces.points ?? []).filter(Boolean),
   ];
 
@@ -1416,9 +1456,11 @@ export function abaqusInput(model, opt = {}) {
     out.push('*End Part');
   });
 
+  const densities = [];
   meshes.forEach((mesh, i) => {
     const gamma = Math.abs(model.weights?.[i] ?? 0) / Math.max(mesh.volume, 1e-12);
     const density = gamma / gravity;
+    densities.push(density);
     out.push(`*Material, name=STONE_${i + 1}`);
     out.push('*Density');
     out.push(`${fmt(density)}`);
@@ -1451,10 +1493,10 @@ export function abaqusInput(model, opt = {}) {
     });
   });
 
-  const supportSets = supports.map((p) => activeLineSets(meshes, p, { limit: 10 }));
+  const supportSets = pinPoints.map((p) => activeLineSets(meshes, p, { limit: 10 }));
   const forceSets = (forces.points ?? []).map((p) => activeLineSets(meshes, p, { limit: 12 }));
-  const faceSupports = supportMode === 'face-rollers' || supportMode === 'face-hinges'
-    ? rollerFaces(meshes, supports, chain) : [];
+  const faceSupports = faceMode
+    ? rollerFaces(meshes, supports.filter(Boolean), chain) : [];
 
   // A set is written for every lune: the springings, the loads and the roller
   // beds belong to each of them, the dome being the same section repeated.
@@ -1464,7 +1506,7 @@ export function abaqusInput(model, opt = {}) {
 
   supportSets.forEach((sets, si) => {
     sets.forEach(({ block: bi, ids }) => {
-      const base = `SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}`;
+      const base = `SUPPORT_${pinTag(si)}_B${bi + 1}`;
       setNames(base, bi).forEach(({ name, instance }) => {
         out.push(`*Nset, nset=${name}, instance=${instance}`);
         out.push(...linesOf(ids));
@@ -1484,7 +1526,7 @@ export function abaqusInput(model, opt = {}) {
   const transformed = new Map();
   const faceRows = faceSupports.map((row) => {
     const { support, block, normal } = row;
-    const name = `SUPPORT_${support === 0 ? 'A' : 'B'}_FACE_B${block + 1}`;
+    const name = `SUPPORT_${faceTag(support)}_FACE_B${block + 1}`;
     if (supportMode === 'face-hinges') {
       return { ...row, name, dof: null, clash: [] };
     }
@@ -1516,15 +1558,22 @@ export function abaqusInput(model, opt = {}) {
   if (supportMode === 'face-rollers' && !faceRows.length) {
     out.push('** Face rollers requested, but no exterior face connected to A/B could be identified.');
   }
+  if (mechanismSupports && !centreList.length) {
+    out.push('** Mechanism supports requested, but no hinge at rest was supplied:');
+    out.push('** the model is held at A and B as it would be with hinge lines alone.');
+  } else if (mechanismSupports && !faceRows.length) {
+    out.push('** Mechanism supports: no exterior face connected to a centre of rotation');
+    out.push('** was identified, so each centre carries a pinned line and nothing else.');
+  }
   if (supportMode === 'face-hinges' && !faceRows.length) {
     out.push('** Face hinges requested, but no exterior face connected to A/B could be identified.');
   }
   faceRows.forEach(({ name, support, block, dof, normal, clash }) => {
     if (supportMode === 'face-hinges') {
-      out.push(`** End face ${support === 0 ? 'A' : 'B'}: every node is hinged in U1-U3.`);
+      out.push(`** End face ${faceTag(support)}: every node is hinged in U1-U3.`);
       return;
     }
-    out.push(`** End face ${support === 0 ? 'A' : 'B'}: roller bed blocks U.normal; tangential motion remains free.`);
+    out.push(`** End face ${faceTag(support)}: roller bed blocks U.normal; tangential motion remains free.`);
     if (clash.length) {
       out.push(`** ${clash.length} corner node(s) already belong to another roller face and keep its system.`);
     }
@@ -1566,6 +1615,16 @@ export function abaqusInput(model, opt = {}) {
     out.push(', , STONE_FRICTION');
   }
 
+  // The ramp of the lateral step, declared with the model. A *Dynamic step
+  // applies a load at its full value from the first increment unless an
+  // amplitude says otherwise -- RAMP is the default of *Static, not of this
+  // procedure -- and the multiplier has to grow from nothing for the step time
+  // to mean anything.
+  if (lateral) {
+    out.push('*Amplitude, name=ALPHA_RAMP');
+    out.push('0., 0., 1., 1.');
+  }
+
   out.push('*Step, name=Gravity_and_applied_loads, nlgeom=YES, inc=1000');
   out.push('*Dynamic, application=QUASI-STATIC');
   out.push('0.01, 1., 1e-08, 0.05');
@@ -1587,19 +1646,26 @@ export function abaqusInput(model, opt = {}) {
       });
     }
   }
+  if (onCentres) {
+    out.push(`** The ${centreList.length} hinge(s) of the mechanism that do not move are pinned here:`);
+    centreList.forEach((c, i) => {
+      out.push(`** ${pinTag(i)} at (${fmt(c.point[0])}, ${fmt(c.point[1])})`
+        + (c.joint === undefined ? '' : ` --- joint ${c.joint}${c.face ? `, ${c.face}` : ''}`));
+    });
+  }
   out.push('** Cylindrical hinge lines: solid elements have translational DOFs only,');
   out.push('** so constraining the line nodes in U1-U3 leaves block rotation to contact kinematics.');
   supportSets.forEach((sets, si) => {
     sets.forEach(({ block: bi }) => {
-      const base = `SUPPORT_${si === 0 ? 'A' : 'B'}_B${bi + 1}`;
+      const base = `SUPPORT_${pinTag(si)}_B${bi + 1}`;
       setNames(base, bi).forEach(({ name }) => {
         out.push('*Boundary');
         out.push(`${name}, 1, 3, 0.`);
       });
     });
   });
-  if (supportMode === 'face-rollers' && faceRows.length) {
-    out.push('** Roller beds: every node coplanar with and connected to the A/B face,');
+  if ((supportMode === 'face-rollers' || mechanismSupports) && faceRows.length) {
+    out.push('** Roller beds: every node coplanar with and connected to the end face,');
     out.push('** restrained normal to that face (local 1 where the face is inclined).');
   }
   if (supportMode === 'face-hinges' && faceRows.length) {
@@ -1650,6 +1716,66 @@ export function abaqusInput(model, opt = {}) {
   out.push('*Energy Output');
   out.push('ALLIE, ALLKE, ALLWK, ALLFD');
   out.push('*End Step');
+
+  // THE SECOND STEP MEASURES THE ACTIVATION MULTIPLIER, and it is the only
+  // way the exported model can be compared with the one the application
+  // computes. The kinematic search of core/multiplier.js asks at what
+  // multiple of the weights a horizontal action activates a mechanism; the
+  // first step above asks nothing of the sort -- it carries gravity and the
+  // loads the user placed, and a step that stops short of them reports the
+  // fraction of THOSE loads the arch could take, which is a different number.
+  //
+  // So gravity is held at its full value and a horizontal body force is added
+  // and ramped: BX per unit volume, rho * g * alphaMax for each part, which is
+  // mass-proportional because rho is the part's own density. GRAV is left
+  // alone, since a second GRAV on the same set would replace the first and
+  // ramp the weight from zero along with the action.
+  //
+  // The step time then IS the multiplier, scaled: alpha = alphaMax * t, and
+  // the collapse value is the last t the solver carried. Reading it from the
+  // energy balance rather than from the failure to converge is the honest
+  // criterion: the kinetic energy leaves zero when the blocks start to move.
+  if (lateral) {
+    const alphaMax = Math.abs(Number(lateral.alphaMax) || 1);
+    const dir = Number(lateral.direction) >= 0 ? 1 : -1;
+    out.push(`*Step, name=Lateral_action, nlgeom=YES, inc=${lateral.inc ?? 2000}`);
+    out.push('*Dynamic, application=QUASI-STATIC');
+    out.push('0.005, 1., 1e-09, 0.02');
+    out.push(`** alpha = ${fmt(alphaMax)} * (step time): a horizontal body force`);
+    out.push('** proportional to the mass, gravity held at its full value.');
+    out.push('** The multiplier at collapse is alphaMax times the last step time');
+    out.push('** the solver carried, and ALLKE says when the motion began.');
+    // Written for tools/odb_alpha.py to read, so that the multiplier can be
+    // recovered from the results without the file that produced them being at
+    // hand, and so that the deck carries the value it is meant to reproduce.
+    out.push(`** ALOTIA_ALPHA_MAX = ${fmt(alphaMax)}`);
+    out.push(`** ALOTIA_ALPHA_DIRECTION = ${dir}`);
+    if (Number.isFinite(Number(lateral.alpha0))) {
+      out.push(`** ALOTIA_ALPHA_KINEMATIC = ${fmt(Number(lateral.alpha0))}`);
+    }
+    meshes.forEach((_, i) => {
+      out.push('*Dload, amplitude=ALPHA_RAMP');
+      instanceNames(i).forEach((inst) => {
+        out.push(`${inst}.BLOCK_${i + 1}_ALL, BX, `
+          + `${fmt(dir * densities[i] * gravity * alphaMax)}`);
+      });
+    });
+    // Fifty frames of the field, two hundred points of the energy: the
+    // mechanism is read off the frames and the instant of collapse off the
+    // energy, and a frame per increment would be a file of several gigabytes.
+    out.push('*Output, field, time interval=0.02');
+    out.push('*Node Output');
+    out.push('U, RF');
+    out.push('*Element Output, directions=YES');
+    out.push('S, E');
+    out.push('*Contact Output');
+    out.push('CSTRESS, CDISP');   // CDISP carries COPEN and CSLIP
+    out.push('*Output, history, time interval=0.005');
+    out.push('*Energy Output');
+    out.push('ALLIE, ALLKE, ALLWK, ALLFD');
+    out.push('*End Step');
+  }
+
   out.push('');
   return out.join('\n');
 }
