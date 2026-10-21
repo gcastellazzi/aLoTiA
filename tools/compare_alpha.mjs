@@ -174,8 +174,14 @@ const pattern = (hinges) => (hinges?.length
 const scaled = (named, time) => odb?.[named]
   ?? (odb?.alpha_max != null && odb?.[time] != null ? odb.alpha_max * odb[time] : null);
 const alphaMotion = scaled('alpha_motion', 'step_time_motion');
+const alphaEnergy = scaled('alpha_energy', 'step_time_energy');
+const alphaBefore = scaled('alpha_before', 'step_time_before');
 const alphaLast = scaled('alpha_last', 'step_time_last');
-const alphaAbaqus = alphaMotion ?? alphaLast;
+// NOT alpha_last as a fallback. When the step runs to its end -- which an
+// implicit quasi-static step does whether or not the arch gave way -- that
+// number is the ceiling of the ramp, chosen before the analysis. Reporting it
+// as the multiplier would report the question as the answer.
+const alphaAbaqus = alphaMotion ?? alphaEnergy ?? null;
 const same = (a, b) => pattern(a) === pattern(b);
 
 /**
@@ -223,9 +229,13 @@ console.log('  the multiplier');
 console.log(`    kinematic, every four-hinge mechanism   α0 = ${f4(governing.alpha)}`);
 if (odb) {
   console.log(`    Abaqus, the ramped body force          α  = ${f4(alphaAbaqus)}`
-    + (alphaMotion == null
-      ? '  (the kinetic energy never rose: a lower bound)'
-      : `  (the step ran on to ${f4(alphaLast)})`));
+    + (alphaAbaqus == null
+      ? '  (nothing opened and the energy never rose)'
+      : alphaMotion == null ? '  (from the energy balance, no opening read)' : ''));
+  if (alphaBefore != null && alphaAbaqus != null) {
+    console.log(`    bracketed by the frame spacing between ${f4(alphaBefore)} and `
+      + `${f4(alphaAbaqus)}`);
+  }
   if (Number.isFinite(alphaAbaqus)) {
     console.log(`    Abaqus against the kinematic value          `
       + `${(100 * (alphaAbaqus / governing.alpha - 1)).toFixed(2)} per cent`);

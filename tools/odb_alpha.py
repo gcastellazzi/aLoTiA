@@ -62,7 +62,7 @@ import sys
 from odbAccess import openOdb
 
 
-REVISION = 3                # printed, so a stale copy is visible at once
+REVISION = 5                # printed, so a stale copy is visible at once
 STEP = 'Lateral_action'
 KE_FRACTION = 1.0e-3        # ALLKE / ALLIE above which the blocks are moving
 
@@ -90,15 +90,29 @@ def read_deck(path):
     return out
 
 
+def lookup(repository, name):
+    """One member of an Abaqus repository, or None.
+
+    ASK FOR IT, DO NOT TEST FOR IT. A repository is dict-like, but how much of
+    the mapping protocol it implements has changed between versions: on 6.14
+    `name in repo.keys()` finds nothing where `repo[name]` returns the member,
+    and a membership test that quietly answers no turns every joint of a
+    collapsed arch into a joint that never opened. Subscripting and catching
+    the failure cannot be wrong in either direction.
+    """
+    try:
+        return repository[name]
+    except Exception:
+        return None
+
+
 def history(step, name):
     """One history output of the whole model, as a list of (time, value)."""
-    # .keys() rather than `in`: an Abaqus repository is dict-like but which
-    # version supports what has changed, and 6.14 is the oldest this has to run
-    # on.
     for key in step.historyRegions.keys():
         region = step.historyRegions[key]
-        if name in region.historyOutputs.keys():
-            return list(region.historyOutputs[name].data)
+        got = lookup(region.historyOutputs, name)
+        if got is not None:
+            return list(got.data)
     return []
 
 
@@ -132,9 +146,10 @@ def openings(frame, coords, orphans):
     penetration, and reporting those as openings would make every joint a
     hinge.
     """
-    if 'COPEN' not in frame.fieldOutputs.keys():
+    field = lookup(frame.fieldOutputs, 'COPEN')
+    if field is None:
+        orphans[2] += 1
         return {}
-    field = frame.fieldOutputs['COPEN']
     per_joint = {}
     for value in field.values:
         instance = value.instance
@@ -181,9 +196,21 @@ def scan(step, orphans):
     coords = {}
     rows = []
     for frame in step.frames:
+        got = openings(frame, coords, orphans)
+        if not got and orphans[2] == 1:
+            # Said once, with what the frame does carry: a missing contact
+            # output is the difference between reading a mechanism and reading
+            # an arch that never moved, and it must not pass in silence.
+            orphans[2] += 1
+            print('COPEN is not in the field output at step time %g.'
+                  % float(frame.frameValue))
+            print('This frame carries: %s'
+                  % ', '.join([str(k) for k in frame.fieldOutputs.keys()]))
+            print('Ask the deck for CDISP on the contact pairs, which carries'
+                  ' COPEN.')
         rows.append({
             't': float(frame.frameValue),
-            'joints': openings(frame, coords, orphans),
+            'joints': got,
         })
     scale = 1.0
     points = [p for table in coords.values() for p in table.values()]
@@ -296,7 +323,7 @@ def main(argv):
         alpha_max = deck.get('alpha_max') if lateral else None
         last_time = float(frames[-1].frameValue)
 
-        orphans = [0, 0]
+        orphans = [0, 0, 0]
         rows, scale = scan(step, orphans)
         for row in rows:
             mark_hinges(row, scale)
@@ -334,6 +361,23 @@ def main(argv):
             result['alpha_last'] = alpha_max * last_time
             if result['step_time_motion'] is not None:
                 result['alpha_motion'] = alpha_max * result['step_time_motion']
+            if energy_time is not None:
+                result['alpha_energy'] = alpha_max * energy_time
+            # The bracket the frame spacing leaves. The onset happened between
+            # the last frame that was still at rest and the first that was not,
+            # and quoting the upper end alone would claim a resolution the
+            # output interval does not have.
+            before = None
+            for name in ('onset_frame',):
+                index = result[name]
+                if index:
+                    before = rows[index - 1]['t']
+            if before is None and energy_time is not None:
+                earlier = [r['t'] for r in rows if r['t'] < energy_time]
+                before = earlier[-1] if earlier else None
+            if before is not None:
+                result['step_time_before'] = before
+                result['alpha_before'] = alpha_max * before
 
         # ---------------------------------------------------------- the report
         print('%s, step %s: %d frames, step time %.4f to %.4f'
@@ -400,11 +444,27 @@ def main(argv):
             if energy_time is not None:
                 print('alpha where ALLKE leaves zero:      %.6f'
                       % (alpha_max * energy_time))
+            if result.get('alpha_before') is not None:
+                print('the onset lies between %.6f and %.6f: the frames are that'
+                      % (result['alpha_before'],
+                         result.get('alpha_motion') or result.get('alpha_energy')))
+                print('far apart, and no reading is sharper than the spacing.')
+            # NOT alpha_last. If the step ran to its end, alpha_last is
+            # the ceiling of the ramp and nothing else: a number chosen before
+            # the analysis, which would then be reported as its result.
+            got = result.get('alpha_motion') or result.get('alpha_energy')
             if result.get('alpha_kinematic') is not None:
                 k = result['alpha_kinematic']
-                got = result.get('alpha_motion', result['alpha_last'])
-                print('alpha from the kinematic theorem:   %.6f  '
-                      '(Abaqus is %+.2f%% of it)' % (k, 100.0 * (got / k - 1.0)))
+                if got is None:
+                    print('alpha from the kinematic theorem:   %.6f' % k)
+                    print('Abaqus gave no multiplier to compare: nothing opened'
+                          ' and the')
+                    print('energy never rose, so the arch stood to the ceiling'
+                          ' of the ramp.')
+                else:
+                    print('alpha from the kinematic theorem:   %.6f  '
+                          '(Abaqus is %+.2f%% of it)'
+                          % (k, 100.0 * (got / k - 1.0)))
 
         if out_path:
             handle = open(out_path, 'w')
