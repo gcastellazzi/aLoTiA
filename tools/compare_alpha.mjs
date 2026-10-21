@@ -38,6 +38,7 @@ import path from 'node:path';
 
 import { deserialise } from '../docs/app/js/core/persist.js';
 import { collapseRange, bestLineForThrust, analyse } from '../docs/app/js/core/mechanism.js';
+import { jointForces } from '../docs/app/js/core/statics.js';
 import {
   multiplierInput, mechanismMultiplier, minimumMultiplier, rotationCentres,
 } from '../docs/app/js/core/multiplier.js';
@@ -124,6 +125,32 @@ const edges = band
   ? [['minimum thrust', atEdge(band.min)], ['maximum thrust', atEdge(band.max)]]
     .filter(([, got]) => got)
   : [];
+
+// --------------------------------------------------------- the friction --
+/**
+ * The coefficient of friction each joint demands, over the admissible family.
+ *
+ * THE DEMAND IS NOT A PROPERTY OF THE GEOMETRY AND THE LOAD. It is a property
+ * of the line of thrust, and at any load below collapse there is a family of
+ * them. The safe theorem lets the limit analysis choose: it is enough that ONE
+ * admissible line demands no more friction than the masonry has. An elastic
+ * model has no such freedom --- its line is fixed by the stiffnesses --- so it
+ * may take a line that demands more, and slide where the limit analysis says
+ * it need not. Reporting the range the family spans, rather than one line's
+ * demand, is what makes that comparison honest.
+ */
+const frictionRange = () => {
+  if (!band) return null;
+  const rows = [band.min, (band.min + band.max) / 2, band.max]
+    .map((f) => bestLineForThrust(inclined(bandAlpha), model.joints, f, search))
+    .filter(Boolean)
+    .map((line) => jointForces(line.fp, line.crossings, model.joints).joints);
+  if (!rows.length) return null;
+  return model.joints.map((_, j) => {
+    const mus = rows.map((r) => r[j]?.mu).filter((v) => Number.isFinite(v));
+    return mus.length ? { lo: Math.min(...mus), hi: Math.max(...mus) } : null;
+  });
+};
 
 // ------------------------------------------------------------------ the Abaqus --
 /**
@@ -391,6 +418,39 @@ if (odb) {
       + `${place.length} in joint alone`
     : `      ${place.length} of ${kin.length} agree in joint; the faces are not `
       + 'in this file');
+}
+
+// What the model mobilised, against what the family spans.
+const demand = odb ? frictionRange() : null;
+const mobilised = Object.entries(odb?.joints ?? {})
+  .map(([key, row]) => [Number(key), row.mu])
+  .filter(([, v]) => Number.isFinite(v))
+  .sort((p, q) => q[1] - p[1]);
+if (demand && mobilised.length) {
+  const muGiven = Number(odb.mu_given) || null;
+  console.log('');
+  console.log('  the friction demanded, at α = ' + f4(bandAlpha) + ':');
+  console.log('    joint   line of thrust, over the band   Abaqus');
+  mobilised.sort((p, q) => p[0] - q[0]).forEach(([j, v]) => {
+    const d = demand[j];
+    const cone = muGiven && v >= 0.98 * muGiven;
+    console.log(`    ${String(j).padStart(5)}   `
+      + (d ? `${f4(d.lo)} to ${f4(d.hi)}`.padEnd(30) : '—'.padEnd(30))
+      + `${f4(v)}${cone ? '  AT THE CONE: this joint slides' : ''}`);
+  });
+  const atCone = mobilised.filter(([, v]) => muGiven && v >= 0.98 * muGiven);
+  console.log('');
+  if (atCone.length) {
+    console.log(`    ${atCone.length} joint(s) reach the ${f4(muGiven)} the model was given, where no`);
+    console.log('    admissible line of thrust demands that much. The model takes one');
+    console.log('    line, fixed by its stiffnesses; the limit analysis may take the');
+    console.log('    most favourable of the family, and that is the whole of the');
+    console.log('    difference. Sliding enlarges the set of mechanisms, so a limit');
+    console.log('    load can only fall: which is the sign of the gap above.');
+  } else {
+    console.log('    no joint reaches the cone: the masonry hinged and did not slide,');
+    console.log('    and Heyman\'s third assumption holds in the model as well.');
+  }
 }
 
 console.log('');
