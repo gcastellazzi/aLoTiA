@@ -62,7 +62,7 @@ import sys
 from odbAccess import openOdb
 
 
-REVISION = 9                # printed, so a stale copy is visible at once
+REVISION = 10                # printed, so a stale copy is visible at once
 STEP = 'Lateral_action'
 KE_FRACTION = 1.0e-3        # ALLKE / ALLIE above which the blocks are moving
 
@@ -382,10 +382,35 @@ def main(argv):
         rows, scale = scan(step, orphans)
         for row in rows:
             mark_hinges(row, scale)
-        diverged = divergence_of(rows, scale)
-        # The last state the arch held, which is where the pattern is read.
-        held = diverged - 1 if diverged else (len(rows) - 1 if rows else None)
         energy_time = when_motion_starts(step)
+        runaway = divergence_of(rows, scale)
+
+        # WHICH FRAME THE PATTERN IS READ AT, and why the energy decides it.
+        #
+        # The runaway test compares each frame's widest opening with the one
+        # before. On coarsely spaced output that finds the collapse plainly --
+        # a factor of twenty where every step before was three. On finely
+        # spaced output it finds NOTHING: this same arch, written out every
+        # 0.02 of step time, opens by a factor of about 1.4 from frame to frame
+        # from the onset all the way to the heap, and no ratio between
+        # neighbours stands out of that. A criterion tuned on coarse frames
+        # quietly stops working when the output improves, which is the worst
+        # way for one to fail.
+        #
+        # The kinetic energy has no such dependence: it is zero while the arch
+        # is still and leaves zero when the blocks begin to move, however often
+        # the frames are written, and the history is written more finely than
+        # the field in any case. So the energy says WHEN the mechanism formed
+        # and the field frame at that moment says WHERE it is.
+        held = None
+        if energy_time is not None:
+            upto = [i for i, r in enumerate(rows) if r['t'] <= energy_time + 1e-12]
+            held = upto[-1] if upto else 0
+        elif runaway:
+            held = runaway - 1
+        elif rows:
+            held = len(rows) - 1
+        diverged = runaway
 
         result = {
             'odb': odb_path,
@@ -397,10 +422,11 @@ def main(argv):
             'frames': len(frames),
             'scale': scale,
             'step_time_last': last_time,
-            'step_time_motion': rows[diverged]['t'] if diverged else None,
+            'step_time_motion': rows[runaway]['t'] if runaway else None,
+            'step_time_runaway': rows[runaway]['t'] if runaway else None,
             'step_time_before': rows[held]['t'] if held is not None else None,
             'step_time_energy': energy_time,
-            'diverged_frame': diverged,
+            'runaway_frame': runaway,
             'held_frame': held,
             'ran_to_end': abs(last_time - 1.0) < 1.0e-9,
             'energy': [{'t': float(t), 'allke': float(k)}
@@ -479,10 +505,10 @@ def main(argv):
         print('abutments through boundary conditions, so a hinge forming there')
         print('leaves no contact opening. Joints 1 to n-1 are what follows.')
         print('')
-        if diverged is None:
-            print('the openings never ran away: the arch stood to the ceiling of')
-            print('the ramp, and the multiplier is above it. Export again with a')
-            print('larger alphaMax.')
+        if held is None or (runaway is None and energy_time is None):
+            print('nothing ran away and the energy never rose: the arch stood to')
+            print('the ceiling of the ramp, and the multiplier is above it.')
+            print('Export again with a larger alphaMax.')
         else:
             print('at the last state the arch held, frame %d, step time %.4f:'
                   % (held, rows[held]['t']))
@@ -552,10 +578,17 @@ def main(argv):
                 print('  alpha in (%s, %.6f]'
                       % ('%.6f' % lo_e if lo_e is not None else '0',
                          result['alpha_energy']))
-            if result.get('alpha_before') is not None:
-                print('the openings run away later, in (%.6f, %.6f]: a gap has to'
-                      % (result['alpha_before'], result['alpha_motion']))
-                print('  be of a visible size before it can be seen to diverge.')
+            if result.get('alpha_motion') is not None:
+                print('the openings run away by %.6f: a gap has to be of a'
+                      % result['alpha_motion'])
+                print('  visible size before it can be seen to diverge, so this')
+                print('  is later than the energy and never earlier.')
+            elif result.get('alpha_energy') is not None:
+                print('no single frame stands out in the openings, which is what')
+                print('finely spaced output looks like: from the onset onwards they')
+                print('grow by a steady factor and no ratio between neighbours is')
+                print('remarkable. The energy is the reading; the openings below')
+                print('are what it is a collapse OF.')
             print('  Neither reading is sharper than the spacing of the frames.')
             # NOT alpha_last. If the step ran to its end, alpha_last is
             # the ceiling of the ramp and nothing else: a number chosen before
