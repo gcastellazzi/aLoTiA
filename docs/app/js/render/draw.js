@@ -1,3 +1,4 @@
+import { figureFont } from './fonts.js';
 /**
  * Drawing the arch, the thrust line, the force polygon and the cable.
  *
@@ -71,9 +72,9 @@ export function drawNotice(ax, lines, opt = {}) {
   // text over a gridline and an arrowhead is text nobody reads.
   let wide = 0;
   lines.forEach((line, i) => {
-    c.font = i === 0
+    c.font = figureFont(i === 0
       ? 'bold 13px Helvetica, Arial, sans-serif'
-      : '12px Helvetica, Arial, sans-serif';
+      : '12px Helvetica, Arial, sans-serif');
     wide = Math.max(wide, c.measureText(line).width);
   });
   const padX = 14;
@@ -85,9 +86,9 @@ export function drawNotice(ax, lines, opt = {}) {
   c.globalAlpha = 1;
 
   lines.forEach((line, i) => {
-    c.font = i === 0
+    c.font = figureFont(i === 0
       ? 'bold 13px Helvetica, Arial, sans-serif'
-      : '12px Helvetica, Arial, sans-serif';
+      : '12px Helvetica, Arial, sans-serif');
     c.fillStyle = i === 0 ? headColour : colour;
     c.fillText(line, b.x + b.w / 2, top + i * step);
   });
@@ -268,7 +269,7 @@ export function drawJointCell(ax, cell, opt = {}) {
   c.stroke();
   dot(hx, top, '#333');
   dot(hx, bot, '#333');
-  c.font = small;
+  c.font = figureFont(small);
   c.fillStyle = '#333';
   c.textAlign = 'right';
   c.textBaseline = 'middle';
@@ -295,7 +296,7 @@ export function drawJointCell(ax, cell, opt = {}) {
     c.stroke();
     dot(ex, mid, ink);
     dot(ex, yF, ink);
-    c.font = small;
+    c.font = figureFont(small);
     c.fillStyle = ink;
     c.textAlign = 'right';
     c.textBaseline = 'middle';
@@ -324,7 +325,7 @@ export function drawJointCell(ax, cell, opt = {}) {
     c.fill();
   }
   // `N` keeps the size it has on the axes; only the annotations grew.
-  c.font = 'italic 11px Georgia, serif';
+  c.font = figureFont('italic 11px Georgia, serif');
   c.textAlign = 'left';
   c.textBaseline = yF < mid ? 'top' : 'bottom';
   c.fillText('N', cx + bw + arm + 3 * k, yF + (yF < mid ? 4 : -4));
@@ -347,7 +348,7 @@ export function drawJointCell(ax, cell, opt = {}) {
   // and so how far the ring could be thinned about its centre before this line
   // touched a face. It is 1 exactly when the joint is on the point of opening.
   const gsf = Math.abs(cell.ecc) <= 1e-12 ? Infinity : (t / 2) / Math.abs(cell.ecc);
-  c.font = `bold ${13 * k}px Helvetica, Arial, sans-serif`;
+  c.font = figureFont(`bold ${13 * k}px Helvetica, Arial, sans-serif`);
   c.fillStyle = ink;
   c.textAlign = 'center';
   c.textBaseline = 'bottom';
@@ -355,7 +356,7 @@ export function drawJointCell(ax, cell, opt = {}) {
   // NAMED, because the panel already reports a GSF in its other corner and that
   // one is the ARCH's -- the worst joint of all of them. This is this joint's,
   // and two bare numbers differing by a factor of two would read as a fault.
-  c.font = `${11 * k}px Helvetica, Arial, sans-serif`;
+  c.font = figureFont(`${11 * k}px Helvetica, Arial, sans-serif`);
   c.fillText(`GSF = ${Number.isFinite(gsf) ? gsf.toPrecision(3) : '\u221e'} (this joint)`,
     x0 + width / 2, y0 + height - 7 * k);
   c.restore();
@@ -369,7 +370,7 @@ export function drawJointCell(ax, cell, opt = {}) {
  */
 export function wrapText(ctx, text, maxWidth, font = '12px Helvetica, Arial, sans-serif') {
   ctx.save();
-  ctx.font = font;
+  ctx.font = figureFont(font);
   const out = [];
   let line = '';
   for (const word of String(text ?? '').split(/\s+/).filter(Boolean)) {
@@ -409,7 +410,7 @@ export function drawBlocks(ax, polys, opt = {}) {
     });
     if (labels) {
       c.fillStyle = '#333';
-      c.font = '9px Helvetica, Arial, sans-serif';
+      c.font = figureFont('9px Helvetica, Arial, sans-serif');
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       polys.forEach((p, k) => {
@@ -600,7 +601,7 @@ export function drawArrow(ax, p0, p1, colour = '#c00', headPx = 9, lineWidth = 1
 
 export function drawReactionLabel(ctx, x, y, name, value, opt = {}) {
   const {
-    colour = '#0072BD',
+    colour = '#000',
     align = 'left',
     baseline = 'middle',
     size = 11,
@@ -614,11 +615,11 @@ export function drawReactionLabel(ctx, x, y, name, value, opt = {}) {
   ctx.save();
   ctx.fillStyle = colour;
   ctx.textBaseline = 'alphabetic';
-  ctx.font = mainFont;
+  ctx.font = figureFont(mainFont);
   const mainW = ctx.measureText(main).width;
-  ctx.font = subFont;
+  ctx.font = figureFont(subFont);
   const subW = sub ? ctx.measureText(sub).width : 0;
-  ctx.font = mainFont;
+  ctx.font = figureFont(mainFont);
   const valW = ctx.measureText(valueText).width;
   const totalW = mainW + subW + valW;
   const baseY = baseline === 'bottom' ? y : y + size * 0.35;
@@ -626,13 +627,13 @@ export function drawReactionLabel(ctx, x, y, name, value, opt = {}) {
   if (align === 'right') startX = x - totalW;
   if (align === 'center') startX = x - totalW / 2;
   ctx.textAlign = 'left';
-  ctx.font = mainFont;
+  ctx.font = figureFont(mainFont);
   ctx.fillText(main, startX, baseY);
   if (sub) {
-    ctx.font = subFont;
+    ctx.font = figureFont(subFont);
     ctx.fillText(sub, startX + mainW + 1, baseY + size * 0.24);
   }
-  ctx.font = mainFont;
+  ctx.font = figureFont(mainFont);
   ctx.fillText(valueText, startX + mainW + subW + (sub ? 2 : 0), baseY);
   ctx.font = oldFont;
   ctx.restore();
@@ -667,7 +668,7 @@ export function drawSupports(ax, a, b) {
       c.arc(X, Y, 4, 0, 2 * Math.PI);
       c.fillStyle = '#111';
       c.fill();
-      c.font = 'bold 11px Helvetica, Arial, sans-serif';
+      c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
       c.fillStyle = '#111';
       c.textAlign = 'left';
       c.textBaseline = 'bottom';
@@ -762,7 +763,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       // At the load-line end of each ray, pushed clear of the load line on the
       // side away from the pole.
       const side = pole[0] >= 0 ? -1 : 1;
-      c.font = '10px Helvetica, Arial, sans-serif';
+      c.font = figureFont('10px Helvetica, Arial, sans-serif');
       c.fillStyle = '#333';
       c.textAlign = side < 0 ? 'right' : 'left';
       c.textBaseline = 'middle';
@@ -793,7 +794,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       drawArrow(ax, h0, h1, '#111', 11, 2.3);
       const [hx0, hy0] = ax.toPx(h0);
       const [hx1, hy1] = ax.toPx(h1);
-      c.font = 'bold 11px Helvetica, Arial, sans-serif';
+      c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
       c.fillStyle = '#111';
       c.textAlign = 'center';
       c.textBaseline = 'bottom';
@@ -815,7 +816,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.fillStyle = '#111';
       c.fill();
       if (labels) {
-        c.font = 'bold 12px Helvetica, Arial, sans-serif';
+        c.font = figureFont('bold 12px Helvetica, Arial, sans-serif');
         c.textAlign = 'left';
         c.textBaseline = 'middle';
         c.fillText('O', px + 7, py);
@@ -861,7 +862,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
       c.stroke();
       if (labels) {
         c.fillStyle = '#666';
-        c.font = '12px Helvetica, Arial, sans-serif';
+        c.font = figureFont('12px Helvetica, Arial, sans-serif');
         c.fillText("O' trial pole", tx + 7, ty);
       }
     }
@@ -884,7 +885,7 @@ export function drawForcePolygon(ax, fp, opt = {}) {
 export function drawEnds(ax, A, B, opt = {}) {
   const { colour = '#7d3c98' } = opt;
   ax.clipped((c) => {
-    c.font = 'bold 12px Helvetica, Arial, sans-serif';
+    c.font = figureFont('bold 12px Helvetica, Arial, sans-serif');
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     for (const [p, name] of [[A, 'A'], [B, 'B']]) {
@@ -941,7 +942,7 @@ export function drawThrustLabels(ax, points, opt = {}) {
     : Math.max(0, Math.min(segments, points.length - 1));
   if (n < 1) return;
   ax.clipped((c) => {
-    c.font = '10px Helvetica, Arial, sans-serif';
+    c.font = figureFont('10px Helvetica, Arial, sans-serif');
     c.fillStyle = colour;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -1008,7 +1009,7 @@ export function drawEquilibriumTriangle(ax, fp, opt = {}) {
     const dy = y1 - y0;
     const len = Math.hypot(dx, dy) || 1;
     c.save();
-    c.font = 'bold 11px Helvetica, Arial, sans-serif';
+    c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
     c.fillStyle = colour;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -1118,7 +1119,7 @@ export function drawEquilibriumConcurrency(ax, fp, opt = {}) {
   c.lineWidth = 1;
   c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
-  c.font = 'bold 11px Helvetica, Arial, sans-serif';
+  c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
   c.fillStyle = '#333';
   c.textAlign = 'left';
   c.textBaseline = 'top';
@@ -1145,7 +1146,7 @@ export function drawEquilibriumConcurrency(ax, fp, opt = {}) {
     const q1 = K;
     pxArrow(q0, q1, v.colour);
 
-    c.font = '10px Helvetica, Arial, sans-serif';
+    c.font = figureFont('10px Helvetica, Arial, sans-serif');
     c.fillStyle = v.colour;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -1161,7 +1162,7 @@ export function drawEquilibriumConcurrency(ax, fp, opt = {}) {
   c.arc(K[0], K[1], 3.2, 0, 2 * Math.PI);
   c.fillStyle = '#111';
   c.fill();
-  c.font = 'bold 11px Helvetica, Arial, sans-serif';
+  c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
   c.textAlign = 'left';
   c.textBaseline = 'bottom';
   c.fillText('K', K[0] + 6, K[1] - 4);
@@ -1335,7 +1336,7 @@ export function drawBlockEquilibrium(ax, block, opt = {}) {
   c.lineWidth = 1;
   c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 
-  c.font = 'bold 12px Helvetica, Arial, sans-serif';
+  c.font = figureFont('bold 12px Helvetica, Arial, sans-serif');
   c.fillStyle = '#333';
   c.textAlign = 'left';
   c.textBaseline = 'top';
@@ -1377,7 +1378,7 @@ export function drawBlockEquilibrium(ax, block, opt = {}) {
     const len = Math.hypot(dx, dy) || 1;
     const lx = (A0[0] + A1[0]) / 2 - (dy / len) * 11;
     const ly = (A0[1] + A1[1]) / 2 + (dx / len) * 11;
-    c.font = '10px Helvetica, Arial, sans-serif';
+    c.font = figureFont('10px Helvetica, Arial, sans-serif');
     c.fillStyle = v.colour;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -1404,7 +1405,7 @@ export function drawBlockEquilibrium(ax, block, opt = {}) {
     c.moveTo(sx0 + sw, sy0 - 4);
     c.lineTo(sx0 + sw, sy0 + 4);
     c.stroke();
-    c.font = '10px Helvetica, Arial, sans-serif';
+    c.font = figureFont('10px Helvetica, Arial, sans-serif');
     c.fillStyle = '#111';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
@@ -1424,7 +1425,7 @@ export function drawBlockEquilibrium(ax, block, opt = {}) {
   c.arc(Kx, Ky, 3.2, 0, 2 * Math.PI);
   c.fillStyle = '#111';
   c.fill();
-  c.font = 'bold 11px Helvetica, Arial, sans-serif';
+  c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
   c.textAlign = 'left';
   c.textBaseline = 'bottom';
   c.fillText('K', Kx + 6, Ky - 4);
@@ -1441,7 +1442,7 @@ export function drawHinges(ax, hinges, opt = {}) {
   const { colour = '#A2142F', labels = true } = opt;
   if (!hinges || !hinges.length) return;
   ax.clipped((c) => {
-    c.font = 'bold 10px Helvetica, Arial, sans-serif';
+    c.font = figureFont('bold 10px Helvetica, Arial, sans-serif');
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     hinges.forEach((h, i) => {
@@ -1522,7 +1523,7 @@ export function drawCentres(ax, motion, opt = {}) {
   const { colour = '#1f6f3f' } = opt;
   if (!motion) return;
   ax.clipped((c) => {
-    c.font = '10px Helvetica, Arial, sans-serif';
+    c.font = figureFont('10px Helvetica, Arial, sans-serif');
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     motion.motions.forEach((m, i) => {

@@ -1,3 +1,4 @@
+import { figureFont } from './fonts.js';
 /**
  * The chequered bar that says how big the thing on screen is.
  *
@@ -92,7 +93,7 @@ export function drawScaleBar(ax, opt = {}) {
   const text = barLabel(span, unit);
 
   c.save();
-  c.font = '10px Helvetica, Arial, sans-serif';
+  c.font = figureFont('10px Helvetica, Arial, sans-serif');
   c.textBaseline = 'alphabetic';
 
   const textW = c.measureText(text).width;

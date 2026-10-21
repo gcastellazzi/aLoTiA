@@ -1,3 +1,4 @@
+import { figureFont } from './fonts.js';
 /**
  * The block arch in three dimensions, on a plain canvas.
  *
@@ -519,7 +520,7 @@ export function drawReferenceFrame(ax, bounds, f, opt = {}) {
       c.lineTo(bx + uy * head * 0.38, by - ux * head * 0.38);
       c.closePath();
       c.fill();
-      c.font = 'bold 12px Helvetica, Arial, sans-serif';
+      c.font = figureFont('bold 12px Helvetica, Arial, sans-serif');
       c.textAlign = 'center';
       c.textBaseline = 'middle';
       c.fillText(label, x1 + ux * 10, y1 + uy * 10);

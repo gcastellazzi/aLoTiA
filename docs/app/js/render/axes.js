@@ -1,3 +1,4 @@
+import { figureFont } from './fonts.js';
 /**
  * MATLAB-looking axes on a Canvas.
  *
@@ -241,7 +242,7 @@ export class Axes {
     const tickFont = `${10 * this.fontScale}px Helvetica, Arial, sans-serif`;
     const titleFont = `bold ${12 * this.fontScale}px Helvetica, Arial, sans-serif`;
     const labelFont = `${10 * this.fontScale}px Helvetica, Arial, sans-serif`;
-    c.font = tickFont;
+    c.font = figureFont(tickFont);
 
     // Grid.
     c.globalAlpha = GRID_ALPHA;
@@ -290,14 +291,14 @@ export class Axes {
 
     // Title and axis labels.
     if (this.title) {
-      c.font = titleFont;
+      c.font = figureFont(titleFont);
       c.textAlign = 'center';
       c.textBaseline = 'bottom';
       c.fillText(this.title, b.x + b.w / 2, b.y - 7);
-      c.font = labelFont;
+      c.font = figureFont(labelFont);
     }
     if (this.xlabel) {
-      c.font = labelFont;
+      c.font = figureFont(labelFont);
       c.textAlign = 'center';
       c.textBaseline = 'bottom';
       c.fillText(this.xlabel, b.x + b.w / 2, this.height - 4);
@@ -306,7 +307,7 @@ export class Axes {
       c.save();
       c.translate(11, b.y + b.h / 2);
       c.rotate(-Math.PI / 2);
-      c.font = labelFont;
+      c.font = figureFont(labelFont);
       c.textAlign = 'center';
       c.textBaseline = 'top';
       c.fillText(this.ylabel, 0, 0);

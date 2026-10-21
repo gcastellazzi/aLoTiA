@@ -1,3 +1,4 @@
+import { figureFont, setFigureFont } from './render/fonts.js';
 /**
  * aLOTofImaginArches, in the browser.
  *
@@ -70,6 +71,8 @@ const el = (id) => document.getElementById(id);
 const ui = {
   example: el('example'), meta: el('meta'), warn: el('warn'),
   newWork: el('newWork'),
+  snapshotMain: el('snapshotMain'), snapshotAll: el('snapshotAll'),
+  figureFonts: el('figureFonts'),
   scaleSource: el('scaleSource'),
   thrust: el('thrust'), thrustValue: el('thrustValue'), reset: el('reset'),
   doubleThrustRange: el('doubleThrustRange'),
@@ -84,6 +87,8 @@ const ui = {
   showConstruction: el('showConstruction'),
   showMech: el('showMech'),
   showScale: el('showScale'),
+  showBlockConstruction: el('showBlockConstruction'),
+  showCalibration: el('showCalibration'),
   showGroups: el('showGroups'),
   mechOn: el('mechOn'), mechVerdict: el('mechVerdict'),
   mechCount: el('mechCount'), mechBand: el('mechBand'),
@@ -2689,8 +2694,8 @@ function draw() {
   drawThreePointRingPicks();
   drawProfiles();
   drawForces();
-  drawReference();
-  drawMeasurements();
+  if (ui.showCalibration.checked || state.ref.picking) drawReference();
+  if (ui.showCalibration.checked || state.measurements?.picking) drawMeasurements();
   mainAx.decorate();
   const blockEq = selectedBlockEquilibrium();
   if (blockEq) drawBlockEquilibrium(mainAx, blockEq.block, blockEq);
@@ -2865,9 +2870,10 @@ function drawSupportReactions() {
     drawArrow(mainAx, start, at, '#0072BD', 12, 2.6);
     mainAx.clipped((c) => {
       const [X, Y] = mainAx.toPx(start);
-      drawReactionLabel(c, X + (side === 'left' ? -5 : 5), Y - 4, name, label(value), {
-        align: side,
-        baseline: 'bottom',
+      drawReactionLabel(c, X + 10, Y + 5, name, label(value), {
+        align: 'left',
+        colour: '#000',
+        baseline: 'middle',
       });
     });
   };
@@ -2893,7 +2899,7 @@ function drawThrustConstructionNote(points, text = 'trial line of thrust') {
     c.save();
     c.translate((x0 + x1) / 2 - (dy / len) * 10, (y0 + y1) / 2 + (dx / len) * 10);
     c.rotate(angle);
-    c.font = '11px Helvetica, Arial, sans-serif';
+    c.font = figureFont('11px Helvetica, Arial, sans-serif');
     c.textAlign = 'center';
     c.textBaseline = 'bottom';
     c.fillStyle = '#666';
@@ -2919,7 +2925,7 @@ function drawGroupLabels() {
   if (!m?.groups?.length || !m.centroids?.length) return;
   ensureGroups();
   mainAx.clipped((c) => {
-    c.font = 'bold 10px Helvetica, Arial, sans-serif';
+    c.font = figureFont('bold 10px Helvetica, Arial, sans-serif');
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     m.groups.forEach((g, i) => {
@@ -3105,7 +3111,7 @@ function drawBandLegend(bands) {
   ].filter(([key]) => bands.rows.some((r) => r[key]));
   if (!rows.length) return;
   plotAx.clipped((c) => {
-    c.font = '11px Helvetica, Arial, sans-serif';
+    c.font = figureFont('11px Helvetica, Arial, sans-serif');
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     const x = plotAx.box.x + 14;
@@ -3130,7 +3136,7 @@ function drawBandEdgeMarkers(bands) {
     { band: 'pinned', colour: '#0072BD', label: 'mid A-B' },
   ];
   plotAx.clipped((c) => {
-    c.font = '10px Helvetica, Arial, sans-serif';
+    c.font = figureFont('10px Helvetica, Arial, sans-serif');
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     for (const row of bands.rows) {
@@ -3245,7 +3251,7 @@ function drawAxisLetters(ax) {
     c.lineTo(x0 + 4, b.y + 8);
     c.stroke();
 
-    c.font = 'bold 17.2px Helvetica, Arial, sans-serif';
+    c.font = figureFont('bold 17.2px Helvetica, Arial, sans-serif');
     c.textAlign = 'right';
     c.textBaseline = 'bottom';
     c.fillText('N', b.x + b.w - 10, y0 - 5);
@@ -3393,7 +3399,7 @@ function drawHeymanView() {
     // The labels on the diagram are set 30 per cent larger than the tick text:
     // they name the three lines a student is being asked to compare, and at the
     // size of an axis number they read as part of the furniture.
-    c.font = '13px Helvetica, Arial, sans-serif';
+    c.font = figureFont('13px Helvetica, Arial, sans-serif');
     c.fillStyle = '#2e7d32';
     c.textAlign = 'left';
     let [lx, ly] = plotAx.toPx([d[1].N, d[1].M]);
@@ -3419,19 +3425,19 @@ function drawHeymanView() {
   drawJointCell(plotAx, nm);
   plotAx.clipped((c) => {
     const [X, Y] = plotAx.toPx([nm.N, nm.M]);
-    c.font = 'bold 13px Helvetica, Arial, sans-serif';
+    c.font = figureFont('bold 13px Helvetica, Arial, sans-serif');
     c.fillStyle = nm.inside ? '#2e7d32' : '#A2142F';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
     c.fillText('current', X + 6, Y - 5);
 
-    c.font = 'bold 16px Helvetica, Arial, sans-serif';
+    c.font = figureFont('bold 16px Helvetica, Arial, sans-serif');
     c.fillStyle = safety?.factor >= 1 ? '#2e7d32' : '#A2142F';
     c.textAlign = 'left';
     c.textBaseline = 'top';
     c.fillText(heymanSafetyLabel(safety), plotAx.box.x + 10, plotAx.box.y + 10);
     if (safety?.point?.joint !== undefined) {
-      c.font = '13px Helvetica, Arial, sans-serif';
+      c.font = figureFont('13px Helvetica, Arial, sans-serif');
       c.fillText(`critical joint ${safety.point.joint}`,
         plotAx.box.x + 10, plotAx.box.y + 32);
     }
@@ -3539,7 +3545,7 @@ function drawTrace() {
       });
     }
   });
-  drawNormalPreview();
+  if (ui.showBlockConstruction.checked) drawNormalPreview();
 }
 
 const NORMAL_COLOUR = { reference: '#D95319', failed: '#A2142F' };
@@ -3764,7 +3770,7 @@ function drawForces() {
       const start = [p[0] - dir[0] * l, p[1] - dir[1] * l];
       drawArrow(mainAx, start, p, APPLIED_FORCE_COLOUR, 10);
       const [X, Y] = mainAx.toPx(start);
-      c.font = 'bold 10px Helvetica, Arial, sans-serif';
+      c.font = figureFont('bold 10px Helvetica, Arial, sans-serif');
       c.fillStyle = APPLIED_FORCE_COLOUR;
       c.textAlign = 'left';
       c.textBaseline = 'bottom';
@@ -3908,7 +3914,7 @@ function drawReference() {
       c.moveTo(x0, y0);
       c.lineTo(x1, y1);
       c.stroke();
-      c.font = 'bold 11px Helvetica, Arial, sans-serif';
+      c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
       c.textAlign = 'center';
       c.textBaseline = 'bottom';
       const label = `${ui.refLength.value} ${SYSTEMS[state.system].length.label}`;
@@ -3984,7 +3990,7 @@ function drawDimension(c, item) {
   const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   c.translate(mid[0], mid[1]);
   c.rotate(angle);
-  c.font = 'bold 11px Helvetica, Arial, sans-serif';
+  c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
   c.textAlign = 'center';
   c.textBaseline = 'bottom';
   const textWidth = c.measureText(label).width;
@@ -4587,7 +4593,7 @@ function drawThreePointRingPicks() {
   ].filter((q) => q.p);
   if (!items.length) return;
   mainAx.clipped((c) => {
-    c.font = 'bold 11px Helvetica, Arial, sans-serif';
+    c.font = figureFont('bold 11px Helvetica, Arial, sans-serif');
     for (const item of items) {
       const [X, Y] = mainAx.toPx(item.p);
       c.beginPath();
@@ -5070,7 +5076,10 @@ function drawProfiles() {
 }
 
 /** Which of the two views the right-hand pane is showing. */
+let exportSide = null;
+
 function sideView() {
+  if (exportSide) return exportSide;
   if (ui.tabBlockTable.classList.contains('active')) return 'blocktable';
   if (ui.tabSolid.classList.contains('active')) return 'solid';
   if (ui.tabHeyman.classList.contains('active')) return 'heyman';
@@ -5186,7 +5195,7 @@ function drawSolidGroupLegend(groups) {
   const x = b.x + 10;
   const y = b.y + 10;
   c.save();
-  c.font = '11px Helvetica, Arial, sans-serif';
+  c.font = figureFont('11px Helvetica, Arial, sans-serif');
   const rows = groups.slice(0, maxRows).map((g, i) => ({
     label: `${i + 1}. ${g.name} (${g.count})`,
     color: g.color,
@@ -7123,7 +7132,7 @@ ui.stateFile.addEventListener('change', (e) => {
 });
 for (const k of ['showImage', 'showBlocks', 'showWeights', 'showThrust',
   'showCable', 'showLabels', 'showJoints', 'showConstruction', 'showRays',
-  'showReactions', 'showScale']) {
+  'showReactions', 'showScale', 'showBlockConstruction', 'showCalibration']) {
   ui[k].addEventListener('change', draw);
 }
 // SHOWING THE MECHANISM CHANGES THE LINE, not only what is drawn of it: with
@@ -7183,4 +7192,105 @@ updateSolidAlignButtons();
 showNotesEditing(false);
 loadCatalogue().catch((err) => {
   ui.meta.textContent = `could not load the examples: ${err.message}`;
+});
+
+
+// Render exports on independent canvases, including views currently hidden.
+// A twofold pixel density preserves sharp ticks and text in the PNG.
+function snapshotFigures(all) {
+  const axes = [mainAx, forceAx, solidAx, plotAx];
+  const saved = axes.map((ax) => ({
+    canvas: ax.canvas, ctx: ax.ctx, syncSize: ax.syncSize,
+    width: ax.width, height: ax.height, dpr: ax.dpr,
+    view: { ...ax.view }, margin: [...ax.margin],
+    title: ax.title, xlabel: ax.xlabel, ylabel: ax.ylabel,
+  }));
+  const cache = { solidFit: state.solidFit, plotFitKey: state.plotFitKey,
+    solidBounds: state.solidBounds, showSolidAxes: state.showSolidAxes };
+  const scale = ui.showScale.checked;
+  const status = ui.plotStatus.textContent;
+  const files = [];
+  try {
+    axes.forEach((ax, i) => {
+      const canvas = document.createElement('canvas');
+      const width = i === 0 ? Math.max(600, saved[i].width || 900) : 900;
+      const height = i === 0 ? Math.max(400, saved[i].height || 600) : 650;
+      canvas.width = Math.round(width * 2);
+      canvas.height = Math.round(height * 2);
+      ax.canvas = canvas;
+      ax.ctx = canvas.getContext('2d');
+      ax.syncSize = () => { ax.width = width; ax.height = height; ax.dpr = 2; };
+      ax.syncSize();
+      if (i === 2) ax.margin = [30, 30, 30, 30];
+    });
+    ui.showScale.checked = true;
+    exportSide = sideView();
+    draw();
+    files.push(['01-main.png', mainAx.canvas.toDataURL('image/png')]);
+    if (all) {
+      exportSide = 'force';
+      fitForceView();
+      draw();
+      files.push(['02-force-polygon.png', forceAx.canvas.toDataURL('image/png')]);
+      exportSide = 'solid';
+      state.solidFit = null;
+      state.showSolidAxes = true;
+      draw();
+      files.push(['03-view-3d.png', solidAx.canvas.toDataURL('image/png')]);
+      exportSide = 'heyman';
+      state.plotFitKey = null;
+      draw();
+      files.push(['04-heyman.png', plotAx.canvas.toDataURL('image/png')]);
+    }
+    return files;
+  } finally {
+    exportSide = null;
+    axes.forEach((ax, i) => Object.assign(ax, saved[i]));
+    Object.assign(state, cache);
+    ui.showScale.checked = scale;
+    ui.plotStatus.textContent = status;
+    draw();
+  }
+}
+
+async function saveSnapshots(all) {
+  if (!state.model) return;
+  try {
+    // One folder selection also avoids browser limits on multiple downloads.
+    const folder = all && window.showDirectoryPicker
+      ? await window.showDirectoryPicker({ mode: 'readwrite' }) : null;
+    const files = snapshotFigures(all);
+    const prefix = new Date().toISOString().replace(/[:.]/g, '-');
+    for (const [suffix, url] of files) {
+      const name = `${prefix}-${suffix}`;
+      if (folder) {
+        const handle = await folder.getFileHandle(name, { create: true });
+        const writer = await handle.createWritable();
+        await writer.write(await (await fetch(url)).blob());
+        await writer.close();
+      } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        a.click();
+      }
+    }
+    ui.saveStatus.textContent = `Saved ${files.length} PNG snapshot${all ? 's' : ''}`;
+  } catch (error) {
+    if (error.name !== 'AbortError') ui.saveStatus.textContent = `Snapshot failed: ${error.message}`;
+  }
+}
+ui.snapshotMain.addEventListener('click', () => saveSnapshots(false));
+ui.snapshotAll.addEventListener('click', () => saveSnapshots(true));
+ui.figureFonts.addEventListener('click', () => el('fontDialog').showModal());
+el('fontDialog').addEventListener('close', () => {
+  if (el('fontDialog').returnValue !== 'apply') return;
+  const size = Number(el('figureFontSize').value);
+  setFigureFont(size, el('figureFontFamily').value);
+  const k = Math.max(1, Math.min(1.8, size / 100 || 1));
+  for (const ax of [mainAx, forceAx, plotAx]) {
+    ax.margin = [Math.ceil(62 * k), Math.ceil(30 * k), Math.ceil(30 * k), Math.ceil(46 * k)];
+    ax.reequalize();
+  }
+  draw();
 });

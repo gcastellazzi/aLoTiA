@@ -702,3 +702,8 @@ ul.forces button:hover {
   .plotbuild label { display: none; }
   .plotbuild .reading { min-width: 110px; }
 }
+
+.snapshot-tools { flex-wrap: wrap; }
+#fontDialog { border: 1px solid #aaa; border-radius: 5px; padding: 20px; }
+#fontDialog label { display: block; margin: 12px 0; }
+#fontDialog::backdrop { background: rgb(0 0 0 / 25%); }
