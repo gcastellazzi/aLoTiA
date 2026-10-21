@@ -58,6 +58,22 @@ multiplier of each pattern, which is the sharp form of the comparison: a
 pattern differing from the kinematic one but carrying a multiplier a tenth of a
 per cent above it is the same answer reached another way.
 
+### Where the contact pairs stand
+
+The contact pairs are written with the model, before the first step. They were
+written inside it, which Abaqus/Standard refuses --- "the contact pair keyword
+should be used before any *step keyword" --- and an exported deck run directly
+stopped in the input file processor with one error per joint, never starting.
+It appeared to work only because Abaqus/CAE, asked to submit such a file,
+writes an input file of its own and puts them where they belong; what ran then
+was CAE's deck, with CAE's time incrementation and output requests, not the one
+exported.
+
+This is the same mistake the general contact of the running-bond assemblies was
+moved out of the step for. One of the two was corrected and the other left
+behind, which is what comes of fixing the case in front of one instead of the
+rule. The suite now checks the placement of both.
+
 ### The hinges that do not move
 
 The hinges of a mechanism where the velocity vanishes are the absolute centres

@@ -62,7 +62,7 @@ import sys
 from odbAccess import openOdb
 
 
-REVISION = 8                # printed, so a stale copy is visible at once
+REVISION = 9                # printed, so a stale copy is visible at once
 STEP = 'Lateral_action'
 KE_FRACTION = 1.0e-3        # ALLKE / ALLIE above which the blocks are moving
 
@@ -278,7 +278,7 @@ def most_open(row):
     return hits[0][1] if hits else 0.0
 
 
-def divergence_of(rows, scale, jump=5.0, tol=1.0e-6):
+def divergence_of(rows, scale, jump=5.0, tol=1.0e-4):
     """The frame at which the openings run away, which is the collapse.
 
     THERE IS NO FRAME AT WHICH NOTHING IS OPEN. A deformable model has no such
@@ -289,7 +289,7 @@ def divergence_of(rows, scale, jump=5.0, tol=1.0e-6):
     parted by a thousandth of nothing under gravity alone.
 
     What distinguishes collapse is not that the openings are large but that
-    they RUN AWAY: in this analysis the widest opening goes 0.0006, 0.0018,
+    they RUN AWAY: in one such analysis the widest opening goes 0.0006, 0.0018,
     0.005, 0.016, 0.058, and then 1.22 -- a factor of twenty in one frame,
     where every step before it was a factor of three. So the collapse is read
     as the first frame whose widest opening exceeds the previous frame's by
@@ -298,6 +298,16 @@ def divergence_of(rows, scale, jump=5.0, tol=1.0e-6):
     it is there that the hinge pattern is cleanest: each hinging joint open at
     one end with the other still shut, before the blocks come apart and every
     joint is open at both.
+
+    A RATIO ALONE IS NOT ENOUGH, which the first increments of any such run
+    make plain: under gravity the contact takes up its initial position and the
+    widest opening goes from 5e-11 to 2e-5 in one frame -- a factor of four
+    hundred thousand, and nothing at all. It is a settling of numbers near the
+    arithmetic floor, not a joint opening. So the jump counts only once the
+    opening is itself of a size that means something: a ten-thousandth of the
+    span of the arch, which on a ring of 25 units is 2.5e-3, a thousandth of
+    its thickness. Collapse openings are three to four orders of magnitude
+    above that, and the settling is two below it.
     """
     for index in range(1, len(rows)):
         here = most_open(rows[index])
