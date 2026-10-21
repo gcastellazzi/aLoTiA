@@ -228,17 +228,21 @@ console.log('');
 console.log('  the multiplier');
 console.log(`    kinematic, every four-hinge mechanism   α0 = ${f4(governing.alpha)}`);
 if (odb) {
-  console.log(`    Abaqus, the ramped body force          α  = ${f4(alphaAbaqus)}`
+  // An interval, not a figure: the model carried the one frame and not the
+  // next, so that is what it establishes.
+  console.log(`    Abaqus, the ramped body force          α `
     + (alphaAbaqus == null
-      ? '  (nothing opened and the energy never rose)'
-      : alphaMotion == null ? '  (from the energy balance, no opening read)' : ''));
-  if (alphaBefore != null && alphaAbaqus != null) {
-    console.log(`    bracketed by the frame spacing between ${f4(alphaBefore)} and `
-      + `${f4(alphaAbaqus)}`);
-  }
-  if (Number.isFinite(alphaAbaqus)) {
-    console.log(`    Abaqus against the kinematic value          `
-      + `${(100 * (alphaAbaqus / governing.alpha - 1)).toFixed(2)} per cent`);
+      ? ' — (nothing ran away: the arch stood to the ceiling of the ramp)'
+      : alphaBefore != null
+        ? ` ∈ [${f4(alphaBefore)}, ${f4(alphaAbaqus)}]`
+        : ` = ${f4(alphaAbaqus)}`)
+    + (alphaMotion == null && alphaAbaqus != null ? '  (from the energy balance)' : ''));
+  if (alphaAbaqus != null) {
+    // `band` below is the thrust band; this one is the spread of the bracket.
+    const spread = [alphaBefore, alphaAbaqus].filter((v) => v != null)
+      .map((v) => `${(100 * (v / governing.alpha - 1)).toFixed(2)} per cent`);
+    console.log('    Abaqus against the kinematic value          '
+      + (spread.length > 1 ? `between ${spread[0]} and ${spread[1]}` : spread[0]));
   }
 } else {
   console.log('    Abaqus                                 — (no odb given)');
@@ -273,6 +277,25 @@ if (band) {
 if (odb) {
   console.log(`    Abaqus                       ${pattern(abaqusFour)}`
     + (same(abaqusFour, governing.hinges) ? '  = the kinematic pattern' : note(abaqusFour)));
+
+  // ONLY THE INTERIOR JOINTS CAN BE COMPARED. A contact pair exists between
+  // two voussoirs; the two end faces bear on the abutments through boundary
+  // conditions, so a hinge at a springing opens no contact and leaves no trace
+  // in COPEN. Setting a four-hinge pattern that includes a springing against
+  // one that cannot contain a springing counts a disagreement that is an
+  // artefact of what the output can see.
+  const last = model.joints.length - 1;
+  const inner = (hinges) => (hinges ?? []).filter((h) => h.joint > 0 && h.joint < last);
+  const kin = inner(governing.hinges);
+  const abq = inner(abaqusFour);
+  const agree = kin.filter((h) => abq.some((k) => k.joint === h.joint && k.face === h.face));
+  const place = kin.filter((h) => abq.some((k) => k.joint === h.joint));
+  console.log('');
+  console.log('    on the joints a contact pair can see — 1 to '
+    + `${last - 1}, the springings excluded:`);
+  console.log(`      kinematic ${pattern(kin)}   ·   Abaqus ${pattern(abq)}`);
+  console.log(`      ${agree.length} of ${kin.length} agree in joint and face, `
+    + `${place.length} in joint alone`);
 }
 
 console.log('');

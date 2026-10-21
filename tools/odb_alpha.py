@@ -62,7 +62,7 @@ import sys
 from odbAccess import openOdb
 
 
-REVISION = 5                # printed, so a stale copy is visible at once
+REVISION = 7                # printed, so a stale copy is visible at once
 STEP = 'Lateral_action'
 KE_FRACTION = 1.0e-3        # ALLKE / ALLIE above which the blocks are moving
 
@@ -249,17 +249,39 @@ def mark_hinges(row, scale, tol=1.0e-5, shut=0.05):
     return row
 
 
-def onset_of(rows, scale, tol=1.0e-5):
-    """The first frame at which any joint has parted measurably.
+def most_open(row):
+    """The widest opening anywhere in the arch at one frame."""
+    hits = widest(row)
+    return hits[0][1] if hits else 0.0
 
-    THE THRESHOLD IS RELATIVE TO THE ARCH, not absolute: an opening is a length
-    and a ring of radius 27 does not part by the same amount as one of radius
-    0.3. Below it the number is the elastic shortening of the contact and the
-    noise of the solver, not a joint that has opened.
+
+def divergence_of(rows, scale, jump=5.0, tol=1.0e-6):
+    """The frame at which the openings run away, which is the collapse.
+
+    THERE IS NO FRAME AT WHICH NOTHING IS OPEN. A deformable model has no such
+    frame: the stone has finite stiffness, so as the thrust line approaches a
+    face the joint there opens progressively from the very first increment.
+    Thresholding the opening therefore finds whatever the threshold was set to
+    -- too tight and the answer is frame zero, where the joints have already
+    parted by a thousandth of nothing under gravity alone.
+
+    What distinguishes collapse is not that the openings are large but that
+    they RUN AWAY: in this analysis the widest opening goes 0.0006, 0.0018,
+    0.005, 0.016, 0.058, and then 1.22 -- a factor of twenty in one frame,
+    where every step before it was a factor of three. So the collapse is read
+    as the first frame whose widest opening exceeds the previous frame's by
+    more than `jump`, and the multiplier is bracketed between that frame and
+    the one before it. The frame before is the last state the arch held, and
+    it is there that the hinge pattern is cleanest: each hinging joint open at
+    one end with the other still shut, before the blocks come apart and every
+    joint is open at both.
     """
-    for index, row in enumerate(rows):
-        hits = widest(row)
-        if hits and hits[0][1] > tol * scale:
+    for index in range(1, len(rows)):
+        here = most_open(rows[index])
+        there = most_open(rows[index - 1])
+        if here <= tol * scale:
+            continue
+        if there <= 0.0 or here > jump * there:
             return index
     return None
 
@@ -327,7 +349,9 @@ def main(argv):
         rows, scale = scan(step, orphans)
         for row in rows:
             mark_hinges(row, scale)
-        onset = onset_of(rows, scale)
+        diverged = divergence_of(rows, scale)
+        # The last state the arch held, which is where the pattern is read.
+        held = diverged - 1 if diverged else (len(rows) - 1 if rows else None)
         energy_time = when_motion_starts(step)
 
         result = {
@@ -340,44 +364,39 @@ def main(argv):
             'frames': len(frames),
             'scale': scale,
             'step_time_last': last_time,
-            'step_time_motion': rows[onset]['t'] if onset is not None else None,
+            'step_time_motion': rows[diverged]['t'] if diverged else None,
+            'step_time_before': rows[held]['t'] if held is not None else None,
             'step_time_energy': energy_time,
-            'onset_frame': onset,
+            'diverged_frame': diverged,
+            'held_frame': held,
             'ran_to_end': abs(last_time - 1.0) < 1.0e-9,
             'energy': [{'t': float(t), 'allke': float(k)}
                        for t, k in history(step, 'ALLKE')],
-            'joints': rows[onset]['joints'] if onset is not None else {},
+            # `joints` is the last state the arch held: that is where the hinge
+            # pattern is, and it is what the comparison reads.
+            'joints': rows[held]['joints'] if held is not None else {},
+            'joints_diverged': rows[diverged]['joints'] if diverged else {},
             'joints_last': rows[-1]['joints'],
             'evolution': [{'t': row['t'],
+                           'widest': most_open(row),
                            'joints': dict((str(j), {'max': mx, 'min': mn})
                                           for j, mx, mn in widest(row))}
                           for row in rows],
         }
         # The comparison reads `joints` keyed by joint number as a string.
-        result['joints'] = dict((str(j), r) for j, r in result['joints'].items())
-        result['joints_last'] = dict((str(j), r)
-                                     for j, r in result['joints_last'].items())
+        for name in ('joints', 'joints_diverged', 'joints_last'):
+            result[name] = dict((str(j), r) for j, r in result[name].items())
         if alpha_max is not None:
             result['alpha_last'] = alpha_max * last_time
             if result['step_time_motion'] is not None:
                 result['alpha_motion'] = alpha_max * result['step_time_motion']
             if energy_time is not None:
                 result['alpha_energy'] = alpha_max * energy_time
-            # The bracket the frame spacing leaves. The onset happened between
-            # the last frame that was still at rest and the first that was not,
-            # and quoting the upper end alone would claim a resolution the
-            # output interval does not have.
-            before = None
-            for name in ('onset_frame',):
-                index = result[name]
-                if index:
-                    before = rows[index - 1]['t']
-            if before is None and energy_time is not None:
-                earlier = [r['t'] for r in rows if r['t'] < energy_time]
-                before = earlier[-1] if earlier else None
-            if before is not None:
-                result['step_time_before'] = before
-                result['alpha_before'] = alpha_max * before
+            # The bracket the frame spacing leaves. The arch held at one frame
+            # and was running away at the next, and quoting the upper end alone
+            # would claim a resolution the output interval does not have.
+            if result['step_time_before'] is not None:
+                result['alpha_before'] = alpha_max * result['step_time_before']
 
         # ---------------------------------------------------------- the report
         print('%s, step %s: %d frames, step time %.4f to %.4f'
@@ -394,32 +413,49 @@ def main(argv):
             print('does whether or not the arch gave way: see the openings.')
 
         print('')
-        print('how the joints opened, frame by frame (the four widest of each):')
+        print('how the joints opened, frame by frame: the widest opening in the')
+        print('arch, what it was a factor of, then the four widest joints.')
         for index, row in enumerate(rows):
             hits = widest(row)[:4]
-            mark = ' <- onset' if index == onset else ''
+            factor = ''
+            if index:
+                there = most_open(rows[index - 1])
+                if there > 0:
+                    factor = 'x%-5.1f' % (most_open(row) / there)
+            mark = ''
+            if index == held:
+                mark = ' <- last state held'
+            if index == diverged:
+                mark = ' <- running away'
             alpha_here = ('a=%.4f ' % (alpha_max * row['t'])) if alpha_max else ''
-            print('  t=%.4f %s%s%s'
-                  % (row['t'], alpha_here,
+            print('  t=%.4f %s%-9.3g %-7s %s%s'
+                  % (row['t'], alpha_here, most_open(row), factor,
                      '  '.join('j%d %.3g/%.3g' % (j, mx, mn) for j, mx, mn in hits)
                      or 'nothing open',
                      mark))
 
         print('')
-        if onset is None:
-            print('no joint ever parted by more than 1e-5 of the arch: no')
-            print('mechanism formed, and the multiplier is above the ceiling of')
-            print('the ramp. Export again with a larger alphaMax.')
+        print('THE SPRINGING JOINTS CANNOT BE SEEN HERE. Only the joints between')
+        print('two voussoirs are contact pairs; the two end faces bear on the')
+        print('abutments through boundary conditions, so a hinge forming there')
+        print('leaves no contact opening. Joints 1 to n-1 are what follows.')
+        print('')
+        if diverged is None:
+            print('the openings never ran away: the arch stood to the ceiling of')
+            print('the ramp, and the multiplier is above it. Export again with a')
+            print('larger alphaMax.')
         else:
-            print('at the onset, frame %d, step time %.4f:'
-                  % (onset, rows[onset]['t']))
+            print('at the last state the arch held, frame %d, step time %.4f:'
+                  % (held, rows[held]['t']))
             print('  a joint open at one end and shut at the other is a hinge,')
             print('  and the point given is the end that stayed shut --- which')
             print('  is where the hinge is.')
-            for joint, mx, mn in widest(rows[onset]):
+            shown = 0
+            for joint, mx, mn in widest(rows[held]):
                 row = result['joints'][str(joint)]
-                if not row.get('parted'):
+                if not row.get('parted') or shown >= 8:
                     continue
+                shown += 1
                 where = row['min']['point'] or [float('nan')] * 2
                 print('  joint %-3d opened %.6g, far end %.3g at (%.4f, %.4f)  %s'
                       % (joint, mx, mn, where[0], where[1],
@@ -438,33 +474,43 @@ def main(argv):
                 print('a multiplier: pass the .inp beside the .odb.')
         else:
             if result.get('alpha_motion') is not None:
-                print('alpha at the onset of the motion:   %.6f'
+                print('alpha where the openings run away: %.6f'
                       % result['alpha_motion'])
             print('alpha at the last frame:            %.6f' % result['alpha_last'])
             if energy_time is not None:
                 print('alpha where ALLKE leaves zero:      %.6f'
                       % (alpha_max * energy_time))
             if result.get('alpha_before') is not None:
-                print('the onset lies between %.6f and %.6f: the frames are that'
+                print('')
+                print('the collapse lies between %.6f and %.6f: the frames are'
                       % (result['alpha_before'],
                          result.get('alpha_motion') or result.get('alpha_energy')))
-                print('far apart, and no reading is sharper than the spacing.')
+                print('that far apart, and no reading is sharper than their spacing.')
             # NOT alpha_last. If the step ran to its end, alpha_last is
             # the ceiling of the ramp and nothing else: a number chosen before
             # the analysis, which would then be reported as its result.
-            got = result.get('alpha_motion') or result.get('alpha_energy')
+            #
+            # AND NOT ONE NUMBER EITHER. The arch was in equilibrium at the
+            # frame it held and running away at the next, so what the analysis
+            # establishes is an interval: a lower bound, because the model
+            # carried that much, and an upper bound, because it did not carry
+            # the next. A single figure quoted from the middle of it would be
+            # an arithmetic mean of two frame numbers passing for a result.
+            lo = result.get('alpha_before')
+            hi = result.get('alpha_motion') or result.get('alpha_energy')
             if result.get('alpha_kinematic') is not None:
                 k = result['alpha_kinematic']
-                if got is None:
-                    print('alpha from the kinematic theorem:   %.6f' % k)
-                    print('Abaqus gave no multiplier to compare: nothing opened'
-                          ' and the')
+                print('alpha from the kinematic theorem:   %.6f' % k)
+                if hi is None:
+                    print('Abaqus gave no multiplier to compare: nothing ran'
+                          ' away and the')
                     print('energy never rose, so the arch stood to the ceiling'
                           ' of the ramp.')
+                elif lo is None:
+                    print('Abaqus is %+.2f%% of it.' % (100.0 * (hi / k - 1.0)))
                 else:
-                    print('alpha from the kinematic theorem:   %.6f  '
-                          '(Abaqus is %+.2f%% of it)'
-                          % (k, 100.0 * (got / k - 1.0)))
+                    print('Abaqus brackets it between %+.2f%% and %+.2f%% of it.'
+                          % (100.0 * (lo / k - 1.0), 100.0 * (hi / k - 1.0)))
 
         if out_path:
             handle = open(out_path, 'w')
