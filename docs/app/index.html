@@ -17,10 +17,23 @@
       <p>Funicular analysis laboratory</p>
     </div>
   </div>
+  <div class="tabs snapshot-tools">
+    <button class="tab" id="snapshotMain" type="button">Snapshot</button>
+    <button class="tab" id="snapshotAll" type="button">Snapshot all</button>
+    <button class="tab" id="figureFonts" type="button">Figure fonts</button>
+  </div>
   <p class="header-note">Line of thrust and funicular analysis of masonry arches</p>
   <a class="header-link" href="../index.html">User guide &#8599;</a>
 </header>
 
+<dialog id="fontDialog">
+  <form method="dialog">
+    <h3>Figure fonts</h3>
+    <label>Family <select id="figureFontFamily"><option value="Helvetica, Arial, sans-serif">Helvetica / Arial</option><option value="Georgia, serif">Georgia</option><option value="monospace">Monospace</option></select></label>
+    <label>Size (%) <input id="figureFontSize" type="number" min="75" max="180" step="5" value="100"></label>
+    <button value="cancel">Cancel</button><button value="apply">Apply</button>
+  </form>
+</dialog>
 <main>
   <aside id="panel">
     <div class="tabs" role="tablist">
@@ -570,6 +583,8 @@ Plain text, with **bold**, *emph*, _underline_ and
       <label><input type="checkbox" id="showRays"> Ray letters</label>
       <label><input type="checkbox" id="showReactions"> Reactions</label>
       <label><input type="checkbox" id="showMech"> Mechanism</label>
+      <label><input type="checkbox" id="showBlockConstruction" checked> Block construction guides</label>
+      <label><input type="checkbox" id="showCalibration" checked> Calibration and measurements</label>
       <label><input type="checkbox" id="showScale" checked> Scale bar</label>
     </div>
 
