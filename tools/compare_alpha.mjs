@@ -146,12 +146,22 @@ function abaqusHinges(rows) {
       const db = Math.hypot(shut[0] - joint.b[0], shut[1] - joint.b[1]);
       face = da <= db ? 'intrados' : 'extrados';
     }
-    out.push({ joint: j, face, gap: row.max.gap, closed: row.min?.gap ?? null });
+    // The extraction flags a joint open at one end and shut at the other; an
+    // older file without the flag is judged here by the same rule.
+    const closed = row.min?.gap ?? null;
+    const hinge = row.hinge ?? (closed !== null && closed < 0.05 * row.max.gap);
+    out.push({ joint: j, face, gap: row.max.gap, closed, hinge });
   }
   return out.sort((p, q) => q.gap - p.gap);
 }
 const abaqusAll = abaqusHinges(odb?.joints);
-const abaqusFour = abaqusAll.slice(0, 4).sort((p, q) => p.joint - q.joint);
+// THE HINGES FIRST, AND ONLY THEN THE WIDEST. A joint that has lifted at both
+// ends is a block coming away, not a hinge, and taking the four widest
+// openings without that distinction reads a mechanism of four hinges off an
+// arch that has come apart.
+const abaqusHinging = abaqusAll.filter((h) => h.hinge);
+const abaqusFour = (abaqusHinging.length >= 4 ? abaqusHinging : abaqusAll)
+  .slice(0, 4).sort((p, q) => p.joint - q.joint);
 
 // ------------------------------------------------------------------ the report --
 const f4 = (v) => (Number.isFinite(v) ? v.toFixed(4) : '—');
@@ -263,13 +273,25 @@ centres.forEach((c) => {
     + (c.fixed ? 'at rest' : `moving, ${c.speed.toExponential(2)} of the field`));
 });
 
-if (odb && abaqusAll.length > 4) {
+if (odb && abaqusAll.length) {
   console.log('');
-  console.log(`  ${abaqusAll.length} joints parted in Abaqus. The four widest are read as the`);
-  console.log('  mechanism; the rest are listed so that a fifth comparable opening is');
-  console.log('  not passed over in silence:');
-  abaqusAll.slice(4).forEach((h) => {
-    console.log(`    joint ${String(h.joint).padStart(3)} opened ${h.gap.toExponential(3)}`);
+  console.log(`  ${abaqusAll.length} joint(s) parted in Abaqus, `
+    + `${abaqusHinging.length} of them open at one end only.`);
+  if (abaqusHinging.length > 4) {
+    console.log('  More than four hinges: the pattern below is the four widest of');
+    console.log('  them, and the others are listed so that a fifth comparable');
+    console.log('  opening is not passed over in silence.');
+  } else if (abaqusHinging.length < 4) {
+    console.log('  Fewer than four hinges at this frame. Either the onset was');
+    console.log('  caught before the mechanism was complete, or the collapse was');
+    console.log('  not one of hinges — sliding, which Heyman\'s third assumption');
+    console.log('  excludes, leaves joints that shear rather than open.');
+  }
+  abaqusAll.forEach((h) => {
+    const chosen = abaqusFour.some((k) => k.joint === h.joint);
+    console.log(`    joint ${String(h.joint).padStart(3)} opened ${h.gap.toExponential(3)}`
+      + `, far end ${(h.closed ?? NaN).toExponential(2)}`
+      + `  ${h.hinge ? 'hinge' : 'open at both ends'}${chosen ? ', taken' : ''}`);
   });
 }
 

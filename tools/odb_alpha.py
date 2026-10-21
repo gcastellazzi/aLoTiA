@@ -2,6 +2,7 @@
 """The activation multiplier and the collapse mechanism, read off an Abaqus odb.
 
     abaqus python tools/odb_alpha.py job.odb [job.inp] [-o alpha.json]
+                                     [-s step] [-a alphaMax]
 
 WHAT IT IS FOR. The application computes the multiplier of a lateral action
 proportional to the masses by the kinematic theorem, and the hinges of the
@@ -22,7 +23,14 @@ WHAT IT REPORTS.
                   energy balance rather than off the increment the solver gave
                   up on -- which is a property of the time stepping, not of the
                   arch.
-  joints          per joint, how far it opened at the last frame and where.
+  joints          per joint, how far it opened AT THE ONSET OF THE MOTION and
+                  where. The frame matters: an implicit quasi-static step runs
+                  happily through a collapse, so at the end of it the arch is
+                  not a mechanism but a heap, every joint wide open at both
+                  ends and no hinge to be read. At the onset each hinging joint
+                  is open at one end and still shut at the other, which is what
+                  a hinge is. The whole evolution goes into the JSON so the
+                  choice can be checked rather than trusted.
                   The exported deck makes the LO face of each block the slave
                   surface of the pair with the block below it, so a contact
                   opening reported on the instance of block k belongs to the
@@ -36,7 +44,13 @@ section, which this file does not contain; the openings are reported as
 coordinates and tools/compare_alpha.mjs puts them against the session that
 produced the deck. Nothing here decides anything the odb does not say.
 
-Runs under the Python that ships with Abaqus, 2.7 or 3.x alike.
+WITHOUT THE LATERAL STEP there is no multiplier to read, and the script says
+so rather than failing: the step the deck does carry is still opened and the
+joints that parted are still reported. That is one of the three readings the
+comparison wants, and an analysis already run should not have to be run again
+to give it up.
+
+Runs under the Python that ships with Abaqus, 2.7 as in 6.14 or 3.x alike.
 """
 
 from __future__ import print_function
@@ -48,12 +62,20 @@ import sys
 from odbAccess import openOdb
 
 
+REVISION = 3                # printed, so a stale copy is visible at once
 STEP = 'Lateral_action'
 KE_FRACTION = 1.0e-3        # ALLKE / ALLIE above which the blocks are moving
 
 
 def read_deck(path):
-    """alphaMax, the direction and the kinematic value, from the deck's comments."""
+    """alphaMax, the direction and the kinematic value, from the deck's comments.
+
+    THE DECK HAS TO BE THE ONE THE APPLICATION WROTE. Abaqus/CAE, asked to
+    write the input file of a job, writes its own: the model survives but every
+    comment is stripped, and these three numbers live in comments. A deck that
+    has been through CAE therefore says nothing about alphaMax, and the value
+    has to be given with -a instead.
+    """
     out = {}
     keys = {
         'ALOTIA_ALPHA_MAX': 'alpha_max',
@@ -70,8 +92,12 @@ def read_deck(path):
 
 def history(step, name):
     """One history output of the whole model, as a list of (time, value)."""
-    for region in step.historyRegions.values():
-        if name in region.historyOutputs:
+    # .keys() rather than `in`: an Abaqus repository is dict-like but which
+    # version supports what has changed, and 6.14 is the oldest this has to run
+    # on.
+    for key in step.historyRegions.keys():
+        region = step.historyRegions[key]
+        if name in region.historyOutputs.keys():
             return list(region.historyOutputs[name].data)
     return []
 
@@ -96,7 +122,7 @@ def block_of(instance_name):
     return int(found.group(1)) if found else None
 
 
-def openings(odb, frame):
+def openings(frame, coords, orphans):
     """The contact opening of every joint at one frame.
 
     COPEN lives on the nodes of the slave surface, and the slave surface of
@@ -106,17 +132,22 @@ def openings(odb, frame):
     penetration, and reporting those as openings would make every joint a
     hinge.
     """
-    if 'COPEN' not in frame.fieldOutputs:
+    if 'COPEN' not in frame.fieldOutputs.keys():
         return {}
     field = frame.fieldOutputs['COPEN']
-    coords = {}
     per_joint = {}
     for value in field.values:
         instance = value.instance
         if instance is None:
+            # A contact value is expected to carry the instance its node is on.
+            # If this ever counts up, the assumption is wrong on this version
+            # and the openings would silently come back empty -- so it is
+            # counted and printed rather than passed over.
+            orphans[0] += 1
             continue
         block = block_of(instance.name)
         if block is None or block < 2:
+            orphans[1] += 1
             continue
         joint = block - 1                      # joints[joint] separates block-1 | block
         gap = float(value.data)
@@ -124,10 +155,15 @@ def openings(odb, frame):
             # The coordinates of a whole instance, read once: the openings are
             # reported by node label and the label alone says nothing about
             # where on the joint the masonry parted.
+            # float() throughout: Abaqus hands out its own float type, which
+            # json refuses to serialise -- "23.723166 is not JSON
+            # serializable" -- and the failure comes only at the very end,
+            # after the whole odb has been read.
             coords[instance.name] = dict(
-                (n.label, tuple(n.coordinates)) for n in instance.nodes
+                (int(n.label), [float(c) for c in n.coordinates])
+                for n in instance.nodes
             )
-        point = coords[instance.name].get(value.nodeLabel)
+        point = coords[instance.name].get(int(value.nodeLabel))
         row = per_joint.setdefault(joint, {'max': None, 'min': None, 'nodes': 0})
         row['nodes'] += 1
         entry = {'gap': gap, 'node': int(value.nodeLabel),
@@ -140,90 +176,235 @@ def openings(odb, frame):
     return per_joint
 
 
+def scan(step, orphans):
+    """Every frame of the step: its time and how far each joint had parted."""
+    coords = {}
+    rows = []
+    for frame in step.frames:
+        rows.append({
+            't': float(frame.frameValue),
+            'joints': openings(frame, coords, orphans),
+        })
+    scale = 1.0
+    points = [p for table in coords.values() for p in table.values()]
+    if points:
+        for axis in (0, 2):
+            span = max(p[axis] for p in points) - min(p[axis] for p in points)
+            scale = max(scale, span)
+    return rows, scale
+
+
+def widest(row):
+    """The joints of one frame, widest opening first."""
+    out = [(joint, data['max']['gap'], data['min']['gap'])
+           for joint, data in row['joints'].items()
+           if data['max'] is not None and data['min'] is not None]
+    out.sort(key=lambda item: -item[1])
+    return out
+
+
+def mark_hinges(row, scale, tol=1.0e-5, shut=0.05):
+    """Which of the parted joints are hinges, and which are separations.
+
+    A HINGE IS OPEN AT ONE END AND SHUT AT THE OTHER. That is the whole content
+    of the word: the two blocks still bear on one another along the line the
+    rotation is about. A joint whose far end has also lifted is not a hinge but
+    a block coming away, and counting it as one would read a mechanism of five
+    or six hinges off an arch that has three.
+    """
+    for data in row['joints'].values():
+        if data['max'] is None or data['min'] is None:
+            continue
+        wide = data['max']['gap']
+        narrow = data['min']['gap']
+        data['parted'] = bool(wide > tol * scale)
+        data['hinge'] = bool(data['parted'] and narrow < shut * wide)
+    return row
+
+
+def onset_of(rows, scale, tol=1.0e-5):
+    """The first frame at which any joint has parted measurably.
+
+    THE THRESHOLD IS RELATIVE TO THE ARCH, not absolute: an opening is a length
+    and a ring of radius 27 does not part by the same amount as one of radius
+    0.3. Below it the number is the elastic shortening of the contact and the
+    noise of the solver, not a joint that has opened.
+    """
+    for index, row in enumerate(rows):
+        hits = widest(row)
+        if hits and hits[0][1] > tol * scale:
+            return index
+    return None
+
+
 def main(argv):
     out_path = None
-    if '-o' in argv:
-        at = argv.index('-o')
-        out_path = argv[at + 1]
-        argv = argv[:at] + argv[at + 2:]
+    want_step = None
+    given_alpha = None
+    for flag, target in (('-o', 'out'), ('-s', 'step'), ('-a', 'alpha')):
+        if flag in argv:
+            at = argv.index(flag)
+            value = argv[at + 1]
+            argv = argv[:at] + argv[at + 2:]
+            if target == 'out':
+                out_path = value
+            elif target == 'step':
+                want_step = value
+            else:
+                given_alpha = float(value)
+    print('odb_alpha.py revision %d' % REVISION)
     if not argv:
         print(__doc__)
         return 2
     odb_path = argv[0]
     deck = read_deck(argv[1]) if len(argv) > 1 else {}
+    if given_alpha is not None:
+        deck['alpha_max'] = given_alpha
+    elif len(argv) > 1 and 'alpha_max' not in deck:
+        print('%s carries no ALOTIA_ALPHA_MAX comment. A deck rewritten by'
+              % argv[1])
+        print('Abaqus/CAE has had its comments stripped: use the file the')
+        print('application exported, or give the number with -a.')
 
     odb = openOdb(odb_path, readOnly=True)
     try:
-        if STEP not in odb.steps:
-            print('%s has no step named %s; it carries %s'
-                  % (odb_path, STEP, ', '.join(odb.steps.keys())))
-            print('Export the model again with the lateral step asked for.')
-            return 1
-        step = odb.steps[STEP]
+        names = list(odb.steps.keys())
+        step_name = want_step or STEP
+        lateral = step_name in names
+        if not lateral:
+            # The deck was written before the lateral step existed, or the step
+            # was not asked for. The multiplier cannot be recovered -- there is
+            # no ramped action whose level the step time measures -- but the
+            # joints that parted can, and they are a third of the comparison.
+            step_name = names[-1] if names else None
+            if step_name is None:
+                print('%s carries no step at all' % odb_path)
+                return 1
+            print('%s has no step named %s; it carries %s.'
+                  % (odb_path, want_step or STEP, ', '.join(names)))
+            print('Reading %s instead: the joints that parted are reported, the'
+                  % step_name)
+            print('multiplier is not. For the multiplier, export the model again')
+            print('with the lateral step asked for (the "lateral alpha" box).')
+            print('')
+        step = odb.steps[step_name]
         frames = list(step.frames)
         if not frames:
             print('the lateral step has no frame: the analysis did not start')
             return 1
 
-        alpha_max = deck.get('alpha_max')
-        last_time = frames[-1].frameValue
-        motion_time = when_motion_starts(step)
+        alpha_max = deck.get('alpha_max') if lateral else None
+        last_time = float(frames[-1].frameValue)
+
+        orphans = [0, 0]
+        rows, scale = scan(step, orphans)
+        for row in rows:
+            mark_hinges(row, scale)
+        onset = onset_of(rows, scale)
+        energy_time = when_motion_starts(step)
 
         result = {
             'odb': odb_path,
-            'step': STEP,
+            'step': step_name,
+            'lateral': lateral,
             'alpha_max': alpha_max,
             'direction': deck.get('direction'),
             'alpha_kinematic': deck.get('alpha_kinematic'),
             'frames': len(frames),
+            'scale': scale,
             'step_time_last': last_time,
-            'step_time_motion': motion_time,
-            'completed': abs(last_time - 1.0) < 1.0e-9,
-            'energy': [{'t': t, 'allke': k} for t, k in history(step, 'ALLKE')],
-            'joints': {},
+            'step_time_motion': rows[onset]['t'] if onset is not None else None,
+            'step_time_energy': energy_time,
+            'onset_frame': onset,
+            'ran_to_end': abs(last_time - 1.0) < 1.0e-9,
+            'energy': [{'t': float(t), 'allke': float(k)}
+                       for t, k in history(step, 'ALLKE')],
+            'joints': rows[onset]['joints'] if onset is not None else {},
+            'joints_last': rows[-1]['joints'],
+            'evolution': [{'t': row['t'],
+                           'joints': dict((str(j), {'max': mx, 'min': mn})
+                                          for j, mx, mn in widest(row))}
+                          for row in rows],
         }
+        # The comparison reads `joints` keyed by joint number as a string.
+        result['joints'] = dict((str(j), r) for j, r in result['joints'].items())
+        result['joints_last'] = dict((str(j), r)
+                                     for j, r in result['joints_last'].items())
         if alpha_max is not None:
             result['alpha_last'] = alpha_max * last_time
-            if motion_time is not None:
-                result['alpha_motion'] = alpha_max * motion_time
-
-        for joint, row in openings(odb, frames[-1]).items():
-            result['joints'][str(joint)] = row
+            if result['step_time_motion'] is not None:
+                result['alpha_motion'] = alpha_max * result['step_time_motion']
 
         # ---------------------------------------------------------- the report
-        print('%s, step %s: %d frames, last step time %.6f%s'
-              % (odb_path, STEP, len(frames), last_time,
-                 ' (ran to the end: the arch did not collapse)'
-                 if result['completed'] else ''))
-        if alpha_max is None:
-            print('alphaMax is not known: pass the .inp beside the .odb, or the'
-                  ' multiplier cannot be scaled out of the step time.')
+        print('%s, step %s: %d frames, step time %.4f to %.4f'
+              % (odb_path, step_name, len(frames), rows[0]['t'], last_time))
+        if orphans[0] or orphans[1]:
+            print('COPEN: %d value(s) carried no instance, %d sat on no numbered'
+                  ' block.' % (orphans[0], orphans[1]))
+        if result['ran_to_end']:
+            # An implicit quasi-static step does not stop when the arch gives
+            # way: the blocks move, the solver keeps converging, and the step
+            # reaches its end. Completion is not evidence of standing, and the
+            # openings below say which it was.
+            print('the step ran to its end, which an implicit quasi-static step')
+            print('does whether or not the arch gave way: see the openings.')
+
+        print('')
+        print('how the joints opened, frame by frame (the four widest of each):')
+        for index, row in enumerate(rows):
+            hits = widest(row)[:4]
+            mark = ' <- onset' if index == onset else ''
+            alpha_here = ('a=%.4f ' % (alpha_max * row['t'])) if alpha_max else ''
+            print('  t=%.4f %s%s%s'
+                  % (row['t'], alpha_here,
+                     '  '.join('j%d %.3g/%.3g' % (j, mx, mn) for j, mx, mn in hits)
+                     or 'nothing open',
+                     mark))
+
+        print('')
+        if onset is None:
+            print('no joint ever parted by more than 1e-5 of the arch: no')
+            print('mechanism formed, and the multiplier is above the ceiling of')
+            print('the ramp. Export again with a larger alphaMax.')
         else:
-            print('alpha at the last converged frame: %.6f' % result['alpha_last'])
-            if motion_time is None:
-                print('the kinetic energy never rose: no mechanism formed.')
-            else:
-                print('alpha where the motion begins:      %.6f  (step time %.4f)'
-                      % (result['alpha_motion'], motion_time))
+            print('at the onset, frame %d, step time %.4f:'
+                  % (onset, rows[onset]['t']))
+            print('  a joint open at one end and shut at the other is a hinge,')
+            print('  and the point given is the end that stayed shut --- which')
+            print('  is where the hinge is.')
+            for joint, mx, mn in widest(rows[onset]):
+                row = result['joints'][str(joint)]
+                if not row.get('parted'):
+                    continue
+                where = row['min']['point'] or [float('nan')] * 2
+                print('  joint %-3d opened %.6g, far end %.3g at (%.4f, %.4f)  %s'
+                      % (joint, mx, mn, where[0], where[1],
+                         'HINGE' if row.get('hinge') else 'open at both ends'))
+            hinges = [j for j, r in result['joints'].items() if r.get('hinge')]
+            print('  %d hinge(s), %d joint(s) parted at both ends'
+                  % (len(hinges),
+                     len([1 for r in result['joints'].values()
+                          if r.get('parted') and not r.get('hinge')])))
+
+        print('')
+        if alpha_max is None:
+            if lateral:
+                print('alphaMax is not known, so the step time cannot be scaled'
+                      ' into')
+                print('a multiplier: pass the .inp beside the .odb.')
+        else:
+            if result.get('alpha_motion') is not None:
+                print('alpha at the onset of the motion:   %.6f'
+                      % result['alpha_motion'])
+            print('alpha at the last frame:            %.6f' % result['alpha_last'])
+            if energy_time is not None:
+                print('alpha where ALLKE leaves zero:      %.6f'
+                      % (alpha_max * energy_time))
             if result.get('alpha_kinematic') is not None:
                 k = result['alpha_kinematic']
                 got = result.get('alpha_motion', result['alpha_last'])
                 print('alpha from the kinematic theorem:   %.6f  '
                       '(Abaqus is %+.2f%% of it)' % (k, 100.0 * (got / k - 1.0)))
-        parted = [(int(j), r['max']['gap']) for j, r in result['joints'].items()
-                  if r['max'] and r['max']['gap'] > 0.0]
-        parted.sort(key=lambda row: -row[1])
-        if parted:
-            print('joints that parted, widest first:')
-            for joint, gap in parted:
-                row = result['joints'][str(joint)]
-                where = row['max']['point']
-                print('  joint %-3d opened %.6g at (%.4f, %.4f), least %.3g'
-                      % (joint, gap, where[0] if where else float('nan'),
-                         where[1] if where else float('nan'),
-                         row['min']['gap'] if row['min'] else float('nan')))
-        else:
-            print('no joint parted at the last frame.')
 
         if out_path:
             handle = open(out_path, 'w')
