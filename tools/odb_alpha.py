@@ -56,13 +56,14 @@ Runs under the Python that ships with Abaqus, 2.7 as in 6.14 or 3.x alike.
 from __future__ import print_function
 
 import json
+import math
 import re
 import sys
 
 from odbAccess import openOdb
 
 
-REVISION = 10                # printed, so a stale copy is visible at once
+REVISION = 11                # printed, so a stale copy is visible at once
 STEP = 'Lateral_action'
 KE_FRACTION = 1.0e-3        # ALLKE / ALLIE above which the blocks are moving
 
@@ -87,6 +88,12 @@ def read_deck(path):
         found = re.search(r'\*\*\s*' + key + r'\s*=\s*([-\d.eE+]+)', text)
         if found:
             out[name] = float(found.group(1))
+    # The coefficient of friction the model was given, from the *Friction block
+    # itself rather than from a comment: it is what the mobilised ratio below
+    # has to be compared with.
+    found = re.search(r'\*Friction[^\n]*\n\s*([-\d.eE+]+)', text, re.IGNORECASE)
+    if found:
+        out['mu'] = float(found.group(1))
     return out
 
 
@@ -130,6 +137,37 @@ def when_motion_starts(step, fraction=KE_FRACTION):
     return None
 
 
+def node_field(frame, *names):
+    """A per-node field, by (instance, label), as the largest magnitude seen.
+
+    Each argument is a tuple of alternative names for one component, tried in
+    order; several arguments are combined in quadrature, so that the two
+    tangential components of a shear come back as one magnitude.
+    """
+    out = {}
+    for group in names:
+        got = None
+        for name in group:
+            got = lookup(frame.fieldOutputs, name)
+            if got is not None:
+                break
+        if got is None:
+            continue
+        for value in got.values:
+            if value.instance is None:
+                continue
+            try:
+                size = abs(float(value.data))
+            except TypeError:                     # a vector: its magnitude
+                size = math.sqrt(sum([float(c) ** 2 for c in value.data]))
+            key = (value.instance.name, int(value.nodeLabel))
+            if len(names) > 1:
+                out[key] = math.sqrt(out.get(key, 0.0) ** 2 + size ** 2)
+            else:
+                out[key] = max(out.get(key, 0.0), size)
+    return out
+
+
 def block_of(instance_name):
     """The block number an instance belongs to: BLOCK_7_I or BLOCK_7_S3 -> 7."""
     found = re.match(r'BLOCK_(\d+)_', instance_name)
@@ -150,26 +188,23 @@ def openings(frame, coords, orphans):
     if field is None:
         orphans[2] += 1
         return {}
-    # The tangential slip, beside the opening, so that the question of whether
-    # the masonry slid rather than hinged is answered from the output and not
-    # from an assumption. Heyman's third assumption grants friction without
-    # limit; the model is given 0.6, and if it slides it is not computing what
-    # the limit analysis computes.
-    slips = {}
-    for name in ('CSLIP1', 'CSLIP'):
-        got = lookup(frame.fieldOutputs, name)
-        if got is None:
-            continue
-        for value in got.values:
-            if value.instance is None:
-                continue
-            try:
-                size = abs(float(value.data))
-            except TypeError:                 # a vector: take its magnitude
-                size = max([abs(float(c)) for c in value.data])
-            key = (value.instance.name, int(value.nodeLabel))
-            slips[key] = max(slips.get(key, 0.0), size)
-        break
+    # The tangential slip and the contact stresses, beside the opening.
+    #
+    # WHY THE STRESSES AND NOT THE SLIP. CSLIP is not evidence of sliding. The
+    # default friction of Abaqus/Standard is a penalty formulation, in which a
+    # node sticking perfectly still slips elastically by a small fraction of
+    # the element size -- half a per cent of it by default -- and CSLIP counts
+    # that elastic slip along with any real one. On a mesh of this size the two
+    # are the same order of magnitude, so the number cannot tell them apart.
+    #
+    # The ratio of the shear to the pressure can. A node sticks while
+    # |tau| < mu p and slides when the two are equal, that being the Coulomb
+    # cone; so |tau| / p IS the coefficient of friction that node demands, the
+    # same quantity statics.js: jointForces computes from the line of thrust,
+    # and it is read here to be compared with it.
+    slips = node_field(frame, ('CSLIP1', 'CSLIP'))
+    press = node_field(frame, ('CPRESS',))
+    shear = node_field(frame, ('CSHEAR1',), ('CSHEAR2',))
     per_joint = {}
     for value in field.values:
         instance = value.instance
@@ -200,10 +235,17 @@ def openings(frame, coords, orphans):
             )
         point = coords[instance.name].get(int(value.nodeLabel))
         row = per_joint.setdefault(joint, {'max': None, 'min': None, 'nodes': 0,
-                                           'slip': 0.0})
+                                           'slip': 0.0, 'mu': None})
         row['nodes'] += 1
-        row['slip'] = max(row['slip'],
-                          slips.get((instance.name, int(value.nodeLabel)), 0.0))
+        key = (instance.name, int(value.nodeLabel))
+        row['slip'] = max(row['slip'], slips.get(key, 0.0))
+        # The mobilised coefficient, at the nodes that carry pressure. A node
+        # with no pressure is open and demands nothing.
+        p = press.get(key, 0.0)
+        if p > 0.0:
+            mobilised = shear.get(key, 0.0) / p
+            if row['mu'] is None or mobilised > row['mu']:
+                row['mu'] = mobilised
         entry = {'gap': gap, 'node': int(value.nodeLabel),
                  'instance': instance.name,
                  'point': [point[0], point[2]] if point else None}
@@ -522,32 +564,51 @@ def main(argv):
                     continue
                 shown += 1
                 where = row['min']['point'] or [float('nan')] * 2
-                slip = row.get('slip') or 0.0
+                mob = row.get('mu')
                 print('  joint %-3d opened %.6g, far end %.3g at (%.4f, %.4f),'
-                      ' slip %.3g  %s'
-                      % (joint, mx, mn, where[0], where[1], slip,
+                      ' mu %s  %s'
+                      % (joint, mx, mn, where[0], where[1],
+                         '%.3f' % mob if mob is not None else '  -  ',
                          'HINGE' if row.get('hinge') else 'open at both ends'))
             hinges = [j for j, r in result['joints'].items() if r.get('hinge')]
             print('  %d hinge(s), %d joint(s) parted at both ends'
                   % (len(hinges),
                      len([1 for r in result['joints'].values()
                           if r.get('parted') and not r.get('hinge')])))
-            slips = [r.get('slip') or 0.0 for r in result['joints'].values()]
-            opens = [r['max']['gap'] for r in result['joints'].values()
-                     if r.get('max')]
-            if any(slips):
-                print('  widest slip %.3g against widest opening %.3g: the'
-                      % (max(slips), max(opens) if opens else float('nan')))
-                print('  masonry %s'
-                      % ('hinged and did not slide'
-                         if max(slips) < 0.1 * max(opens or [1])
-                         else 'SLID as well as hinged --- which the limit'
-                              ' analysis excludes'))
+            # DID IT SLIDE? The ratio of shear to pressure is the coefficient
+            # of friction each joint demands, and a joint slides when that
+            # ratio reaches the one the model was given --- the Coulomb cone.
+            # CSLIP is NOT the test: the default friction of Abaqus/Standard is
+            # a penalty formulation in which a node sticking perfectly still
+            # slips elastically by a fraction of the element size, and CSLIP
+            # counts that along with any real sliding.
+            mob = [(int(j), r['mu']) for j, r in result['joints'].items()
+                   if r.get('mu') is not None]
+            mu_given = deck.get('mu')
+            if not mob:
+                print('  no contact stress is in the output, so whether the')
+                print('  masonry slid cannot be told from this file: ask the')
+                print('  deck for CSTRESS on the contact pairs.')
             else:
-                print('  no tangential slip is in the output: ask the deck for'
-                      ' CDISP, which')
-                print('  carries CSLIP beside COPEN, if the sliding is in'
-                      ' question.')
+                mob.sort(key=lambda row: -row[1])
+                worst_joint, worst = mob[0]
+                result['mu_mobilised'] = worst
+                result['mu_mobilised_joint'] = worst_joint
+                result['mu_given'] = mu_given
+                print('  the friction demanded is at most %.3f, at joint %d'
+                      % (worst, worst_joint))
+                if mu_given:
+                    print('  against the %.2f the model was given: %s'
+                          % (mu_given,
+                             'AT THE CONE --- the joints slide, which the limit'
+                             ' analysis excludes'
+                             if worst >= 0.98 * mu_given
+                             else 'inside it, so the masonry hinged'
+                                  ' and did not slide'))
+                print('  (CSLIP is not the test: the penalty friction of'
+                      ' Abaqus/Standard')
+                print('  slips elastically while sticking, and CSLIP counts'
+                      ' that too.)')
 
         print('')
         if alpha_max is None:

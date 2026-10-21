@@ -74,6 +74,23 @@ moved out of the step for. One of the two was corrected and the other left
 behind, which is what comes of fixing the case in front of one instead of the
 rule. The suite now checks the placement of both.
 
+### A roller bed over a hinge
+
+A face that carries a hinge of the mechanism is left free of rollers. The
+roller bed blocks every node of the face in the direction normal to it, and
+turning the block about a hinge at one corner of that face swings the rest of
+the face out of its plane --- which is the direction the rollers forbid. So the
+hinge could not turn, and the arch hinged at the next joint inboard: the
+circular arch of the first example, whose kinematic mechanism hinges at joints
+0 and 15, hinged at 1 and 14 in the exported model.
+
+The fault underneath is that a `*Boundary` is bilateral. A face bearing on an
+abutment can only push; blocking its normal direction stops it lifting off as
+well, which is a restraint the masonry does not have. Where the mechanism names
+a hinge on that face the pin at the hinge is the whole of the support, so the
+rollers go; a face with no hinge on it keeps them, the block beyond the hinge
+being part of the ground.
+
 ### The hinges that do not move
 
 The hinges of a mechanism where the velocity vanishes are the absolute centres

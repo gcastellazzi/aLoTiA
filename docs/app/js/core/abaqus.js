@@ -1495,8 +1495,42 @@ export function abaqusInput(model, opt = {}) {
 
   const supportSets = pinPoints.map((p) => activeLineSets(meshes, p, { limit: 10 }));
   const forceSets = (forces.points ?? []).map((p) => activeLineSets(meshes, p, { limit: 12 }));
-  const faceSupports = faceMode
+  let faceSupports = faceMode
     ? rollerFaces(meshes, supports.filter(Boolean), chain) : [];
+
+  // A ROLLER BED OVER A FACE THAT CARRIES A PINNED HINGE SUPPRESSES THE HINGE,
+  // and that is not a detail: it moves the mechanism.
+  //
+  // The roller bed blocks every node of the face in the direction normal to
+  // it. Rotating the block about a hinge at one corner of that face swings the
+  // rest of the face out of its plane -- which is precisely the direction the
+  // rollers forbid. So the hinge cannot turn, and the arch hinges at the next
+  // joint inboard instead. In the first run of the circular arch it did
+  // exactly that: the kinematic mechanism hinges at joints 0 and 15, the model
+  // hinged at 1 and 14, one joint inboard at each end.
+  //
+  // The deeper fault is that a *Boundary is bilateral. A face bearing on an
+  // abutment can only push; blocking its normal direction stops it lifting off
+  // as well, which is a restraint the masonry does not have. Where the
+  // mechanism names a hinge on that face, the pin at the hinge is the whole of
+  // the support and the rollers contradict it, so the rollers go. A face with
+  // no hinge on it keeps them: the block beyond the hinge is part of the
+  // ground, and the masonry behind it is still there.
+  const suppressed = [];
+  if (onCentres && faceSupports.length) {
+    const nodeAt = (block, id) => meshes[block]?.nodes?.[id - 1];
+    const scale = Math.max(1e-12, ...meshes.flatMap((mesh) => mesh.nodes)
+      .map((q) => Math.hypot(q[0], q[2])));
+    const tol = scale * 1e-6;
+    faceSupports = faceSupports.filter((row) => {
+      const holds = centreList.some((c) => row.ids.some((id) => {
+        const q = nodeAt(row.block, id);
+        return q && Math.hypot(q[0] - c.point[0], q[2] - c.point[1]) <= tol;
+      }));
+      if (holds) suppressed.push(row);
+      return !holds;
+    });
+  }
 
   // A set is written for every lune: the springings, the loads and the roller
   // beds belong to each of them, the dome being the same section repeated.
@@ -1558,6 +1592,12 @@ export function abaqusInput(model, opt = {}) {
   if (supportMode === 'face-rollers' && !faceRows.length) {
     out.push('** Face rollers requested, but no exterior face connected to A/B could be identified.');
   }
+  suppressed.forEach((row) => {
+    out.push(`** The ${faceTag(row.support)} face of block ${row.block + 1} carries a `
+      + 'hinge of the mechanism,');
+    out.push('** so it is left free: a roller bed over it would block the very');
+    out.push('** direction the block has to move in to turn about that hinge.');
+  });
   if (mechanismSupports && !centreList.length) {
     out.push('** Mechanism supports requested, but no hinge at rest was supplied:');
     out.push('** the model is held at A and B as it would be with hinge lines alone.');
