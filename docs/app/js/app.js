@@ -87,6 +87,7 @@ const ui = {
   showConstruction: el('showConstruction'),
   showMech: el('showMech'),
   showScale: el('showScale'),
+  showTraceGuides: el('showTraceGuides'),
   showBlockConstruction: el('showBlockConstruction'),
   showCalibration: el('showCalibration'),
   showGroups: el('showGroups'),
@@ -3520,7 +3521,7 @@ const TRACE_COLOUR = { inner: '#0072BD', outer: '#7E2F8E' };
 function drawTrace() {
   const t = state.trace;
   if (!t) return;
-  mainAx.clipped((c) => {
+  if (ui.showTraceGuides.checked) mainAx.clipped((c) => {
     for (const which of ['inner', 'outer']) {
       const pts = t[which];
       if (!pts.length) continue;
@@ -7132,7 +7133,7 @@ ui.stateFile.addEventListener('change', (e) => {
 });
 for (const k of ['showImage', 'showBlocks', 'showWeights', 'showThrust',
   'showCable', 'showLabels', 'showJoints', 'showConstruction', 'showRays',
-  'showReactions', 'showScale', 'showBlockConstruction', 'showCalibration']) {
+  'showReactions', 'showScale', 'showTraceGuides', 'showBlockConstruction', 'showCalibration']) {
   ui[k].addEventListener('change', draw);
 }
 // SHOWING THE MECHANISM CHANGES THE LINE, not only what is drawn of it: with
