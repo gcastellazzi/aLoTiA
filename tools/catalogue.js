@@ -58,6 +58,12 @@ const ABOUT = [
     "Poleni's dome of St Peter's, cut as a lune rather than a barrel: the "
     + 'weights follow the width, and the two idealisations of one drawing part '
     + 'company. Five groups, two applied loads, and not one chain.'],
+  ['Example_8_Perronet_Nogent_sur_Seine.json',
+    "Perronet's arch of Saint-Edme at Nogent-sur-Seine, traced off his own "
+    + 'plate of 1782, which carries its scale: 90 pieds across the springings. '
+    + 'The spandrel is carried as a load over each voussoir, and the vertical '
+    + 'voussoirs at the springings are left to the abutment, because no line '
+    + 'of thrust turns with them.'],
 ];
 
 /** A title a menu can show, from a file name nobody chose for a menu. */

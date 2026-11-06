@@ -5,6 +5,33 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### A bridge of Perronet's, and the voussoirs that are not part of the arch
+
+A tenth example ships: the arch of Saint-Edme at Nogent-sur-Seine, built in
+1768 and drawn by Perronet himself in the *Description des projets* of 1782,
+plate XXVIII. It is the first example entered from an engraving rather than a
+photograph, and it needs neither a rectification nor a scale bar found in the
+picture: the draughtsman wrote **90 pieds** across the springings, which at the
+pied du roi is a span of 29.24 m. The intrados was traced on the half drawn
+after decentering -- the arch as it stands -- and mirrored; the depth of the
+ring, 0.85 m, is the one thing the plate resolves, at the crown, where the
+voussoir heads are drawn, and it is held constant, which is an assumption and
+is said to be one. The spandrel over the ring is carried as one vertical load
+per voussoir, and it is two thirds of the weight.
+
+**The interesting half of the result is a refusal.** Over the whole ring, from
+springing to springing, no line of thrust fits at any thrust -- with the
+spandrel or without it. Perronet's end arcs stand vertical at the springing, so
+the bed joint there is horizontal and the ring runs straight into the pier, and
+no funicular turns with them: those voussoirs are a wall, backed by the
+abutment, and they are not part of any chain. Taking the arch above the ten at
+each end that the abutment backs, a band opens between 0.495 and 0.646 of the
+total load, and the friction demanded nowhere exceeds 0.30.
+
+This is not a defect of the geometry or of the tracing. It is what a flattened
+basket handle does, and the application says so rather than drawing a line
+through masonry that cannot carry one.
+
 ### What the joints ask of friction
 
 The admissibility verdict now also reports the coefficient of friction the

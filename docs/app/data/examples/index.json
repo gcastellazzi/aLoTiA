@@ -1,6 +1,6 @@
 {
- "generated": "2026-09-03",
- "count": 9,
+ "generated": "2026-11-06",
+ "count": 10,
  "examples": [
   {
    "file": "example_1_circular_arch.json",
@@ -151,6 +151,22 @@
    "loads": 2,
    "kB": 98,
    "about": "Poleni's dome of St Peter's, cut as a lune rather than a barrel: the weights follow the width, and the two idealisations of one drawing part company. Five groups, two applied loads, and not one chain."
+  },
+  {
+   "file": "Example_8_Perronet_Nogent_sur_Seine.json",
+   "name": "Example 8 Perronet Nogent sur Seine",
+   "format": "session",
+   "blocks": 74,
+   "joints": 75,
+   "groups": [
+    "trace"
+   ],
+   "units": "SI",
+   "frame": "physical",
+   "image": "embedded",
+   "loads": 74,
+   "kB": 412,
+   "about": "Perronet's arch of Saint-Edme at Nogent-sur-Seine, traced off his own plate of 1782, which carries its scale: 90 pieds across the springings. The spandrel is carried as a load over each voussoir, and the vertical voussoirs at the springings are left to the abutment, because no line of thrust turns with them."
   }
  ]
 }
