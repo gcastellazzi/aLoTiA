@@ -5,6 +5,33 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Z layers and lines of thrust through a bridge
+
+Blocks now occupy `[Z, Z + thickness]`. Set Z beside the material and thickness
+before creating blocks, or assign a group's Z from the block table. Existing
+sessions default to Z = 0. Generating an arch at another Z retains the earlier
+layers; material and thickness controls default to new blocks only.
+
+The LoT tab offers each layer, all blocks as one combined XY problem, and all
+layer curves superimposed. Superimposed curves share **H/t**, not H/W: each
+layer receives H = h × its thickness, so thickness alone does not change its
+curve. This mode requires positive, uniform thickness within each layer;
+materials and XY geometry may differ. It applies to extruded sections, while
+Poleni lune analysis remains available in individual and combined modes.
+
+Applied forces belong to a layer and enter the combined problem once. Endpoints,
+start position, reaction split and thrust settings are retained independently
+per layer and for the combined section, including in saved sessions and unit
+conversions. In superimposed mode the layer selected for editing also supplies
+the force polygon and detailed readings; mechanism searches use a single
+selected section. Other layers appear faintly in XY and remain at their actual
+Z in the 3D view and mesh export.
+
+Coincident XY blocks from different layers contribute one summed load and one
+set of joints to the combined section. Other projected geometries retain every
+load; if they do not form a chain, A and B can still be imposed to construct the
+funicular, but a joint-based admissibility verdict is unavailable.
+
 ### A bridge of Perronet's, and the voussoirs that are not part of the arch
 
 A tenth example ships: the arch of Saint-Edme at Nogent-sur-Seine, built in

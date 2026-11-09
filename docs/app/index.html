@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>aLOTofImaginArches — funicular analysis of masonry arches</title>
 <link rel="stylesheet" href="../css/ui-kit.css">
-<link rel="stylesheet" href="css/app.css?v=20261106-arrow">
+<link rel="stylesheet" href="css/app.css?v=20261109-layers">
 </head>
 <body>
 
@@ -102,6 +102,11 @@
       <label class="inline">Apply thickness to
         <select id="thickTarget"></select>
       </label>
+      <label class="inline"><span id="blockZLabel">Z start m</span>
+        <input type="number" id="blockZ" step="0.1" value="0" list="zValues">
+        <datalist id="zValues"></datalist>
+      </label>
+      <p class="hint">New blocks occupy [Z, Z + thickness]. Groups sharing Z belong to the same layer.</p>
       <label><input type="checkbox" id="showGroups"> Group colours</label>
       <label class="inline">Clear blocks in
         <select id="clearTarget"></select>
@@ -255,6 +260,20 @@
     </div>
     <div class="pane" id="paneLot" hidden>
     <section>
+      <h2>Z layers</h2>
+      <label class="inline">Calculate
+        <select id="lotLayer"><option value="all">All — combined curve</option></select>
+      </label>
+      <label class="inline" id="overlayLayerRow" hidden>Edit / force polygon
+        <select id="overlayLayer"></select>
+      </label>
+      <label class="inline" id="normalizedThrustRow" hidden><span id="normalizedThrustLabel">Reference H/t</span>
+        <input type="number" id="normalizedThrust" min="0" step="any">
+      </label>
+      <p id="layerStatus" class="meta"></p>
+      <ul id="layerResults" class="layer-results"></ul>
+    </section>
+    <section>
       <h2>Points A and B</h2>
       <label><input type="checkbox" id="imposeEnds"> Impose both ends</label>
       <div class="row">
@@ -269,6 +288,7 @@
     </section>
     <section>
       <h2>Applied forces</h2>
+      <label class="inline">Layer Z <select id="forceLayer"></select></label>
       <label class="inline"><span id="forceLabelX">X kN</span>
         <input type="number" id="forceMagX" step="1" value="0">
       </label>
@@ -465,7 +485,7 @@
                 <thead>
                   <tr>
                     <th>#</th><th>sides</th><th>G(x, y)</th>
-                    <th>weight</th><th>group</th><th></th>
+                    <th>weight</th><th>Z start</th><th>thickness</th><th>group</th><th></th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -604,6 +624,6 @@ Plain text, with **bold**, *emph*, _underline_ and
     &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
 </footer>
 
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/app.js?v=20261109-layers"></script>
 </body>
 </html>

@@ -585,3 +585,31 @@ Where a cut crosses several shells the joint spans from the first material to
 the last, with the gaps inside it; the material itself is carried in
 `segments`. Admissibility therefore treats such a cut as continuous, which is
 the one place this is still approximate.
+
+
+## Z layers (`layers.js`)
+
+Z is the start face, in the same physical length unit as out-of-plane thickness.
+A group supplies Z to its blocks; blocks occupy `[Z, Z + thickness]`. Z does not
+enter the planar equilibrium equations. Missing Z in older sessions means zero.
+
+`layersOf` collects populated layers, `modelInLayer` prepares the selected XY
+section and recovers its joints, and `forcesInLayer` selects only its point
+loads. The combined section merges exactly coincident projected polygons,
+summing weight and thickness, and keeps source indices for block selection.
+Noncoincident blocks keep their loads even if the resulting section is not a
+chain; imposed endpoints still define a funicular in that case.
+
+`solveLayer` constructs a line at an absolute prescribed H, with each layer's
+own endpoints/start position/reaction split. The overlay commands one h = H/t,
+then passes H = h × t to each layer. It never divides H by total weight. A layer
+with variable or nonpositive thickness cannot join that normalized comparison.
+Point loads remain absolute forces in their assigned layer. Overlay readings
+and the force polygon belong to the layer chosen for editing; the per-layer
+legend reports every H and admissibility result. Mechanism searches operate on
+an individual section, rather than changing the overlay's common h.
+
+Session `layers` stores the selection, editable overlay layer, shared reference
+h, shared thrust slider and per-section controls/endpoints. Group Z, force Z,
+endpoints and h are converted consistently when changing physical units. Image
+calibration rescales XY only: entered Z and depth are already physical lengths.

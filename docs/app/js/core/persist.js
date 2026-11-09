@@ -53,6 +53,7 @@ export function serialise(state, controls = {}, imageName = null) {
       points: points(state.forces.points),
       ...(forceX.some((v) => Number(v) !== 0) ? { x: numbers(forceX) } : {}),
       magnitudes: numbers(forceMagnitudes),
+      z: (state.forces.points ?? []).map((_, i) => Number(state.forces.z?.[i]) || 0),
       ...(forceBases?.length === forceMagnitudes.length && forceBases.length
         ? { bases: forceBases.map((v, i) => (Array.isArray(v)
           ? numbers(v)
@@ -138,6 +139,7 @@ export function serialise(state, controls = {}, imageName = null) {
         imposed: !!controls.imposeEnds,
       }
       : null,
+    layers: state.layers ? JSON.parse(JSON.stringify(state.layers)) : undefined,
     forces,
     basePole: state.basePole ? [...state.basePole] : null,
     // The dome settings belong with the weights they produced. Without them a
@@ -232,7 +234,27 @@ export function deserialise(text) {
     }
   }
 
+  if (m?.groups?.some((g) => g.z != null && !Number.isFinite(g.z))) {
+    throw new Error('the file has an invalid group Z');
+  }
+  if (data.layers) {
+    if (!['all', 'overlay'].includes(data.layers.selection) && !Number.isFinite(Number(data.layers.selection))) {
+      throw new Error('the file has an invalid layer selection');
+    }
+    for (const settings of Object.values(data.layers.settings ?? {})) {
+      if (['A', 'B'].some((k) => settings[k] != null && (!Array.isArray(settings[k])
+        || settings[k].length !== 2 || !settings[k].every(Number.isFinite)))) {
+        throw new Error('the file has invalid layer endpoints');
+      }
+      if (['thrust', 'startPos', 'split'].some((k) => settings[k] != null && !Number.isFinite(settings[k]))) {
+        throw new Error('the file has invalid layer controls');
+      }
+    }
+  }
   const f = data.forces;
+  if (f?.z && (f.z.length !== (f.points ?? []).length || !f.z.every(Number.isFinite))) {
+    throw new Error('the file has invalid force layers');
+  }
   if (f && (f.points ?? []).length !== (f.magnitudes ?? []).length) {
     throw new Error('the file has a force without a magnitude, or the reverse');
   }
@@ -275,6 +297,7 @@ export function deserialise(text) {
     forces: f
       ? {
         ...f,
+        z: (f.points ?? []).map((_, i) => f.z?.[i] ?? 0),
         ...(Array.isArray(f.x) && f.x.length ? { x: numbers(f.x) } : {}),
       }
       : { points: [], magnitudes: [] },

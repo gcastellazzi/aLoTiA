@@ -319,7 +319,7 @@ export function extrude(poly, thickness) {
 export function solids(polys, opt = {}) {
   const {
     poleni = false, axisX = 0, angleDeg = 15, thickness = [], steps = 6,
-    align = 'left', full = false,
+    align = 'left', full = false, z = null,
   } = opt;
   const scaled = poleni && Array.isArray(thickness) && thickness.length
     ? scaledChordWidths(polys, { axisX, angleDeg, thickness })
@@ -328,7 +328,13 @@ export function solids(polys, opt = {}) {
   // One solid per PIECE, flattened per block, so a double shell shows as the
   // two rings it is.
   return polys.map((block, k) => piecesOf(block).flatMap((p) => {
-    if (!poleni) return extrude(p, thickness[k] ?? 1);
+    if (!poleni) {
+      const t = thickness[k] ?? 1;
+      const faces = extrude(p, t);
+      // Callers without Z retain the historical centred extrusion.
+      const shift = z ? (Number(z[k]) || 0) + Math.abs(t) / 2 : 0;
+      return faces.map((face) => face.map(([x, depth, y]) => [x, depth + shift, y]));
+    }
     const sector = revolve(p, axisX, round ? round.angleDeg : angleDeg, steps,
       { scale: scaled?.scales[k] ?? 1, align });
     // The whole dome is the sector repeated, one block of the section

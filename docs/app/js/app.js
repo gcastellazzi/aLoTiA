@@ -15,7 +15,7 @@ import {
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary, drawNotice, wrapText,
   drawJointCell, drawBlockEquilibrium, APPLIED_FORCE_COLOUR,
-} from './render/draw.js';
+} from './render/draw.js?v=20261109-layers';
 import {
   bounds, area as signedAreaOf, piecesOf, pointInPolygon,
 } from './core/geometry.js';
@@ -24,6 +24,7 @@ import {
   jointForces,
   freeThrustLine, poleForEnds, thrustRangeFactor,
 } from './core/statics.js';
+import { blockZ, zKey, layersOf, modelInLayer, forcesInLayer, layerThickness, solveLayer } from './core/layers.js';
 import { fromExample, poleOf, consistency } from './core/model.js';
 import {
   blocksBetween, checkTrace, weighBlocks, centroidsOf, springings,
@@ -36,11 +37,11 @@ import {
 import {
   SYSTEMS, unitsPerPixel, scaleModel, format, archDimensions,
   convertModel, conversionFactors,
-} from './core/units.js';
+} from './core/units.js?v=20261109-layers';
 
 import {
   serialise, deserialise, suggestedName, FORMAT,
-} from './core/persist.js';
+} from './core/persist.js?v=20261109-layers';
 import { abaqusInput } from './core/abaqus.js';
 import {
   multiplierInput, mechanismMultiplier, minimumMultiplier, rotationCentres,
@@ -58,7 +59,7 @@ import {
 } from './core/study.js';
 import {
   defaultAxis, luneWeights, solids, widthRange, endParallels, wholeDome,
-} from './core/dome.js';
+} from './core/dome.js?v=20261109-layers';
 import { cutRadially, blockCentroid, blockArea } from './core/profile.js';
 import {
   frame, projectedBounds, solidCentre, recenteredSolids,
@@ -69,6 +70,11 @@ const DATA = 'data/examples/';
 
 const el = (id) => document.getElementById(id);
 const ui = {
+  blockZ: el('blockZ'), zValues: el('zValues'), blockZLabel: el('blockZLabel'),
+  lotLayer: el('lotLayer'), overlayLayer: el('overlayLayer'), overlayLayerRow: el('overlayLayerRow'),
+  normalizedThrust: el('normalizedThrust'), normalizedThrustRow: el('normalizedThrustRow'),
+  normalizedThrustLabel: el('normalizedThrustLabel'), layerStatus: el('layerStatus'),
+  layerResults: el('layerResults'), forceLayer: el('forceLayer'),
   example: el('example'), meta: el('meta'), warn: el('warn'),
   newWork: el('newWork'),
   snapshotMain: el('snapshotMain'), snapshotAll: el('snapshotAll'),
@@ -202,6 +208,8 @@ plotAx.title = 'Plots';
 /** Everything the drawing depends on. */
 const state = {
   model: null,
+  layers: { selection: 'all', overlayLayer: null, settings: {}, normalizedBase: null, overlayThrust: 50 },
+  layerContext: null, layerSolutions: [],
   image: null,
   imageData: null,
   fitAfterImageLoad: false,
@@ -433,6 +441,177 @@ function groupName(method, index) {
   return `${names[method] ?? 'Group'} ${index + 1}`;
 }
 
+/** The full model remains editable; mechanics sees only the selected XY section. */
+function analysisModel() {
+  return state.layerContext?.source === state.model ? state.layerContext.model : state.model;
+}
+function analysisForces() {
+  return state.layerContext?.source === state.model ? state.layerContext.forces : state.forces;
+}
+function editingLayer() {
+  return state.layers.selection === 'overlay' ? state.layers.overlayLayer : state.layers.selection;
+}
+function layerLabel(z) {
+  return `Z = ${Number(z).toPrecision(4)} ${SYSTEMS[state.system].length.label}`;
+}
+function rememberLayer() {
+  const key = editingLayer();
+  if (key == null) return;
+  const old = state.layers.settings[key] ?? {};
+  state.layers.settings[key] = {
+    ...old, A: state.ends.A ? [...state.ends.A] : null,
+    B: state.ends.B ? [...state.ends.B] : null, imposed: ui.imposeEnds.checked,
+    startPos: Number(ui.startPos.value), split: Number(ui.split.value),
+    thrust: state.layers.selection === 'overlay' ? (old.thrust ?? 50) : Number(ui.thrust.value),
+    mechOn: ui.mechOn.checked,
+  };
+  if (state.layers.selection === 'overlay') state.layers.overlayThrust = Number(ui.thrust.value);
+}
+function restoreLayer() {
+  const s = state.layers.settings[editingLayer()] ?? {};
+  state.ends = { A: s.A ?? null, B: s.B ?? null, picking: null, construction: null };
+  ui.imposeEnds.checked = !!s.imposed;
+  ui.imposeEnds2.checked = !!s.imposed;
+  ui.startPos.value = String(s.startPos ?? 50);
+  ui.split.value = String(s.split ?? 50);
+  ui.mechOn.checked = !!s.mechOn;
+  setThrustSlider(state.layers.selection === 'overlay'
+    ? state.layers.overlayThrust ?? 50 : s.thrust ?? 50);
+}
+function resetLayers(saved = null) {
+  state.layers = saved ?? { selection: 'all', overlayLayer: null, settings: {}, normalizedBase: null, overlayThrust: 50 };
+  state.layerContext = null;
+  state.layerSolutions = [];
+}
+function reportLayers() {
+  const ls = layersOf(state.model);
+  const options = ls.map((l) => [l.key, layerLabel(l.z)]);
+  const fill = (sel, choices, current) => {
+    sel.replaceChildren();
+    choices.forEach(([value, label]) => {
+      const o = document.createElement('option'); o.value = value; o.textContent = label; sel.append(o);
+    });
+    sel.value = choices.some(([k]) => k === current) ? current : choices[0]?.[0] ?? '';
+  };
+  if (state.layers.selection !== 'all' && state.layers.selection !== 'overlay'
+      && !ls.some((l) => l.key === state.layers.selection)) {
+    state.layers.selection = 'all'; restoreLayer();
+  }
+  if (!ls.some((l) => l.key === state.layers.overlayLayer)) state.layers.overlayLayer = ls[0]?.key ?? null;
+  fill(ui.lotLayer, [['all', 'All — combined curve'], ['overlay', 'All — superimposed H/t'], ...options], state.layers.selection);
+  fill(ui.overlayLayer, options, state.layers.overlayLayer);
+  const forceOptions = [...options];
+  (state.forces.z ?? []).forEach((z) => {
+    if (!forceOptions.some(([k]) => k === zKey(z))) forceOptions.push([zKey(z), `${layerLabel(z)} (no blocks)`]);
+  });
+  if (!forceOptions.length) forceOptions.push(['0', layerLabel(0)]);
+  fill(ui.forceLayer, forceOptions, ui.forceLayer.value || editingLayer());
+  ui.zValues.replaceChildren();
+  options.forEach(([key]) => {
+    const o = document.createElement('option'); o.value = key; ui.zValues.append(o);
+  });
+  const overlay = state.layers.selection === 'overlay';
+  ui.overlayLayerRow.hidden = !overlay;
+  ui.normalizedThrustRow.hidden = !overlay;
+  ui.normalizedThrustLabel.textContent = `Reference H/t ${SYSTEMS[state.system].force.label}/${SYSTEMS[state.system].length.label}`;
+  ui.blockZLabel.textContent = `Z start ${SYSTEMS[state.system].length.label}`;
+  ui.layerResults.replaceChildren();
+  ui.layerStatus.textContent = !ls.length ? 'Create blocks to define Z layers.'
+    : overlay ? 'One curve per layer; common H/t. Ends and reactions are saved per layer. The force polygon and other readings refer to the layer selected below.'
+      : state.layers.selection === 'all' ? `${ls.length} layer(s) — combined XY weights; each applied force counted once.`
+        : `${layerLabel(Number(state.layers.selection))} — other layers shown faintly.`;
+}
+function changeLayer(selection, overlayLayer = state.layers.overlayLayer) {
+  rememberLayer();
+  state.layers.selection = selection;
+  state.layers.overlayLayer = overlayLayer;
+  state.layerContext = null;
+  state.band = null; state.bandKey = null; state.imposedKey = null;
+  state.frozenBranch = null; state.alpha = null; state.mech = null;
+  state.selectedJoint = null; state.selectedEquilibriumBlock = null;
+  restoreLayer();
+  if (selection !== 'all' && selection !== 'overlay') ui.forceLayer.value = selection;
+  recompute(); fitForceView(); draw();
+}
+function prepareLayerAnalysis() {
+  reportLayers();
+  const key = editingLayer() ?? 'all';
+  state.layerContext = { source: state.model, model: modelInLayer(state.model, key),
+    forces: forcesInLayer(state.forces, key) };
+  state.layerSolutions = [];
+}
+function analysisBasePole() {
+  if (state.layers.selection === 'all') return state.basePole;
+  const total = totalLoad();
+  return total > 0 ? [total / 4, -total / 2] : null;
+}
+function recomputeOverlay() {
+  rememberLayer();
+  const ls = layersOf(state.model);
+  const invalid = ls.filter((l) => layerThickness(state.model, l.key) == null);
+  if (invalid.length || !ls.length || ui.poleni.checked) {
+    ui.layerStatus.textContent = ui.poleni.checked
+      ? 'Superimposed H/t requires extruded blocks; disable Poleni mode.'
+      : `Superimposed H/t requires a positive, uniform thickness in each layer. Check: ${invalid.map((l) => layerLabel(l.z)).join('; ')}`;
+    state.seq = null; state.pole = null; state.segForces = null; state.crossings = null; state.mech = null;
+    setThrustEnabled(false); ui.admissible.textContent = 'No superimposed solution — see Z layers.';
+    showThrust(); return;
+  }
+  if (!(state.layers.normalizedBase > 0)) {
+    const ref = modelInLayer(state.model, ls[0].key);
+    state.layers.normalizedBase = ref.weights.reduce((a, b) => a + b, 0) / (4 * layerThickness(state.model, ls[0].key));
+  }
+  ui.normalizedThrust.value = String(Number(state.layers.normalizedBase.toPrecision(10)));
+  const h = state.layers.normalizedBase * thrustRangeFactor(ui.thrust.value, state.thrustRangeMax);
+  for (const [index, l] of ls.entries()) {
+    const model = modelInLayer(state.model, l.key);
+    const t = layerThickness(state.model, l.key);
+    const settings = state.layers.settings[l.key] ?? {};
+    const result = solveLayer(model, forcesInLayer(state.forces, l.key), settings, h * t);
+    state.layerSolutions.push({ ...result, key: l.key, model, t, H: h * t,
+      colour: ['#c62828', '#1565c0', '#2e7d32', '#7b1fa2', '#ef6c00', '#00838f'][index % 6] });
+  }
+  const ref = state.layerSolutions.find((r) => r.key === editingLayer()) ?? state.layerSolutions[0];
+  state.fp = ref.fp ?? null; state.lot = ref.lot ?? null; state.seq = ref.seq;
+  state.pole = ref.fp?.pole ?? null; state.fpKinds = ref.fpKinds ?? ref.seq.kind;
+  state.segForces = ref.segForces; state.spanKept = ref.spanKept; state.mech = null;
+  state.ends.construction = null; state.constructionKey = null;
+  state.startFraction = Number(ui.startPos.value) / 100;
+  state.endFraction = ref.lot?.endFraction ?? null;
+  setThrustEnabled(true); assessAdmissibility();
+  reportEnds(ref.construction ? null : endJoints());
+  if (ref.construction) reportImposed(ref.construction);
+  reportMechanism();
+  const text = `H/t = ${h.toPrecision(5)} ${SYSTEMS[state.system].force.label}/${SYSTEMS[state.system].length.label}`;
+  for (const field of [ui.thrustValue, ui.thrustValueM, ui.thrustValueP]) field.textContent = text;
+  state.layerSolutions.forEach((r) => {
+    const li = document.createElement('li'); li.style.color = r.colour;
+    const admissible = r.crossings?.every((c) => c && c.inside);
+    li.textContent = `${layerLabel(Number(r.key))} · H = ${format(r.H, 'force', state.system)} · `
+      + (!r.lot ? 'pick A and B for this layer' : !r.crossings ? 'no chain: admissibility unavailable'
+        : admissible ? 'admissible' : 'not admissible');
+    ui.layerResults.append(li);
+  });
+}
+
+function importLegacyGroups(m, n, gamma, thickness) {
+  const known = new Map();
+  for (let i = 0; i < n; i++) {
+    const t = Number.isFinite(m.thickness?.[i]) ? m.thickness[i] : thickness;
+    const a = blockArea(m.blocks[i]);
+    const density = t > 0 && a > 0 && Number.isFinite(m.weights?.[i])
+      ? m.weights[i] / (a * t) : gamma;
+    const key = `${t}:${density.toPrecision(10)}`;
+    if (!known.has(key)) {
+      const id = m.groups.length + 1;
+      m.groups.push({ id, name: groupName('imported', id - 1), method: 'imported',
+        gamma: density, thickness: t, z: 0, color: groupColour(id - 1) });
+      known.set(key, id);
+    }
+    m.blockGroups[i] = known.get(key);
+  }
+}
+
 function ensureGroups() {
   const m = state.model;
   if (!m) return;
@@ -442,14 +621,7 @@ function ensureGroups() {
   const gamma = Number(ui.gamma.value) || 20;
   const thickness = Math.max(0, Number(ui.thick.value) || 1);
   if (n && !m.groups.length) {
-    m.groups.push({
-      id: 1,
-      name: groupName('imported', 0),
-      method: 'imported',
-      gamma,
-      thickness,
-      color: groupColour(0),
-    });
+    importLegacyGroups(m, n, gamma, thickness);
   }
   for (let i = 0; i < n; i++) {
     if (!m.blockGroups[i]) m.blockGroups[i] = m.groups[0]?.id ?? 1;
@@ -459,6 +631,7 @@ function ensureGroups() {
     if (!g.name) g.name = groupName(g.method ?? 'imported', i);
     if (!Number.isFinite(Number(g.gamma))) g.gamma = gamma;
     if (!Number.isFinite(Number(g.thickness))) g.thickness = thickness;
+    if (!Number.isFinite(g.z)) g.z = 0;
     if (!g.color) g.color = groupColour(i);
   });
 }
@@ -474,14 +647,7 @@ function newGroup(method, count) {
   const firstNew = Math.max(0, n - Math.max(0, count));
 
   if (!m.groups.length && firstNew > 0) {
-    m.groups.push({
-      id: 1,
-      name: groupName('imported', 0),
-      method: 'imported',
-      gamma,
-      thickness,
-      color: groupColour(0),
-    });
+    importLegacyGroups(m, firstNew, gamma, thickness);
   }
   m.groups.forEach((old, i) => {
     if (!old.id) old.id = i + 1;
@@ -499,6 +665,7 @@ function newGroup(method, count) {
     id,
     name: groupName(method, m.groups.length),
     method,
+    z: Number(ui.blockZ.value) || 0,
     gamma,
     thickness,
     color: groupColour(m.groups.length),
@@ -510,7 +677,7 @@ function newGroup(method, count) {
 }
 
 function selectedGroupId(select) {
-  return select.value === 'all' ? 'all' : Number(select.value);
+  return ['all', 'new'].includes(select.value) ? select.value : Number(select.value);
 }
 
 function groupForBlock(i, fallback = {}) {
@@ -565,8 +732,11 @@ function reportGroups() {
   if (m) ensureGroups();
   const groups = m?.groups ?? [];
   for (const sel of [ui.gammaTarget, ui.thickTarget, ui.clearTarget]) {
-    const old = sel.value || 'all';
+    const old = sel.value || (sel === ui.clearTarget ? 'all' : 'new');
     sel.innerHTML = '';
+    if (sel !== ui.clearTarget) {
+      const fresh = document.createElement('option'); fresh.value = 'new'; fresh.textContent = 'New blocks only'; sel.append(fresh);
+    }
     const all = document.createElement('option');
     all.value = 'all';
     all.textContent = 'All';
@@ -584,6 +754,7 @@ function reportGroups() {
   // their groups or their weights already ends here, so hanging the table off
   // it is what stops a row saying what a block used to weigh.
   renderBlockTable();
+  reportLayers();
   if (!groups.length) {
     ui.groupStatus.textContent = 'no groups yet';
     return;
@@ -600,6 +771,7 @@ function applyGroupProperty(kind, value) {
   if (!m?.blocks?.length) return;
   ensureGroups();
   const target = selectedGroupId(kind === 'gamma' ? ui.gammaTarget : ui.thickTarget);
+  if (target === 'new') return;
   for (const g of m.groups) {
     if (target === 'all' || g.id === target) g[kind] = value;
   }
@@ -791,7 +963,22 @@ function renderBlockTable() {
     count.className = 'count';
     const n = m.blockGroups.filter((id) => id === g.id).length;
     count.textContent = `${n} block${n === 1 ? '' : 's'}`;
-    li.append(swatch, name, count);
+    const zSelect = document.createElement('select');
+    zSelect.setAttribute('aria-label', `Layer Z for ${g.name}`);
+    const values = [...new Set([...(m.groups ?? []).map((gg) => zKey(gg.z)), zKey(g.z)])].sort((a, b) => Number(a) - Number(b));
+    values.forEach((z) => { const o = document.createElement('option'); o.value = z; o.textContent = layerLabel(Number(z)); zSelect.append(o); });
+    const add = document.createElement('option'); add.value = 'new'; add.textContent = 'New Z…'; zSelect.append(add);
+    zSelect.value = zKey(g.z);
+    zSelect.addEventListener('change', () => {
+      let value = zSelect.value;
+      if (value === 'new') value = window.prompt('Z start for this group', String(g.z ?? 0));
+      if (value == null || value.trim() === '' || !Number.isFinite(Number(value))) { zSelect.value = zKey(g.z); return; }
+      rememberLayer(); g.z = Number(value); state.layerContext = null;
+      state.band = null; state.bandKey = null; state.imposedKey = null; state.alpha = null;
+      state.solidFit = null; reportGroups(); recompute(); fitForceView(); draw();
+      appendLog(`Set Z = ${g.z} for group ${g.name}`);
+    });
+    li.append(swatch, name, count, zSelect);
     ui.groupList.append(li);
   });
 
@@ -836,6 +1023,8 @@ function renderBlockTable() {
       ['num', String(sides)],
       ['', `(${len(c[0])}, ${len(c[1])})`],
       ['num', force(w)],
+      ['num', len(blockZ(m, i))],
+      ['num', len(Number(m.thickness?.[i]) || 0)],
     ];
     for (const [cls, text] of cells) {
       const td = document.createElement('td');
@@ -924,6 +1113,7 @@ function addEmptyGroup() {
     id,
     name: `Group ${m.groups.length + 1}`,
     method: 'hand',
+    z: Number(ui.blockZ.value) || 0,
     gamma: Number(ui.gamma.value) || 20,
     thickness: Math.max(0, Number(ui.thick.value) || 1),
     color: groupColour(m.groups.length),
@@ -984,6 +1174,7 @@ function isCoupletStudy() {
 }
 
 function refreshRingStudy() {
+  if (layersOf(state.model).length > 1) { state.ringAuto = false; state.ringStudySource = null; return; }
   if (!state.ringStudySource) return;
   state.ringStudySource = currentRingStudySource(state.ringStudySource);
   if (isCoupletStudy()) {
@@ -1186,6 +1377,7 @@ async function loadCatalogue() {
  * densities, which are settings rather than work.
  */
 function newWork() {
+  resetLayers();
   state.model = null;
   state.image = null;
   state.imageData = null;
@@ -1310,6 +1502,7 @@ async function loadExample(file) {
     draw();
     return;
   }
+  resetLayers();
   state.model = model;
   state.consistent = consistency(model);
   clearPlotState();
@@ -1443,7 +1636,7 @@ function noJointsReason(m) {
  * where the file put them.
  */
 function endJoints() {
-  const j = state.model?.joints;
+  const j = analysisModel()?.joints;
   if (!j || j.length < 2) return null;
   const midX = (k) => (k.a[0] + k.b[0]) / 2;
   const first = j[0];
@@ -1455,8 +1648,8 @@ function endJoints() {
 
 /** The total load, blocks and applied forces together. */
 function totalLoad() {
-  const w = (state.model?.weights ?? []).reduce((s, v) => s + v, 0);
-  const f = (state.forces?.magnitudes ?? []).reduce((s, v) => s + forceY(v), 0);
+  const w = (analysisModel()?.weights ?? []).reduce((s, v) => s + v, 0);
+  const f = (analysisForces()?.magnitudes ?? []).reduce((s, v) => s + forceY(v), 0);
   return w + f;
 }
 
@@ -1531,10 +1724,10 @@ function raysStride() {
  * next to a different arch would be worse than none.
  */
 function alphaSignature() {
-  const m = state.model;
+  const m = analysisModel();
   if (!m?.joints) return null;
   const r = (v) => Number(v).toPrecision(8);
-  const f = state.forces ?? {};
+  const f = analysisForces() ?? {};
   return [
     m.blocks.length,
     m.joints.map((j) => [...j.a, ...j.b].map(r).join(',')).join(';'),
@@ -1560,7 +1753,7 @@ function alphaState() {
 
 /** With both ends imposed, the mechanism lives between the joints nearest A and B. */
 function alphaRange() {
-  const m = state.model;
+  const m = analysisModel();
   if (!(ui.imposeEnds.checked && state.ends.A && state.ends.B && m?.joints)) return null;
   const nearest = (p) => m.joints.reduce((best, j, i) => {
     const d = Math.hypot((j.a[0] + j.b[0]) / 2 - p[0], (j.a[1] + j.b[1]) / 2 - p[1]);
@@ -1586,7 +1779,7 @@ function describeAlphaHinges(r) {
 
 function reportAlpha() {
   const s = currentAlpha();
-  const m = state.model;
+  const m = analysisModel();
   ui.alphaFind.disabled = !m?.joints;
   ui.alphaPick.disabled = !m?.joints;
   ui.alphaPick.classList.toggle('armed', !!s?.picking);
@@ -1635,11 +1828,11 @@ function reportAlpha() {
 }
 
 function findAlpha() {
-  const m = state.model;
+  const m = analysisModel();
   if (!m?.joints) { reportAlpha(); return; }
   const s = alphaState();
   try {
-    const input = multiplierInput(m, state.forces);
+    const input = multiplierInput(m, analysisForces());
     const t0 = performance.now();
     const got = minimumMultiplier(input, { range: alphaRange() ?? undefined });
     s.plus = got.plus;
@@ -1669,7 +1862,7 @@ function showAlpha() {
 /** A click on the drawing while picking: add or remove the hinge at that joint end. */
 function pickAlphaHinge(px) {
   const s = currentAlpha();
-  const m = state.model;
+  const m = analysisModel();
   if (!s?.picking || !m?.joints) return false;
   const joint = pickJointAt(px);
   // Off every joint the click is left to pan the drawing.
@@ -1684,7 +1877,7 @@ function pickAlphaHinge(px) {
   else if (s.picks.length < 4) s.picks.push({ joint, face });
   s.picks.sort((p, q) => p.joint - q.joint);
   s.manual = s.picks.length === 4
-    ? mechanismMultiplier(multiplierInput(m, state.forces), s.picks)
+    ? mechanismMultiplier(multiplierInput(m, analysisForces()), s.picks)
     : null;
   s.show = s.manual && !s.manual.reason ? 'manual' : s.show === 'manual' ? 'none' : s.show;
   showAlpha();
@@ -1694,7 +1887,7 @@ function pickAlphaHinge(px) {
 /** The hinges being picked, before they make a mechanism. */
 function drawAlphaPicks() {
   const s = currentAlpha();
-  const m = state.model;
+  const m = analysisModel();
   if (!s?.picking || !s.picks.length || !m?.joints) return;
   drawHinges(mainAx, s.picks.map((p) => ({
     point: p.face === 'extrados' ? m.joints[p.joint].b : m.joints[p.joint].a,
@@ -1703,7 +1896,15 @@ function drawAlphaPicks() {
 }
 
 function reportMechanism(thrustFraction) {
-  const m = state.model;
+  const m = analysisModel();
+  if (state.layers.selection === 'overlay') {
+    state.mech = null; ui.mechAmp.disabled = true;
+    ui.alphaFind.disabled = true; ui.alphaPick.disabled = true;
+    ui.alphaResult.textContent = 'Select one layer to study its mechanism.'; ui.alphaDetail.textContent = '';
+    ui.mechVerdict.textContent = 'Select one layer to study its mechanism.';
+    ui.mechCount.textContent = ''; ui.mechBand.textContent = ''; return;
+  }
+  ui.alphaFind.disabled = false; ui.alphaPick.disabled = false;
   // The activation-multiplier mechanism, when one is selected, takes the place
   // of the one read off the line of thrust: the drawing, the displacement
   // slider and the 3-D view all work from state.mech.
@@ -1849,7 +2050,7 @@ function armEnd(which) {
  * inside the collapse band, or carried between two imposed ends.
  */
 function showThrust(suffix = '') {
-  const m = state.model;
+  const m = analysisModel();
   const scaled = !!(m && m.frame && m.frame.coordinates === 'physical');
   const H = state.fp ? state.fp.thrust : NaN;
   const value = Number.isFinite(H)
@@ -1887,11 +2088,14 @@ function sliderForThrust(f) {
 
 /** Rebuild the force polygon and the thrust line for the current pole. */
 function recompute() {
-  const m = state.model;
+  prepareLayerAnalysis();
+  const m = analysisModel();
+  const referencePole = analysisBasePole();
   state.fp = null;
   state.lot = null;
   state.fpKinds = null;
-  if (!m || !m.blocks || !m.blocks.length || !state.basePole) {
+  if (state.layers.selection === 'overlay') { recomputeOverlay(); return; }
+  if (!m || !m.blocks || !m.blocks.length || !referencePole) {
     state.seq = null;
     state.pole = null;
     state.segForces = null;
@@ -1910,7 +2114,7 @@ function recompute() {
   // geometry, which must be shown as saved and not redrawn, and NO stored
   // solution at all, which is not a defect and leaves the arch free to be
   // solved from scratch.
-  if (!state.consistent.ok && (m.forcePolygon || !state.basePole)) {
+  if (!state.consistent.ok && (m.forcePolygon || !referencePole)) {
     // Cannot recompute; show what was stored, and say so.
     state.lot = m.thrustLine
       ? { points: m.thrustLine, closed: true, closureError: 0 }
@@ -1940,12 +2144,12 @@ function recompute() {
   // the middle of the slider -- and the slider is disabled. A traced arch has
   // joints, so its ends can slide and the ordinate becomes a free parameter.
   const ends = endJoints();
-  let ordinate = state.basePole[1];
+  let ordinate = referencePole[1];
   if (ends) {
     const share = Number(ui.split.value) / 100;      // of the total weight
     ordinate = -totalLoad() * share;
   }
-  const pole = [state.basePole[0] * factor, ordinate];
+  const pole = [referencePole[0] * factor, ordinate];
   state.pole = pole;
 
   // Blocks and applied forces go into ONE sequence, ordered by x. From the
@@ -1955,7 +2159,7 @@ function recompute() {
     { centroids: m.centroids, weights: m.weights,
       areas: m.areas ?? m.centroids.map(() => 0),
       thickness: m.thickness ?? m.centroids.map(() => 0) },
-    state.forces,
+    analysisForces(),
   );
   state.seq = seq;
 
@@ -2197,7 +2401,7 @@ function recompute() {
  * masonry and no equilibrium is possible in that configuration.
  */
 function assessAdmissibility() {
-  const m = state.model;
+  const m = analysisModel();
   state.crossings = null;
   if (!m.joints || !state.lot) {
     ui.admissible.className = 'verdict';
@@ -2253,7 +2457,7 @@ function assessAdmissibility() {
  * has is left to the reader.
  */
 function frictionNote(crossings) {
-  const m = state.model;
+  const m = analysisModel();
   if (!state.fp || !m?.joints) return '';
   const got = jointForces(state.fp, crossings, m.joints);
   if (!(got.muReq > 0)) return '';
@@ -2388,6 +2592,11 @@ function loadTitle(loadIndex) {
   if (!m || loadIndex === null || loadIndex < 0) return null;
   const seqIndex = state.spanKept?.length ? state.spanKept[loadIndex] : loadIndex;
   const original = state.seq?.order?.[seqIndex];
+  const active = analysisModel();
+  if (active !== m && Number.isInteger(original)) {
+    if (original < active.blocks.length) return `Block #${(active.sources?.[original]?.[0] ?? original) + 1}`;
+    return `Force #${(analysisForces().sourceIndices?.[original - active.blocks.length] ?? 0) + 1}`;
+  }
   if (!Number.isInteger(original)) return `Block #${loadIndex + 1}`;
   if (original < (m.blocks?.length ?? 0)) return `Block #${original + 1}`;
   return `Force #${original - (m.blocks?.length ?? 0) + 1}`;
@@ -2396,7 +2605,10 @@ function loadTitle(loadIndex) {
 function loadIndexForBlock(blockIndex) {
   const m = state.model;
   if (!m || !state.seq?.order || blockIndex < 0 || blockIndex >= m.blocks.length) return null;
-  const seqIndex = state.seq.order.indexOf(blockIndex);
+  const active = analysisModel();
+  const index = active !== m ? active.sources?.findIndex((ids) => ids.includes(blockIndex)) : blockIndex;
+  if (index == null || index < 0) return null;
+  const seqIndex = state.seq.order.indexOf(index);
   if (seqIndex < 0) return null;
   if (state.spanKept?.length) {
     const keptIndex = state.spanKept.indexOf(seqIndex);
@@ -2412,9 +2624,11 @@ function selectedBlockEquilibrium() {
       || !m.centroids?.[block] || !state.fp || !state.lot?.points) return null;
   const loadIndex = loadIndexForBlock(block);
   if (loadIndex === null || loadIndex + 1 >= state.lot.points.length) return null;
+  const active = analysisModel();
+  const at = active === m ? block : active.sources?.findIndex((ids) => ids.includes(block));
   const pressure = [
-    state.crossings?.[block]?.point ?? state.lot.points[loadIndex],
-    state.crossings?.[block + 1]?.point ?? state.lot.points[loadIndex + 1],
+    state.crossings?.[at]?.point ?? state.lot.points[loadIndex],
+    state.crossings?.[at + 1]?.point ?? state.lot.points[loadIndex + 1],
   ];
   return {
     title: `Block #${block + 1}`,
@@ -2576,27 +2790,32 @@ function draw() {
     if (ui.showMech.checked && state.mech) {
       // While a mechanism is on show, what matters is which pieces move
       // together, not that adjacent stones are distinguishable.
-      drawMacroBlocks(mainAx, m.blocks, state.mech.bodyOf);
+      drawMacroBlocks(mainAx, analysisModel().blocks, state.mech.bodyOf);
     } else {
       ensureGroups();
       const colours = ui.showGroups.checked
         ? m.blockGroups.map((id) => m.groups.find((g) => g.id === id)?.color)
         : null;
-      drawBlocks(mainAx, m.blocks, {
+      const singleLayer = !['all', 'overlay'].includes(state.layers.selection);
+      const active = m.blocks.map((_, i) => !singleLayer || zKey(blockZ(m, i)) === state.layers.selection);
+      const drawOrder = m.blocks.map((_, i) => i).sort((a, b) => Number(active[a]) - Number(active[b]));
+      drawBlocks(mainAx, drawOrder.map((i) => m.blocks[i]), {
         labels: ui.showLabels.checked,
-        colours,
+        colours: drawOrder.map((i) => colours?.[i]),
+        opacities: drawOrder.map((i) => active[i] ? 1 : 0.14),
+        numbers: drawOrder.map((i) => i + 1),
         // The row the block table has picked. `drawBlocks` already knows how
         // to single a voussoir out; nothing new is drawn for it.
-        highlight: state.selectedBlock ?? -1,
+        highlight: drawOrder.indexOf(state.selectedBlock ?? -1),
       });
       if (ui.showGroups.checked) drawGroupLabels();
     }
   }
   if (ui.showWeights.checked && m.centroids && m.weights) {
-    drawWeights(mainAx, m.centroids, m.weights);
+    drawWeights(mainAx, analysisModel().centroids, analysisModel().weights);
   }
   if (sideView() === 'radius' && state.ringAuto) drawRingStudyCurves();
-  if (ui.showThrust.checked && state.lot && !constructing) {
+  if (ui.showThrust.checked && state.lot && !constructing && state.layers.selection !== 'overlay') {
     // The band's width is the force in each segment; the slider says how wide
     // the largest is drawn. At nothing it is a bare line, which is what a
     // student wants when the band would cover the joints it is read against.
@@ -2609,6 +2828,15 @@ function draw() {
         poleName: 'O',
         overbar: true,
       });
+    }
+  }
+  if (ui.showThrust.checked && state.layers.selection === 'overlay') {
+    for (const r of state.layerSolutions) {
+      if (r.lot) drawThrustLine(mainAx, r.lot.points, r.segForces, {
+        colour: r.colour, centreColour: r.colour, widthFactor: (Number(ui.thrustWidth.value) / 100) * 40,
+      });
+      const settings = state.layers.settings[r.key];
+      if (settings?.A || settings?.B) drawEnds(mainAx, settings.A, settings.B);
     }
   }
   if (ui.showReactions.checked && state.lot && state.fp) {
@@ -2638,7 +2866,7 @@ function draw() {
     const amp = (Number(ui.mechAmp.value) / 100) * 0.25;   // radians, capped
     if (a.dof > 0 && amp > 0) {
       const T = displacedConfiguration(a.hinges, a.bodies, amp);
-      drawMechanism(mainAx, displaced(m.blocks, a.bodyOf, T));
+      drawMechanism(mainAx, displaced(analysisModel().blocks, a.bodyOf, T));
       drawCentres(mainAx, a.motion);
     }
     drawHinges(mainAx, a.hinges);
@@ -2689,7 +2917,7 @@ function draw() {
     }
   }
   if (state.ends.A || state.ends.B) drawEnds(mainAx, state.ends.A, state.ends.B);
-  drawSupports(mainAx, m.pointA, m.pointB);
+  drawSupports(mainAx, analysisModel().pointA, analysisModel().pointB);
   if (ui.showJoints.checked || state.selectedJoint !== null) drawJoints();
   drawTrace();
   drawThreePointRingPicks();
@@ -2698,6 +2926,7 @@ function draw() {
   if (ui.showCalibration.checked || state.ref.picking) drawReference();
   if (ui.showCalibration.checked || state.measurements?.picking) drawMeasurements();
   mainAx.decorate();
+  drawLayerLegend();
   const blockEq = selectedBlockEquilibrium();
   if (blockEq) drawBlockEquilibrium(mainAx, blockEq.block, blockEq);
   if (ui.showScale.checked) drawScaleBar(mainAx, { unit: barUnits().length });
@@ -2738,6 +2967,24 @@ function draw() {
   if (ui.showScale.checked) drawScaleBar(forceAx, { unit: barUnits().force });
 }
 
+function drawLayerLegend() {
+  if (state.layers.selection !== 'overlay' || !state.layerSolutions.length) return;
+  const c = mainAx.ctx, b = mainAx.box;
+  c.save(); c.font = figureFont('11px Helvetica, Arial, sans-serif');
+  const rows = state.layerSolutions.map((r) => ({ colour: r.colour,
+    text: `${layerLabel(Number(r.key))} · H = ${format(r.H, 'force', state.system)}` }));
+  const w = Math.max(...rows.map((r) => c.measureText(r.text).width)) + 34;
+  c.fillStyle = 'rgba(255,255,255,0.9)'; c.fillRect(b.x + 8, b.y + 8, w, rows.length * 18 + 10);
+  c.textAlign = 'left'; c.textBaseline = 'middle';
+  rows.forEach((r, i) => {
+    const y = b.y + 20 + i * 18;
+    c.strokeStyle = r.colour; c.lineWidth = 3; c.setLineDash([]);
+    c.beginPath(); c.moveTo(b.x + 14, y); c.lineTo(b.x + 28, y); c.stroke();
+    c.fillStyle = r.colour; c.fillText(r.text, b.x + 34, y);
+  });
+  c.restore();
+}
+
 function refreshDraw() {
   draw();
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(draw);
@@ -2776,7 +3023,7 @@ function segmentForceAt(segment) {
 
 function selectedHeymanPoint() {
   const i = state.selectedJoint;
-  const m = state.model;
+  const m = analysisModel();
   if (i === null || !m?.joints || !state.crossings) return null;
   const crossing = state.crossings[i];
   if (!crossing) return null;
@@ -2784,7 +3031,7 @@ function selectedHeymanPoint() {
 }
 
 function allHeymanPoints() {
-  const m = state.model;
+  const m = analysisModel();
   if (!m?.joints || !state.crossings) return [];
   return state.crossings
     .map((c, i) => {
@@ -2796,7 +3043,7 @@ function allHeymanPoints() {
 }
 
 function heymanSafetyPoints(points) {
-  const last = (state.model?.joints?.length ?? 0) - 1;
+  const last = (analysisModel()?.joints?.length ?? 0) - 1;
   const imposed = ui.imposeEnds.checked && state.ends.A && state.ends.B;
   if (!imposed || last < 1) return points;
   return points.filter((p) => p.joint !== 0 && p.joint !== last);
@@ -2810,7 +3057,7 @@ function heymanSafetyLabel(safety) {
 
 function heymanFrame() {
   const pts = allHeymanPoints();
-  const joints = state.model?.joints ?? [];
+  const joints = analysisModel()?.joints ?? [];
   const nMax = 1.1 * Math.max(1, ...pts.map((p) => Math.abs(p.N)));
   const tMax = Math.max(1, ...joints.map((j) => Math.hypot(
     j.b[0] - j.a[0], j.b[1] - j.a[1],
@@ -3279,7 +3526,7 @@ function sentence(text) {
 }
 
 function heymanUnavailable() {
-  const m = state.model;
+  const m = analysisModel();
   if (!m?.blocks?.length) {
     return {
       head: 'Nothing to section yet',
@@ -3443,7 +3690,7 @@ function drawHeymanView() {
         plotAx.box.x + 10, plotAx.box.y + 32);
     }
   });
-  const scaled = state.model?.frame?.coordinates === 'physical';
+  const scaled = analysisModel()?.frame?.coordinates === 'physical';
   ui.plotStatus.textContent = `joint ${state.selectedJoint}: N = `
     + (scaled ? format(nm.N, 'force', state.system) : nm.N.toPrecision(4))
     + `, M = ${nm.M.toPrecision(4)}, ecc = ${nm.ecc.toPrecision(4)}, `
@@ -3482,7 +3729,7 @@ function drawRadiusView() {
     }
     }
     if (bands) drawBandLegend(bands);
-    const scaled = state.model?.frame?.coordinates === 'physical';
+    const scaled = analysisModel()?.frame?.coordinates === 'physical';
     const current = pts.find((p) => Math.abs(p.tri - state.ringStudySource?.tri) < 1e-9)
       ?? pts[pts.length - 1];
     const mode = state.ringStudySource?.poleni ? 'Poleni dome lune' : 'constant thickness';
@@ -3678,7 +3925,7 @@ function drawNormalPreview() {
 }
 
 function drawJoints() {
-  const m = state.model;
+  const m = analysisModel();
   if (!m.joints) return;
   const cr = state.crossings;
   mainAx.clipped((c) => {
@@ -3718,7 +3965,7 @@ function distPointToSegmentPx(p, a, b) {
 }
 
 function pickJointAt(px) {
-  const joints = state.model?.joints;
+  const joints = analysisModel()?.joints;
   if (!joints || !joints.length) return null;
   let best = { i: null, d: Infinity };
   joints.forEach((j, i) => {
@@ -3734,6 +3981,7 @@ function pickBlockAt(dataPoint) {
   const blocks = state.model?.blocks;
   if (!blocks || !blocks.length) return null;
   for (let i = blocks.length - 1; i >= 0; i--) {
+    if (!['all', 'overlay'].includes(state.layers.selection) && zKey(blockZ(state.model, i)) !== state.layers.selection) continue;
     if (piecesOf(blocks[i]).some((p) => pointInPolygon(dataPoint, p))) return i;
   }
   return null;
@@ -3762,6 +4010,8 @@ function drawForces() {
   const span = (mainAx.view.ymax - mainAx.view.ymin) * 0.16;
   mainAx.clipped((c) => {
     f.points.forEach((p, i) => {
+      if (!['all', 'overlay'].includes(state.layers.selection)
+          && zKey(f.z?.[i]) !== state.layers.selection) return;
       const v = forceComponents(f, i);
       const mag = forceMag2(v.x, v.y);
       if (!(mag > 0)) return;
@@ -3795,6 +4045,7 @@ function armForce() {
 
 function ensureForceBases() {
   const f = state.forces ?? { points: [], magnitudes: [], x: [], bases: [] };
+  f.z = (f.points ?? []).map((_, i) => Number(f.z?.[i]) || 0);
   f.x = Array.isArray(f.x) ? f.x : [];
   f.bases = Array.isArray(f.bases) ? f.bases : [];
   f.magnitudes.forEach((mag, i) => {
@@ -3830,6 +4081,7 @@ function listForces() {
     del.textContent = 'remove';
     del.addEventListener('click', () => {
       f.points.splice(i, 1);
+      f.z.splice(i, 1);
       f.magnitudes.splice(i, 1);
       f.x.splice(i, 1);
       f.bases.splice(i, 1);
@@ -3863,7 +4115,12 @@ function listForces() {
     };
     xInput.addEventListener('change', updateComponents);
     yInput.addEventListener('change', updateComponents);
-    componentRow.append('X ', xInput, ' Y ', yInput);
+    const layer = document.createElement('select');
+    const zs = [...new Set([...layersOf(state.model).map((l) => l.key), zKey(f.z[i])])];
+    zs.forEach((z) => { const o = document.createElement('option'); o.value = z; o.textContent = layerLabel(Number(z)); layer.append(o); });
+    layer.value = zKey(f.z[i]); layer.setAttribute('aria-label', `Layer for force ${i + 1}`);
+    layer.addEventListener('change', () => { f.z[i] = Number(layer.value); recompute(); fitForceView(); draw(); });
+    componentRow.append('X ', xInput, ' Y ', yInput, ' Z ', layer);
     li.append(componentRow);
 
     const scaleRow = document.createElement('div');
@@ -4647,6 +4904,7 @@ function armProfile() {
 
 /** Turn the traced outlines into voussoirs by cutting them radially. */
 function cutProfiles() {
+  rememberLayer();
   const p = state.profiles;
   if (p.current && p.current.length >= 3) armProfile();      // close it first
   const n = Math.max(1, Number(ui.nCuts.value) || 16);
@@ -4678,6 +4936,7 @@ function cutProfiles() {
     frame: previous.frame ?? { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
   };
   clearPlotState();
+  mergeGeneratedLayer(previous, 'profile');
   newGroup('profile', blocks.length);
   state.consistent = { ok: true, reason: null, extraRows: 0 };
   if (!state.axisPicked) resetAxis();
@@ -4971,7 +5230,8 @@ function commitBlock() {
   // same tidying, but only for blocks that really predate this one.
   const groups = Array.isArray(m.groups) ? m.groups : [];
   const last = groups[groups.length - 1];
-  if (last && last.method === 'draw') {
+  if (last && last.method === 'draw' && zKey(last.z) === zKey(ui.blockZ.value)
+      && Number(last.thickness) === Number(ui.thick.value) && Number(last.gamma) === Number(ui.gamma.value)) {
     m.blockGroups[m.blocks.length - 1] = last.id;
     reportGroups();
   } else {
@@ -5119,7 +5379,12 @@ function drawSolidView() {
     const amp = (Number(ui.mechAmp.value) / 100) * 0.25;
     if (amp > 0) {
       const T = displacedConfiguration(state.mech.hinges, state.mech.bodies, amp);
-      shown = displaced(m.blocks, state.mech.bodyOf, T);
+      const active = analysisModel();
+      const moved = displaced(active.blocks, state.mech.bodyOf, T);
+      shown = m.blocks.map((b, i) => {
+        const k = active === m ? i : active.sources?.findIndex((ids) => ids.includes(i));
+        return k >= 0 ? moved[k] : b;
+      });
     }
   }
 
@@ -5128,6 +5393,7 @@ function drawSolidView() {
     axisX: dome.axisX,
     angleDeg: dome.angleDeg,
     thickness: assignedThicknesses(),
+    z: m.blocks.map((_, i) => blockZ(m, i)),
     steps: dome.poleni ? Math.max(2, Math.round(dome.angleDeg / 4)) : 1,
     align: state.solidAlign,
     full: dome.poleni && !!ui.full3D?.checked,
@@ -5155,7 +5421,9 @@ function drawSolidView() {
   // the two views agree about which pieces move together.
   const mechanismHighlight = ui.showMech.checked && state.mech
     ? m.blocks.map((_, k) => {
-      const b = state.mech.bodyOf[k];
+      const active = analysisModel();
+      const at = active === m ? k : active.sources?.findIndex((ids) => ids.includes(k));
+      const b = at >= 0 ? state.mech.bodyOf[at] : -1;
       const c = BODY_RGB[b % BODY_RGB.length];
       return b < 0 ? [200, 200, 200] : c;
     })
@@ -5166,7 +5434,11 @@ function drawSolidView() {
       return rgbFromHex(g?.color);
     })
     : null;
-  const highlight = mechanismHighlight ?? groupHighlight;
+  let highlight = mechanismHighlight ?? groupHighlight;
+  if (!['all', 'overlay'].includes(state.layers.selection)) {
+    highlight = m.blocks.map((_, i) => zKey(blockZ(m, i)) === state.layers.selection
+      ? (highlight?.[i] ?? [224, 155, 71]) : [220, 220, 220]);
+  }
 
   // UNDER THE MASONRY, not over it. Drawn last, the far half of each circle
   // crossed the stones in front of it and the solid stopped reading as solid --
@@ -5305,6 +5577,7 @@ function currentSolidsForExport() {
     axisX: dome.axisX,
     angleDeg: dome.angleDeg,
     thickness: assignedThicknesses(),
+    z: m.blocks.map((_, i) => blockZ(m, i)),
     steps: dome.poleni ? Math.max(2, Math.round(dome.angleDeg / 4)) : 1,
     align: state.solidAlign,
   });
@@ -5480,7 +5753,7 @@ function sideKey() {
   const d = domeOptions();
   return `${m && m.blocks ? m.blocks.length : 0}:${d.poleni}:`
     + `${d.angleDeg}:${d.axisX}:${state.camera.az}:${state.camera.el}:`
-    + `${state.solidAlign}:`
+    + `${state.solidAlign}:${m?.groups?.map((g) => `${g.z}:${g.thickness}`).join(",")}:`
     + `${m && m.frame ? m.frame.units_per_pixel : 1}`;
 }
 
@@ -5548,6 +5821,7 @@ function reweigh() {
       * (Number(groupOf(i).gamma) || gamma) * m.thickness[i]);
   }
 
+  state.layerContext = null;
   const total = m.weights.reduce((a, b) => a + b, 0);
   state.basePole = [total / 4, -total / 2];
   reportDome();
@@ -5599,7 +5873,30 @@ function reportDome() {
  * ring built here, switching on "Drive from the thrust" reports the band
  * directly, and it is the same quantity the figures plot.
  */
+function mergeGeneratedLayer(previous, method) {
+  const fresh = state.model;
+  if (!previous?.blocks?.length) return;
+  const z = zKey(ui.blockZ.value);
+  const replaced = new Set((previous.groups ?? [])
+    .filter((g) => g.method === method && zKey(g.z) === z).map((g) => g.id));
+  const keep = previous.blocks.map((_, i) => i).filter((i) => !replaced.has(previous.blockGroups?.[i]));
+  if (!keep.length) return;
+  const join = (field) => [...keep.map((i) => previous[field]?.[i]), ...(fresh[field] ?? [])];
+  state.model = { ...previous, ...fresh, blocks: join('blocks'), centroids: join('centroids'),
+    areas: join('areas'), weights: join('weights'), thickness: join('thickness'),
+    groups: (previous.groups ?? []).filter((g) => !replaced.has(g.id)),
+    blockGroups: keep.map((i) => previous.blockGroups?.[i]),
+    joints: null, jointRecovery: null, forcePolygon: null, thrustLine: null };
+  state.ringAuto = false; state.ringStudySource = null;
+}
+
 function generateRing(opt = {}) {
+  const previousLayerModel = state.model;
+  const previousLayerForces = state.forces;
+  if (previousLayerModel?.blocks?.length && previousLayerModel.frame?.coordinates !== 'physical') {
+    ui.warn.hidden = false; ui.warn.textContent = 'Scale the existing XY drawing before adding a parametric arch in physical units.'; return;
+  }
+  rememberLayer();
   applyRadiusTriStep();
   const resetStudy = opt && opt.resetStudy !== false;
   const ri = Math.max(1e-6, Number(ui.ringRi.value) || 4);
@@ -5619,10 +5916,10 @@ function generateRing(opt = {}) {
   state.trace = { inner: [], outer: [], armed: null, cursor: null };
   state.profiles = { list: [], current: null, centre: null, picking: false };
   state.forces = { points: [], magnitudes: [], x: [], bases: [], placing: false };
-  state.image = null;
-  state.imageData = null;
+  if (!previousLayerModel?.blocks?.length) { state.image = null; state.imageData = null; }
   state.ends = { A: null, B: null, picking: null, construction: null };
   state.model = {
+    ...(previousLayerModel ?? {}),
     blocks, centroids, weights, joints,
     areas: blocks.map((p) => Math.abs(signedAreaOf(p))),
     thickness: blocks.map(() => thickness),
@@ -5639,11 +5936,13 @@ function generateRing(opt = {}) {
   if (!state.axisPicked) {
     ui.domeAxis.value = defaultAxis(pointA, pointB, blocks).toPrecision(6);
   }
+  mergeGeneratedLayer(previousLayerModel, 'ring');
+  if (previousLayerModel?.blocks?.length) { state.forces = previousLayerForces; restoreLayer(); }
   newGroup('ring', blocks.length);
   reweigh();
   const total = state.model.weights.reduce((a, b) => a + b, 0);
   state.ringStudySource = currentRingStudySource({ ri, tri, n });
-  state.ringAuto = true;
+  state.ringAuto = layersOf(state.model).length <= 1 && state.model.blocks.length === blocks.length;
   if (resetStudy) state.thicknessStudy = { ok: true, points: [] };
   const plotted = recordRingState(state.ringStudySource);
   state.selectedJoint = null;
@@ -5665,8 +5964,9 @@ function generateRing(opt = {}) {
         : 'no admissible Couplet line')
       : `${plotted.points.filter((p) => p.admissible).length}/`
         + `${plotted.points.length} admissible states`);
+  if (!state.ringAuto) { state.ringStudySource = null; state.thicknessStudy = null; }
   ui.warn.hidden = true;
-  ui.meta.textContent = `${n} blocks · circular ring · t/ri = ${tri}`;
+  ui.meta.textContent = `${state.model.blocks.length} blocks · circular ring · t/ri = ${tri}`;
   reportBlocks(blocks.length);
   reportScale();
 
@@ -5677,6 +5977,9 @@ function generateRing(opt = {}) {
 }
 
 function generateThreePointRing() {
+  const previousLayerModel = state.model;
+  const previousLayerForces = state.forces;
+  rememberLayer();
   const picked = state.threePointRing;
   const inner = picked.inner.map((p) => p && p.slice());
   const outer = picked.outer.map((p) => p && p.slice());
@@ -5718,6 +6021,8 @@ function generateThreePointRing() {
     frame: state.model?.frame ?? { coordinates: 'pixels', units_per_pixel: 1, inferred: false },
   };
   clearPlotState();
+  mergeGeneratedLayer(previousLayerModel, 'three');
+  if (previousLayerModel?.blocks?.length) { state.forces = previousLayerForces; restoreLayer(); }
   newGroup('three', blocks.length);
   if (!state.axisPicked) {
     ui.domeAxis.value = defaultAxis(pointA, pointB, blocks).toPrecision(6);
@@ -5765,7 +6070,8 @@ function generateBlocks() {
     return;
   }
   const previous = state.model ?? null;
-  const replaceId = t.generatedGroupId;
+  const replaceId = previous?.groups?.find((g) => g.id === t.generatedGroupId
+    && zKey(g.z) === zKey(ui.blockZ.value))?.id;
   const previousBlocks = previous?.blocks ?? [];
   const keep = previousBlocks.map((_, i) => i)
     .filter((i) => !replaceId || previous?.blockGroups?.[i] !== replaceId);
@@ -5802,7 +6108,7 @@ function generateBlocks() {
   const replacedGroup = previous?.groups?.find((g) => g.id === replaceId);
   let generatedGroup;
   if (replacedGroup) {
-    generatedGroup = { ...replacedGroup, gamma, thickness };
+    generatedGroup = { ...replacedGroup, gamma, thickness, z: Number(ui.blockZ.value) || 0 };
     state.model.groups.push(generatedGroup);
     state.model.blockGroups.push(...built.blocks.map(() => generatedGroup.id));
     reportGroups();
@@ -5867,6 +6173,8 @@ function attachNavigation(ax) {
       const mag = forceMag2(fx, fy);
       if (mag > 0) {
         const p = mainAx.toData([e.offsetX, e.offsetY]);
+        ensureForceBases();
+        state.forces.z.push(Number(ui.forceLayer.value) || 0);
         state.forces.points.push(p);
         state.forces.x.push(fx);
         state.forces.magnitudes.push(fy);
@@ -6065,6 +6373,7 @@ ui.clearForces.addEventListener('click', () => {
   state.forces.magnitudes = [];
   state.forces.x = [];
   state.forces.bases = [];
+  state.forces.z = [];
   listForces();
   recompute();
   fitForceView();
@@ -6135,12 +6444,24 @@ ui.system.addEventListener('change', () => {
   state.system = to;
 
   const scaled = state.model?.frame?.coordinates === 'physical';
+  let convertedForceTarget = null;
   if (scaled && from !== to) {
     const { kL, kF, density } = conversionFactors(from, to);
+    convertedForceTarget = zKey(Number(ui.forceLayer.value) * kL);
     const pt = (p) => (p ? [p[0] * kL, p[1] * kL] : p);
     const poly = (q) => (q ?? []).map(pt);
 
+    rememberLayer();
     state.model = convertModel(state.model, from, to);
+    const settings = {};
+    Object.entries(state.layers.settings).forEach(([key, value]) => {
+      settings[key === 'all' ? key : zKey(Number(key) * kL)] = { ...value, A: pt(value.A), B: pt(value.B) };
+    });
+    state.layers.settings = settings;
+    if (!['all', 'overlay'].includes(state.layers.selection)) state.layers.selection = zKey(Number(state.layers.selection) * kL);
+    if (state.layers.overlayLayer != null) state.layers.overlayLayer = zKey(Number(state.layers.overlayLayer) * kL);
+    if (state.layers.normalizedBase) state.layers.normalizedBase *= kF / kL;
+    state.layerContext = null;
     if (state.model.stereotomy) {
       state.model.stereotomy = {
         ...state.model.stereotomy,
@@ -6153,6 +6474,7 @@ ui.system.addEventListener('change', () => {
     state.forces = {
       ...forces,
       points: poly(forces.points),
+      z: (forces.points ?? []).map((_, i) => (forces.z?.[i] ?? 0) * kL),
       x: (forces.x ?? []).map((v) => v * kF),
       magnitudes: (forces.magnitudes ?? []).map((v) => v * kF),
       bases: (forces.bases ?? forces.magnitudes ?? []).map((v, i) => (Array.isArray(v)
@@ -6204,6 +6526,7 @@ ui.system.addEventListener('change', () => {
     };
     field(ui.gamma, density);
     field(ui.thick, kL);
+    field(ui.blockZ, kL);
     field(ui.subnormalWidth, kL);
     field(ui.ringRi, kL);
     field(ui.refLength, kL);
@@ -6225,6 +6548,8 @@ ui.system.addEventListener('change', () => {
   reportScale();
   reportMeasurements();
   reportDome();
+  reportLayers();
+  if (convertedForceTarget != null) ui.forceLayer.value = convertedForceTarget;
   listForces();
   recompute();
   fitViews();
@@ -6268,7 +6593,7 @@ for (const sel of [ui.gammaTarget, ui.thickTarget]) {
     const m = state.model;
     if (!m?.groups?.length) return;
     const id = selectedGroupId(sel);
-    const g = id === 'all' ? null : m.groups.find((x) => x.id === id);
+    const g = ['all', 'new'].includes(id) ? null : m.groups.find((x) => x.id === id);
     if (sel === ui.gammaTarget && g) ui.gamma.value = Number(g.gamma).toPrecision(6);
     if (sel === ui.thickTarget && g) ui.thick.value = Number(g.thickness).toPrecision(6);
   });
@@ -6283,10 +6608,20 @@ for (const f of [ui.gamma, ui.thick]) {
   });
   f.addEventListener('change', () => {
     const select = f === ui.gamma ? ui.gammaTarget : ui.thickTarget;
-    const label = select.value === 'all' ? 'all groups' : `group ${select.selectedIndex}`;
+    const label = select.value === 'all' ? 'all groups' : select.value === 'new' ? 'new blocks' : `group ${select.selectedIndex}`;
     appendLog(`${f === ui.gamma ? 'Changed material' : 'Changed thickness'} for ${label}`);
   });
 }
+ui.lotLayer.addEventListener('change', () => changeLayer(ui.lotLayer.value));
+ui.overlayLayer.addEventListener('change', () => changeLayer('overlay', ui.overlayLayer.value));
+ui.normalizedThrust.addEventListener('change', () => {
+  const h = Number(ui.normalizedThrust.value);
+  if (!(h > 0) || !Number.isFinite(h)) return;
+  state.layers.normalizedBase = h; setThrustSlider(50); recompute(); fitForceView(); draw();
+});
+ui.blockZ.addEventListener('change', () => {
+  if (!Number.isFinite(Number(ui.blockZ.value))) ui.blockZ.value = '0';
+});
 ui.showGroups.addEventListener('change', draw);
 ui.clearBlocks.addEventListener('click', () => {
   clearBlocks(selectedGroupId(ui.clearTarget));
@@ -6612,7 +6947,7 @@ ui.imposeEnds.addEventListener('change', () => {
   // user's to place, anywhere they like, and the springings are only the most
   // common choice. The panel says which are still to be picked.
   if (ui.imposeEnds.checked && !(state.ends.A && state.ends.B)) {
-    const m = state.model;
+    const m = analysisModel();
     if (m && m.joints && m.joints.length >= 2) {
       const { pointA, pointB } = springings(m.joints);
       state.ends.A = state.ends.A ?? pointA;
@@ -6840,7 +7175,7 @@ ui.alphaPick.addEventListener('click', () => {
     const from = s.show === 'plus' ? s.plus : s.show === 'minus' ? s.minus : null;
     if (from) {
       s.picks = from.picks.map((p) => ({ ...p }));
-      s.manual = mechanismMultiplier(multiplierInput(state.model, state.forces), s.picks);
+      s.manual = mechanismMultiplier(multiplierInput(analysisModel(), analysisForces()), s.picks);
       s.show = "manual";
     }
   }
@@ -6966,6 +7301,7 @@ async function saveWork() {
     state.notes = ui.projectNotes.value;
     state.dome = domeOptions();
     appendLog(`Saved session as ${fileName}`);
+    rememberLayer();
     const data = serialise(state, {
       thrust: ui.thrust.value,
       startPos: ui.startPos.value,
@@ -7010,6 +7346,7 @@ function openWork(text, { source = null } = {}) {
     return;
   }
 
+  resetLayers(data.layers);
   state.model = data.model;
   clearPlotState();
   state.trace = data.trace
@@ -7073,6 +7410,7 @@ function openWork(text, { source = null } = {}) {
   };
   ui.imposeEnds.checked = !!(data.ends && data.ends.imposed);
   ui.imposeEnds2.checked = ui.imposeEnds.checked;
+  if (data.layers) restoreLayer();
   ensureGroups();
   if (state.trace) {
     const traceGroups = state.model?.groups?.filter((g) => g.method === 'trace') ?? [];

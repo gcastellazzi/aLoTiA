@@ -390,10 +390,11 @@ export function wrapText(ctx, text, maxWidth, font = '12px Helvetica, Arial, san
 /** Outline and fill the voussoirs. */
 export function drawBlocks(ax, polys, opt = {}) {
   const {
-    labels = false, highlight = -1, colours = null,
+    labels = false, highlight = -1, colours = null, opacities = null, numbers = null,
   } = opt;
   ax.clipped((c) => {
     polys.forEach((block, k) => {
+      c.globalAlpha = opacities?.[k] ?? 1;
       for (const p of piecesOf(block)) {
         c.beginPath();
         for (let i = 0; i < p.x.length; i++) {
@@ -408,6 +409,7 @@ export function drawBlocks(ax, polys, opt = {}) {
         c.stroke();
       }
     });
+    c.globalAlpha = 1;
     if (labels) {
       c.fillStyle = '#333';
       c.font = figureFont('9px Helvetica, Arial, sans-serif');
@@ -417,7 +419,8 @@ export function drawBlocks(ax, polys, opt = {}) {
         const cx = p.x.reduce((a, b) => a + b, 0) / p.x.length;
         const cy = p.y.reduce((a, b) => a + b, 0) / p.y.length;
         const [X, Y] = ax.toPx([cx, cy]);
-        c.fillText(String(k + 1), X, Y);
+        c.globalAlpha = opacities?.[k] ?? 1;
+        c.fillText(String(numbers?.[k] ?? k + 1), X, Y);
       });
     }
   });
@@ -428,7 +431,7 @@ export function drawBlocks(ax, polys, opt = {}) {
  * centre line. `forces` gives the magnitude carried by each segment.
  */
 export function drawThrustLine(ax, points, forces, opt = {}) {
-  const { widthFactor = 12, colour = 'rgb(200,30,30)' } = opt;
+  const { widthFactor = 12, colour = 'rgb(200,30,30)', centreColour = '#111' } = opt;
   if (!points || points.length < 2) return;
   const maxF = forces && forces.length ? Math.max(...forces.map(Math.abs)) : 1;
 
@@ -452,14 +455,14 @@ export function drawThrustLine(ax, points, forces, opt = {}) {
       const [X, Y] = ax.toPx(p);
       if (i === 0) c.moveTo(X, Y); else c.lineTo(X, Y);
     });
-    c.strokeStyle = '#111';
+    c.strokeStyle = centreColour;
     c.lineWidth = 1.4;
     c.setLineDash([6, 4]);
     c.stroke();
     c.setLineDash([]);
 
     // The vertices: where the line crosses a joint.
-    c.fillStyle = '#111';
+    c.fillStyle = centreColour;
     points.forEach((p) => {
       const [X, Y] = ax.toPx(p);
       c.beginPath();

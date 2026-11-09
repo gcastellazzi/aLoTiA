@@ -706,3 +706,15 @@ ul.forces button:hover {
 #fontDialog { border: 1px solid #aaa; border-radius: 5px; padding: 20px; }
 #fontDialog label { display: block; margin: 12px 0; }
 #fontDialog::backdrop { background: rgb(0 0 0 / 25%); }
+
+/* Layer controls remain readable in the narrow group pane. */
+.blockgroups li { flex-wrap: wrap; }
+.blockgroups li select { flex: 1 1 100%; min-width: 0; }
+.layer-results { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+ul.forces .force-components { flex-wrap: wrap; }
+ul.forces .force-components select { width: auto; max-width: 100%; }
+
+#panel label.inline:has(> #lotLayer),
+#panel label.inline:has(> #overlayLayer) { display: block; }
+#panel label.inline select#lotLayer,
+#panel label.inline select#overlayLayer { display: block; width: 100%; margin-top: 4px; }
