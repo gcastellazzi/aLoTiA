@@ -1,3 +1,4 @@
+import { angularBlockSolid } from './poleni-layers.js';
 /**
  * Poleni's dome: an arch that is a slice of a shell, not a slice of a barrel.
  *
@@ -319,8 +320,9 @@ export function extrude(poly, thickness) {
 export function solids(polys, opt = {}) {
   const {
     poleni = false, axisX = 0, angleDeg = 15, thickness = [], steps = 6,
-    align = 'left', full = false, z = null,
+    align = 'left', full = false, z = null, layerDefinitions = null, referenceRadius = null,
   } = opt;
+  if (poleni && layerDefinitions) return polys.map((b, i) => angularBlockSolid(b, layerDefinitions[i], { axisX, referenceRadius }));
   const scaled = poleni && Array.isArray(thickness) && thickness.length
     ? scaledChordWidths(polys, { axisX, angleDeg, thickness })
     : null;

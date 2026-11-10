@@ -221,6 +221,7 @@ export function convertModel(model, from, to) {
     // the same stone weighs 20 kN or 20000 N, and its area changes by 10^6.
     weights: (model.weights ?? []).map((w) => w * kF),
     thickness: (model.thickness ?? []).map((t) => t * kL),
+    poleniRadius: model.poleniRadius != null ? model.poleniRadius * kL : undefined,
     groups: model.groups?.map((g) => ({ ...g, z: (Number(g.z) || 0) * kL })),
     joints: (model.joints ?? []).map((j) => ({ ...j, a: pt(j.a), b: pt(j.b) })),
     pointA: pt(model.pointA),

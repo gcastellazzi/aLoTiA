@@ -96,3 +96,11 @@ test('nothing in the markup is left with no code behind it', () => {
   assert.deepEqual(orphans, [],
     `nothing in app.js mentions ${orphans.join(', ')}`);
 });
+
+
+test('every ui property referenced by the app has a binding', () => {
+  const definition = app.slice(app.indexOf('const ui = {'), app.indexOf('const mainAx ='));
+  const bound = new Set([...definition.matchAll(/(\w+):\s*el\(/g)].map((m) => m[1]));
+  const referenced = new Set([...app.matchAll(/\bui\.(\w+)/g)].map((m) => m[1]));
+  assert.deepEqual([...referenced].filter((key) => !bound.has(key)), []);
+});

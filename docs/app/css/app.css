@@ -718,3 +718,8 @@ ul.forces .force-components select { width: auto; max-width: 100%; }
 #panel label.inline:has(> #overlayLayer) { display: block; }
 #panel label.inline select#lotLayer,
 #panel label.inline select#overlayLayer { display: block; width: 100%; margin-top: 4px; }
+
+#panel label.inline:has(> #poleniLayerSelect),
+#panel label.inline:has(> #poleniWidthMode) { display: block; }
+#panel label.inline select#poleniLayerSelect,
+#panel label.inline select#poleniWidthMode { display: block; width: 100%; margin-top: 4px; }

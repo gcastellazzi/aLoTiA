@@ -1,5 +1,6 @@
 /** Z locates the first face; a block occupies [Z, Z + thickness].
  * Z partitions the XY problem, never changes its equations. */
+import { angularLayerForBlock, referenceChord } from './poleni-layers.js';
 import { piecesOf } from './geometry.js';
 import { jointsFromBlocks } from './joints.js';
 import { blockCentroid } from './profile.js';
@@ -11,7 +12,15 @@ export const zKey = (z) => String(Number(z) || 0);
 export function blockZ(model, i) {
   return Number(model.groups?.find((g) => g.id === model.blockGroups?.[i])?.z) || 0;
 }
+export function blockLayerKey(model, i) {
+  return model?.layerMode === 'poleni' ? angularLayerForBlock(model, i)?.id ?? 'unassigned' : zKey(blockZ(model, i));
+}
 export function layersOf(model) {
+  if (model?.layerMode === 'poleni') {
+    return (model.poleniLayers ?? []).map((l) => ({ ...l, key: l.id,
+      indices: (model.blocks ?? []).map((_, i) => i).filter((i) => blockLayerKey(model, i) === l.id) }))
+      .filter((l) => l.indices.length).sort((a, b) => a.startAngle - b.startAngle || a.angleDeg - b.angleDeg);
+  }
   const values = new Map();
   (model?.blocks ?? []).forEach((_, i) => {
     const z = blockZ(model, i), key = zKey(z);
@@ -28,12 +37,17 @@ export function layerThickness(model, key) {
   }
   return t;
 }
-export function forcesInLayer(forces, key = 'all') {
+export function layerReferenceWidth(model, key) {
+  if (model?.layerMode !== 'poleni') return layerThickness(model, key);
+  const l = model.poleniLayers?.find((l) => l.id === key);
+  return l ? referenceChord(model.poleniRadius, l.angleDeg) : null;
+}
+export function forcesInLayer(forces, key = 'all', model = null) {
   const indices = (forces?.points ?? []).map((_, i) => i)
-    .filter((i) => key === 'all' || zKey(forces.z?.[i]) === key);
+    .filter((i) => key === 'all' || (model?.layerMode === 'poleni' ? forces.layer?.[i] === key : zKey(forces.z?.[i]) === key));
   const pick = (name) => indices.map((i) => forces[name]?.[i] ?? (name === 'z' ? 0 : 0));
   return { points: pick('points'), magnitudes: pick('magnitudes'), x: pick('x'),
-    z: pick('z'), sourceIndices: indices };
+    z: pick('z'), layer: indices.map((i) => forces.layer?.[i] ?? null), sourceIndices: indices };
 }
 
 // Vertex order/direction do not distinguish coincident XY blocks. Their weights
@@ -51,7 +65,7 @@ export function modelInLayer(model, key = 'all') {
   const ls = layersOf(model);
   if (ls.length <= 1 && (key === 'all' || ls[0]?.key === key)) return model;
   const indices = (model.blocks ?? []).map((_, i) => i)
-    .filter((i) => key === 'all' || zKey(blockZ(model, i)) === key);
+    .filter((i) => key === 'all' || blockLayerKey(model, i) === key);
   const rows = [], coincident = new Map();
   for (const i of indices) {
     const k = key === 'all' ? polygonKey(model.blocks[i]) : `block:${i}`;

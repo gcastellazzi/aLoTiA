@@ -5,6 +5,45 @@ and the project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Explicit angular Poleni layers: tapered sectors and constant-width ribs
+
+Poleni groups can now belong to angular layers with a start angle, an opening,
+and a choice between a tapered sector and a rib of constant transverse width.
+Angle and chord are linked by `c_ref = 2 R_ref sin(opening / 2)` at one common,
+editable reference radius. Chord entry uses the minor-sector convention,
+`0 < opening <= 180°`. A rib uses parallel meridional faces centred on the
+layer's middle angle; the reference chord sets its constant width. Its angular
+footprint away from the reference parallel therefore varies. A sector keeps
+its opening and tapers naturally towards the axis.
+
+Sector weights use the angular opening times the integral of distance from the
+axis over the section, including crown blocks which cross the axis. Rib weights
+use section area times constant width. Reference radius does not change a
+sector's volume when its angle is held fixed; changing R with a fixed rib
+opening changes the rib's width. Geometry and weights no longer use a global
+scaled-chord approximation in explicit angular mode.
+
+The same individual, combined and superimposed LoT choices apply. Overlays
+share **H/c_ref** across both kinds, with H = h × c_ref for each layer. Point
+loads remain total forces belonging to one layer. Layer IDs, geometry,
+endpoints, loads and the common reference radius are saved and survive changes
+of physical units.
+
+The geometry panel offers an explicit repeat command, which copies the chosen
+layer's blocks, loads and saved LoT settings without changing its opening.
+Paired meridional sections repeat through 180°, since they already contain
+both opposite sides; single-sided sections repeat through 360°. Conflicting
+start angles or openings wider than the repeat spacing are rejected before
+any copies are made. The old full-dome display checkbox is disabled in this
+mode, so explicit layers cannot be silently counted twice.
+
+Legacy saved Poleni sessions retain their previous weights and scaled-chord
+geometry until the user adopts angular layers. The old parametric thickness
+study is not offered for the new mixed angular model. Abaqus export is disabled
+for explicit angular layers: its current refined-mesh path reconstructs centred
+extrusions, rather than this angular geometry. Save work preserves the complete
+angular model; existing Z-layer and legacy-lune export paths are unchanged.
+
 ### Z layers and lines of thrust through a bridge
 
 Blocks now occupy `[Z, Z + thickness]`. Set Z beside the material and thickness

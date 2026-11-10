@@ -1,3 +1,4 @@
+import { validateAngularLayer } from './poleni-layers.js';
 /**
  * Saving and reopening a piece of work.
  *
@@ -53,6 +54,7 @@ export function serialise(state, controls = {}, imageName = null) {
       points: points(state.forces.points),
       ...(forceX.some((v) => Number(v) !== 0) ? { x: numbers(forceX) } : {}),
       magnitudes: numbers(forceMagnitudes),
+      layer: (state.forces.points ?? []).map((_, i) => state.forces.layer?.[i] ?? null),
       z: (state.forces.points ?? []).map((_, i) => Number(state.forces.z?.[i]) || 0),
       ...(forceBases?.length === forceMagnitudes.length && forceBases.length
         ? { bases: forceBases.map((v, i) => (Array.isArray(v)
@@ -96,6 +98,10 @@ export function serialise(state, controls = {}, imageName = null) {
         image: m.image ?? null,
         imageSize: m.imageSize ? [...m.imageSize] : null,
         imageDrawSize: m.imageDrawSize ? [...m.imageDrawSize] : null,
+        layerMode: m.layerMode ?? 'z',
+        poleniRadius: m.poleniRadius,
+        poleniAutoRadius: m.poleniAutoRadius || undefined,
+        poleniLayers: m.poleniLayers?.map((l) => ({ ...l })),
         groups: m.groups?.length ? m.groups.map((g) => ({ ...g })) : undefined,
         blockGroups: m.blockGroups?.length ? m.blockGroups.map((id) => Number(id)) : undefined,
         stereotomy: m.stereotomy ? {
@@ -238,7 +244,7 @@ export function deserialise(text) {
     throw new Error('the file has an invalid group Z');
   }
   if (data.layers) {
-    if (!['all', 'overlay'].includes(data.layers.selection) && !Number.isFinite(Number(data.layers.selection))) {
+    if (!['all', 'overlay'].includes(data.layers.selection) && !/^p:[1-9]\d*$/.test(data.layers.selection) && !Number.isFinite(Number(data.layers.selection))) {
       throw new Error('the file has an invalid layer selection');
     }
     for (const settings of Object.values(data.layers.settings ?? {})) {
@@ -251,7 +257,27 @@ export function deserialise(text) {
       }
     }
   }
+  if (m?.poleniLayers != null) {
+    if (!Array.isArray(m.poleniLayers) || !m.poleniLayers.every(validateAngularLayer)
+      || new Set(m.poleniLayers.map((l) => l.id)).size !== m.poleniLayers.length
+      || !(m.poleniRadius > 0) || !Number.isFinite(m.poleniRadius)) {
+      throw new Error('the file has invalid angular layer geometry');
+    }
+    if ((m.groups ?? []).some((g) => g.poleniLayer != null && !m.poleniLayers.some((l) => l.id === g.poleniLayer))) {
+      throw new Error('a group refers to a missing angular layer');
+    }
+  }
+  if (m?.layerMode != null && !['z', 'poleni'].includes(m.layerMode)) throw new Error('the file has an invalid layer mode');
+  if (m?.layerMode === 'poleni' && m.blocks?.length && (!m.poleniLayers?.length
+    || m.blockGroups?.length !== m.blocks.length
+    || m.blockGroups.some((id) => !(m.groups ?? []).some((g) => g.id === id && g.poleniLayer)))) {
+    throw new Error('the angular model has unassigned groups');
+  }
   const f = data.forces;
+  if (f?.layer && (!Array.isArray(f.layer) || f.layer.length !== (f.points ?? []).length
+    || !f.layer.every((id) => id == null || (typeof id === 'string' && /^p:[1-9]\d*$/.test(id))))) {
+    throw new Error('the file has invalid angular force layers');
+  }
   if (f?.z && (f.z.length !== (f.points ?? []).length || !f.z.every(Number.isFinite))) {
     throw new Error('the file has invalid force layers');
   }
@@ -297,6 +323,7 @@ export function deserialise(text) {
     forces: f
       ? {
         ...f,
+        layer: (f.points ?? []).map((_, i) => f.layer?.[i] ?? null),
         z: (f.points ?? []).map((_, i) => f.z?.[i] ?? 0),
         ...(Array.isArray(f.x) && f.x.length ? { x: numbers(f.x) } : {}),
       }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>aLOTofImaginArches — funicular analysis of masonry arches</title>
 <link rel="stylesheet" href="../css/ui-kit.css">
-<link rel="stylesheet" href="css/app.css?v=20261109-layers">
+<link rel="stylesheet" href="css/app.css?v=20261110-poleni">
 </head>
 <body>
 
@@ -248,9 +248,38 @@
         meridian planes, so it is broad at the major parallel and closes to
         nothing at the crown. The weights follow, and so does the line of
         thrust &mdash; this is what Poleni saw in 1748.</p>
-      <label class="inline">Slice angle &deg;
-        <input type="number" id="domeAngle" min="1" max="360" step="0.5" value="22.5">
+      <div id="poleniLayerControls" hidden>
+      <label class="inline">Edit / create
+        <select id="poleniLayerSelect"><option value="new">New angular layer</option></select>
       </label>
+      <label class="inline">Start angle α₀ °
+        <input type="number" id="poleniStart" step="0.5" value="0">
+      </label>
+      <label class="inline">Opening Δα °
+        <input type="number" id="domeAngle" min="0.01" max="180" step="0.5" value="22.5">
+      </label>
+      <label class="inline">Width along parallels
+        <select id="poleniWidthMode">
+          <option value="tapered">Tapered sector</option>
+          <option value="rib">Rib — constant width</option>
+        </select>
+      </label>
+      <label class="inline"><span id="poleniRadiusLabel">Reference R m</span>
+        <input type="number" id="poleniRadius" min="0" step="any" placeholder="auto at outer springing">
+      </label>
+      <label class="inline"><span id="poleniChordLabel">Reference chord m</span>
+        <input type="number" id="poleniChord" min="0" step="any">
+      </label>
+      <p class="hint">c = 2R sin(Δα/2). R is common to all layers. Tapered sectors keep their opening; ribs keep a constant transverse width with parallel faces. Apply the settings before creating blocks.</p>
+      <button id="applyAngularLayer" type="button">Apply / add angular layer</button>
+      <button id="activatePoleniLayers" type="button">Adopt angular layers for this project</button>
+      <label class="inline">Copies including original
+        <input type="number" id="repeatAngularCount" min="2" max="72" step="1" value="8">
+      </label>
+      <button id="repeatAngularLayer" type="button">Repeat selected layer around axis</button>
+      <p class="hint">Repeats its blocks and assigned loads. A section containing both sides already represents two opposite sectors; repeating it through 180° covers the dome once.</p>
+      <p id="angularStatus" class="meta"></p>
+      </div>
       <label class="inline">Axis x
         <input type="number" id="domeAxis" step="0.001" value="0">
       </label>
@@ -260,7 +289,7 @@
     </div>
     <div class="pane" id="paneLot" hidden>
     <section>
-      <h2>Z layers</h2>
+      <h2 id="layerHeading">Z layers</h2>
       <label class="inline">Calculate
         <select id="lotLayer"><option value="all">All — combined curve</option></select>
       </label>
@@ -288,7 +317,7 @@
     </section>
     <section>
       <h2>Applied forces</h2>
-      <label class="inline">Layer Z <select id="forceLayer"></select></label>
+      <label class="inline"><span id="forceLayerLabel">Layer Z</span> <select id="forceLayer"></select></label>
       <label class="inline"><span id="forceLabelX">X kN</span>
         <input type="number" id="forceMagX" step="1" value="0">
       </label>
@@ -485,7 +514,7 @@
                 <thead>
                   <tr>
                     <th>#</th><th>sides</th><th>G(x, y)</th>
-                    <th>weight</th><th>Z start</th><th>thickness</th><th>group</th><th></th>
+                    <th>weight</th><th id="blockLayerHeader">Z start</th><th id="blockWidthHeader">thickness</th><th>group</th><th></th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -624,6 +653,6 @@ Plain text, with **bold**, *emph*, _underline_ and
     &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
 </footer>
 
-<script type="module" src="js/app.js?v=20261109-layers"></script>
+<script type="module" src="js/app.js?v=20261110-poleni"></script>
 </body>
 </html>

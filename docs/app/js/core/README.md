@@ -613,3 +613,44 @@ Session `layers` stores the selection, editable overlay layer, shared reference
 h, shared thrust slider and per-section controls/endpoints. Group Z, force Z,
 endpoints and h are converted consistently when changing physical units. Image
 calibration rescales XY only: entered Z and depth are already physical lengths.
+
+
+## Explicit Poleni layers (`poleni-layers.js`)
+
+`model.layerMode = "poleni"` selects populated records from `model.poleniLayers`.
+Each record has a stable `p:<integer>` ID, `startAngle`, `angleDeg` (minor opening,
+0–180 degrees), and `mode` (`tapered` or `rib`). Groups refer to the record through
+`poleniLayer`; forces carry aligned `layer` IDs. Z and group thickness remain
+available for switching back to the extruded idealisation. `poleniRadius` is
+one physical reference radius shared by the angular model.
+
+For a tapered layer, V = Δα ∫|x - axisX| dA (Δα in radians). Polygons crossing
+the axis are clipped on both sides before evaluating the radial first moment;
+using the absolute value of the whole polygon's centroid would incorrectly
+make a symmetric crown block weightless. Its actual outer chord is reported
+per block and changes with radius. The 3D sector retains its true radii and
+rotates from the prescribed start to the end angle.
+
+For a rib, V = A × c_ref, with c_ref = 2 R_ref sin(Δα/2). Its transverse faces
+remain parallel, at ±c_ref/2 from the middle meridional plane. The angle/chord
+pair defines a nominal interval at the reference circle; a constant-width rib
+has a varying angular footprint elsewhere, unlike a sector. Rib intersections
+near the axis are not boolean-unioned: each layer is an independent idealised
+structural contribution, as in the superimposed planar analyses.
+
+`blockLayerKey`, `layersOf`, `modelInLayer`, and `forcesInLayer` use stable angular
+IDs in this mode. `layerReferenceWidth` returns c_ref for both kinds, permitting
+H = h × c_ref overlays despite the local width variation of a tapered layer.
+Rotating a layer changes its 3D position, not its planar gravity solution.
+
+Replication adds explicit groups, blocks, force entries and LoT settings.
+`angularPeriod` returns 180° when the section includes both sides of the axis,
+and 360° for a single-sided section, avoiding duplicate opposite sectors.
+Session validation rejects malformed geometry, invalid radii and unassigned
+angular groups. Length-unit conversion scales R and chords, leaves angular IDs
+and angles fixed, and scales h as force/length.
+
+Legacy Poleni sessions keep the scaled-chord implementation until explicit
+adoption. The existing refined Abaqus mesher ignores supplied solid faces when
+section polygons are provided, so angular export is guarded and disabled; JSON
+sessions are the supported persistence path for the new geometry.

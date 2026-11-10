@@ -15,7 +15,7 @@ import {
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary, drawNotice, wrapText,
   drawJointCell, drawBlockEquilibrium, APPLIED_FORCE_COLOUR,
-} from './render/draw.js?v=20261109-layers';
+} from './render/draw.js?v=20261110-poleni';
 import {
   bounds, area as signedAreaOf, piecesOf, pointInPolygon,
 } from './core/geometry.js';
@@ -24,7 +24,8 @@ import {
   jointForces,
   freeThrustLine, poleForEnds, thrustRangeFactor,
 } from './core/statics.js';
-import { blockZ, zKey, layersOf, modelInLayer, forcesInLayer, layerThickness, solveLayer } from './core/layers.js';
+import { blockZ, blockLayerKey, zKey, layersOf, modelInLayer, forcesInLayer, layerReferenceWidth, solveLayer } from './core/layers.js?v=20261110-poleni';
+import { referenceChord, angleForChord, normalAngle, angularLayerForBlock, angularBlockProperties, radialExtent, angularPeriod } from './core/poleni-layers.js';
 import { fromExample, poleOf, consistency } from './core/model.js';
 import {
   blocksBetween, checkTrace, weighBlocks, centroidsOf, springings,
@@ -37,11 +38,11 @@ import {
 import {
   SYSTEMS, unitsPerPixel, scaleModel, format, archDimensions,
   convertModel, conversionFactors,
-} from './core/units.js?v=20261109-layers';
+} from './core/units.js?v=20261110-poleni';
 
 import {
   serialise, deserialise, suggestedName, FORMAT,
-} from './core/persist.js?v=20261109-layers';
+} from './core/persist.js?v=20261110-poleni';
 import { abaqusInput } from './core/abaqus.js';
 import {
   multiplierInput, mechanismMultiplier, minimumMultiplier, rotationCentres,
@@ -59,7 +60,7 @@ import {
 } from './core/study.js';
 import {
   defaultAxis, luneWeights, solids, widthRange, endParallels, wholeDome,
-} from './core/dome.js?v=20261109-layers';
+} from './core/dome.js?v=20261110-poleni';
 import { cutRadially, blockCentroid, blockArea } from './core/profile.js';
 import {
   frame, projectedBounds, solidCentre, recenteredSolids,
@@ -70,6 +71,13 @@ const DATA = 'data/examples/';
 
 const el = (id) => document.getElementById(id);
 const ui = {
+  poleniLayerControls: el('poleniLayerControls'), poleniLayerSelect: el('poleniLayerSelect'),
+  poleniStart: el('poleniStart'), poleniWidthMode: el('poleniWidthMode'),
+  poleniRadius: el('poleniRadius'), poleniChord: el('poleniChord'),
+  poleniRadiusLabel: el('poleniRadiusLabel'), poleniChordLabel: el('poleniChordLabel'),
+  applyAngularLayer: el('applyAngularLayer'), activatePoleniLayers: el('activatePoleniLayers'),
+  repeatAngularLayer: el('repeatAngularLayer'), repeatAngularCount: el('repeatAngularCount'),
+  forceLayerLabel: el('forceLayerLabel'), angularStatus: el('angularStatus'), layerHeading: el('layerHeading'), blockLayerHeader: el('blockLayerHeader'), blockWidthHeader: el('blockWidthHeader'),
   blockZ: el('blockZ'), zValues: el('zValues'), blockZLabel: el('blockZLabel'),
   lotLayer: el('lotLayer'), overlayLayer: el('overlayLayer'), overlayLayerRow: el('overlayLayerRow'),
   normalizedThrust: el('normalizedThrust'), normalizedThrustRow: el('normalizedThrustRow'),
@@ -452,6 +460,8 @@ function editingLayer() {
   return state.layers.selection === 'overlay' ? state.layers.overlayLayer : state.layers.selection;
 }
 function layerLabel(z) {
+  const l = state.model?.poleniLayers?.find((l) => l.id === z);
+  if (l) return `${Number(l.startAngle.toPrecision(4))}° → ${Number((l.startAngle + l.angleDeg).toPrecision(4))}° · ${l.mode === 'rib' ? 'rib' : 'tapered'}`;
   return `Z = ${Number(z).toPrecision(4)} ${SYSTEMS[state.system].length.label}`;
 }
 function rememberLayer() {
@@ -483,9 +493,162 @@ function resetLayers(saved = null) {
   state.layerContext = null;
   state.layerSolutions = [];
 }
+function angularMode() { return state.model?.layerMode === 'poleni'; }
+function angularForm() {
+  const spec = { startAngle: normalAngle(Number(ui.poleniStart.value)),
+    angleDeg: Number(ui.domeAngle.value), mode: ui.poleniWidthMode.value };
+  if (!Number.isFinite(Number(ui.poleniStart.value))) throw new Error('Enter a finite start angle.');
+  referenceChord(Number(ui.poleniRadius.value), spec.angleDeg);
+  return spec;
+}
+function ensureAngularMode() {
+  const m = state.model;
+  if (!m) return;
+  m.poleniLayers ??= [];
+  const inputR = Number(ui.poleniRadius.value);
+  if (ui.poleniRadius.value.trim() !== '' && (!Number.isFinite(inputR) || !(inputR > 0))) throw new Error('Reference R must be positive.');
+  const extent = radialExtent(m.blocks ?? [], Number(ui.domeAxis.value) || 0);
+  const automatic = m.poleniAutoRadius || (ui.poleniRadius.value.trim() === '' && !m.poleniRadius);
+  const radius = automatic && extent > 0 ? extent : inputR > 0 ? inputR : m.poleniRadius > 0 ? m.poleniRadius : extent || 1;
+  referenceChord(radius, Number(ui.domeAngle.value));
+  m.poleniRadius = radius; m.poleniAutoRadius = automatic && !(extent > 0);
+  ui.poleniRadius.value = String(m.poleniRadius);
+  const byZ = new Map();
+  for (const g of m.groups ?? []) {
+    const assigned = m.poleniLayers.find((l) => l.id === g.poleniLayer);
+    if (assigned) { byZ.set(zKey(g.z), assigned.id); continue; }
+    let id = byZ.get(zKey(g.z));
+    if (!id) {
+      const spec = angularForm(); spec.startAngle = normalAngle(spec.startAngle + byZ.size * spec.angleDeg);
+      const same = m.poleniLayers.find((l) => sameAngularDefinition(l, spec));
+      id = same?.id ?? `p:${Math.max(0, ...m.poleniLayers.map((l) => Number(l.id.split(':')[1]))) + 1}`;
+      if (!same) m.poleniLayers.push({ ...spec, id });
+      byZ.set(zKey(g.z), id);
+    }
+    g.poleniLayer = id;
+  }
+  state.forces.layer = (state.forces.points ?? []).map((_, i) => state.forces.layer?.[i]
+    ?? byZ.get(zKey(state.forces.z?.[i])) ?? m.poleniLayers[0]?.id ?? null);
+  m.layerMode = 'poleni';
+}
+function sameAngularDefinition(a, b) {
+  return Math.abs(normalAngle(a.startAngle) - normalAngle(b.startAngle)) < 1e-9
+    && Math.abs(a.angleDeg - b.angleDeg) < 1e-9 && a.mode === b.mode;
+}
+function creationAngularLayer(create = true) {
+  const m = state.model;
+  if (!m) return null;
+  const selected = m.poleniLayers?.find((l) => l.id === ui.poleniLayerSelect.value);
+  if (selected) return selected;
+  const spec = angularForm();
+  const same = m.poleniLayers?.find((l) => sameAngularDefinition(l, spec));
+  if (same || !create) return same ?? null;
+  const id = `p:${Math.max(0, ...(m.poleniLayers ?? []).map((l) => Number(l.id.split(':')[1]))) + 1}`;
+  const layer = { ...spec, id }; (m.poleniLayers ??= []).push(layer);
+  return layer;
+}
+function creationMatchesGroup(g, model = state.model) {
+  if (!ui.poleni.checked) return zKey(g.z) === zKey(ui.blockZ.value);
+  const layer = model?.poleniLayers?.find((l) => l.id === g.poleniLayer);
+  const selected = model?.poleniLayers?.find((l) => l.id === ui.poleniLayerSelect.value);
+  if (selected) return layer?.id === selected.id;
+  return !!layer && sameAngularDefinition(layer, angularForm());
+}
+function reportAngularControls() {
+  const on = ui.poleni.checked;
+  ui.poleniLayerControls.hidden = !on;
+  ui.blockZ.closest('label').hidden = on;
+  ui.thick.closest('label').hidden = angularMode();
+  ui.thickTarget.closest('label').hidden = angularMode();
+  ui.blockWidthHeader.textContent = angularMode() ? 'local chord / width' : 'thickness';
+  const old = ui.poleniLayerSelect.value || 'new';
+  ui.poleniLayerSelect.replaceChildren();
+  for (const [id, text] of [['new', 'New angular layer'], ...(state.model?.poleniLayers ?? []).map((l) => [l.id, layerLabel(l.id)])]) {
+    const o = document.createElement('option'); o.value = id; o.textContent = text; ui.poleniLayerSelect.append(o);
+  }
+  ui.poleniLayerSelect.value = [...ui.poleniLayerSelect.options].some((o) => o.value === old) ? old : 'new';
+  ui.activatePoleniLayers.hidden = !on || angularMode();
+  ui.repeatAngularLayer.disabled = !angularMode() || !layersOf(state.model).length;
+  ui.full3D.disabled = angularMode();
+  ui.exportAbaqus.disabled = angularMode();
+  ui.exportAbaqus.title = angularMode() ? 'Abaqus export does not yet support explicit angular layers. Save work preserves their geometry.' : 'Export an Abaqus .inp model';
+  for (const id of ['solidAlignCenter', 'solidAlignLeft', 'solidAlignRight']) el(id).disabled = angularMode();
+  if (angularMode() && sideView() === 'solid') ui.sideCaption.textContent = 'Blocks — explicit angular layers';
+  if (angularMode()) ui.full3D.checked = false;
+  ui.blockLayerHeader.textContent = angularMode() ? 'angular layer' : 'Z start';
+  if (on && Number(ui.poleniRadius.value) > 0) {
+    try { ui.poleniChord.value = String(Number(referenceChord(Number(ui.poleniRadius.value), Number(ui.domeAngle.value)).toPrecision(10))); } catch { /* incomplete input */ }
+  }
+  ui.poleniRadiusLabel.textContent = `Reference R ${SYSTEMS[state.system].length.label}`;
+  ui.poleniChordLabel.textContent = `Reference chord ${SYSTEMS[state.system].length.label}`;
+}
+function applyAngularLayer() {
+  try {
+    if (!state.model) ensureTraceModel();
+    ensureGroups(); rememberLayer();
+    const wasAngular = angularMode();
+    ensureAngularMode();
+    const spec = angularForm();
+    let layer = state.model.poleniLayers.find((l) => l.id === ui.poleniLayerSelect.value);
+    if (layer) Object.assign(layer, spec); else layer = creationAngularLayer();
+    reportAngularControls(); ui.poleniLayerSelect.value = layer.id;
+    if (!wasAngular) { state.layers.selection = 'all'; state.layers.normalizedBase = null; restoreLayer(); }
+    state.layerContext = null; state.band = null; state.bandKey = null; state.imposedKey = null; state.frozenBranch = null;
+    state.solidFit = null; state.ringStudySource = null; state.ringAuto = false;
+    reweigh(); reportLayers(); listForces(); recompute(); fitForceView(); draw();
+    ui.angularStatus.textContent = 'Layer saved. New blocks use this angular layer; assign existing groups in the block table.';
+  } catch (e) { ui.angularStatus.textContent = e.message; }
+}
+function repeatAngularLayers() {
+  const m = state.model;
+  const layer = m?.poleniLayers?.find((l) => l.id === (ui.poleniLayerSelect.value !== 'new'
+    ? ui.poleniLayerSelect.value : editingLayer()));
+  if (!layer) { ui.angularStatus.textContent = 'Select an existing angular layer to repeat.'; return; }
+  const count = Number(ui.repeatAngularCount.value);
+  if (!Number.isInteger(count) || count < 2 || count > 72) { ui.angularStatus.textContent = 'Use an integer repeat count between 2 and 72, including the original.'; return; }
+  const selectedGroups = m.groups.filter((g) => g.poleniLayer === layer.id);
+  const ids = new Set(selectedGroups.map((g) => g.id));
+  const indices = m.blocks.map((_, i) => i).filter((i) => ids.has(m.blockGroups[i]));
+  if (!indices.length) { ui.angularStatus.textContent = 'This layer has no blocks to repeat.'; return; }
+  const period = angularPeriod(indices.map((i) => m.blocks[i]), Number(ui.domeAxis.value) || 0);
+  const step = period / count;
+  if (layer.angleDeg > step + 1e-9) { ui.angularStatus.textContent = `The repeats would overlap at R. Use an opening ≤ ${step.toPrecision(4)}° or fewer repeats.`; return; }
+  const specs = Array.from({ length: count - 1 }, (_, i) => ({ ...layer, startAngle: normalAngle(layer.startAngle + (i + 1) * step) }));
+  if (specs.some((s) => m.poleniLayers.some((l) => Math.abs(normalAngle(l.startAngle) - s.startAngle) < 1e-9))) {
+    ui.angularStatus.textContent = 'A target start angle already exists. No copies were added.'; return;
+  }
+  rememberLayer(); ensureForceBases();
+  const forceIndices = state.forces.points.map((_, i) => i).filter((i) => state.forces.layer[i] === layer.id);
+  for (const spec of specs) {
+    const id = `p:${Math.max(0, ...m.poleniLayers.map((l) => Number(l.id.split(':')[1]))) + 1}`;
+    m.poleniLayers.push({ ...spec, id });
+    const groups = new Map();
+    for (const g of selectedGroups) {
+      const gid = Math.max(0, ...m.groups.map((g) => g.id)) + 1;
+      m.groups.push({ ...g, id: gid, poleniLayer: id, name: `${g.name} @ ${spec.startAngle.toPrecision(4)}°` }); groups.set(g.id, gid);
+    }
+    for (const i of indices) {
+      m.blocks.push(structuredClone(m.blocks[i])); m.centroids.push([...m.centroids[i]]);
+      m.areas.push(m.areas[i]); m.weights.push(m.weights[i]); m.thickness.push(m.thickness[i]);
+      m.blockGroups.push(groups.get(m.blockGroups[i]));
+    }
+    for (const i of forceIndices) for (const field of ['points', 'magnitudes', 'x', 'bases', 'z', 'layer']) {
+      state.forces[field].push(field === 'layer' ? id : structuredClone(state.forces[field][i]));
+    }
+    if (state.layers.settings[layer.id]) state.layers.settings[id] = structuredClone(state.layers.settings[layer.id]);
+  }
+  m.joints = null; m.forcePolygon = null; m.thrustLine = null;
+  state.solidFit = null; state.layerContext = null; state.band = null; state.bandKey = null;
+  reweigh(); listForces(); recompute(); fitForceView(); draw();
+  ui.angularStatus.textContent = `Added ${count - 1} copies through ${period}°${period === 180 ? ' of the paired section (360° dome)' : ''}. Assigned loads were copied once per layer.`;
+}
+
 function reportLayers() {
   const ls = layersOf(state.model);
-  const options = ls.map((l) => [l.key, layerLabel(l.z)]);
+  const options = ls.map((l) => [l.key, layerLabel(angularMode() ? l.key : l.z)]);
+  const norm = angularMode() ? 'H/c' : 'H/t';
+  ui.layerHeading.textContent = angularMode() ? 'Angular layers — Poleni' : 'Z layers';
+  ui.forceLayerLabel.textContent = angularMode() ? 'Angular layer' : 'Layer Z';
   const fill = (sel, choices, current) => {
     sel.replaceChildren();
     choices.forEach(([value, label]) => {
@@ -498,28 +661,32 @@ function reportLayers() {
     state.layers.selection = 'all'; restoreLayer();
   }
   if (!ls.some((l) => l.key === state.layers.overlayLayer)) state.layers.overlayLayer = ls[0]?.key ?? null;
-  fill(ui.lotLayer, [['all', 'All — combined curve'], ['overlay', 'All — superimposed H/t'], ...options], state.layers.selection);
+  fill(ui.lotLayer, [['all', 'All — combined curve'], ['overlay', `All — superimposed ${norm}`], ...options], state.layers.selection);
   fill(ui.overlayLayer, options, state.layers.overlayLayer);
   const forceOptions = [...options];
-  (state.forces.z ?? []).forEach((z) => {
+  if (!angularMode()) (state.forces.z ?? []).forEach((z) => {
     if (!forceOptions.some(([k]) => k === zKey(z))) forceOptions.push([zKey(z), `${layerLabel(z)} (no blocks)`]);
   });
-  if (!forceOptions.length) forceOptions.push(['0', layerLabel(0)]);
+  if (angularMode()) (state.forces.layer ?? []).filter(Boolean).forEach((id) => {
+    if (!forceOptions.some(([key]) => key === id)) forceOptions.push([id, `${layerLabel(id)} (no blocks)`]);
+  });
+  if (!forceOptions.length) forceOptions.push([angularMode() ? '' : '0', angularMode() ? 'Create an angular layer' : layerLabel(0)]);
   fill(ui.forceLayer, forceOptions, ui.forceLayer.value || editingLayer());
   ui.zValues.replaceChildren();
   options.forEach(([key]) => {
-    const o = document.createElement('option'); o.value = key; ui.zValues.append(o);
+    if (!angularMode()) { const o = document.createElement('option'); o.value = key; ui.zValues.append(o); }
   });
   const overlay = state.layers.selection === 'overlay';
   ui.overlayLayerRow.hidden = !overlay;
   ui.normalizedThrustRow.hidden = !overlay;
-  ui.normalizedThrustLabel.textContent = `Reference H/t ${SYSTEMS[state.system].force.label}/${SYSTEMS[state.system].length.label}`;
+  ui.normalizedThrustLabel.textContent = `Reference ${norm} ${SYSTEMS[state.system].force.label}/${SYSTEMS[state.system].length.label}`;
   ui.blockZLabel.textContent = `Z start ${SYSTEMS[state.system].length.label}`;
   ui.layerResults.replaceChildren();
-  ui.layerStatus.textContent = !ls.length ? 'Create blocks to define Z layers.'
-    : overlay ? 'One curve per layer; common H/t. Ends and reactions are saved per layer. The force polygon and other readings refer to the layer selected below.'
+  ui.layerStatus.textContent = !ls.length ? (angularMode() ? 'Create blocks to populate angular layers.' : 'Create blocks to define Z layers.')
+    : overlay ? `One curve per layer; common ${norm}. Ends and reactions are saved per layer. The force polygon and other readings refer to the layer selected below.`
       : state.layers.selection === 'all' ? `${ls.length} layer(s) — combined XY weights; each applied force counted once.`
-        : `${layerLabel(Number(state.layers.selection))} — other layers shown faintly.`;
+        : `${layerLabel(angularMode() ? state.layers.selection : Number(state.layers.selection))} — other layers shown faintly.`;
+  reportAngularControls();
 }
 function changeLayer(selection, overlayLayer = state.layers.overlayLayer) {
   rememberLayer();
@@ -537,7 +704,7 @@ function prepareLayerAnalysis() {
   reportLayers();
   const key = editingLayer() ?? 'all';
   state.layerContext = { source: state.model, model: modelInLayer(state.model, key),
-    forces: forcesInLayer(state.forces, key) };
+    forces: forcesInLayer(state.forces, key, state.model) };
   state.layerSolutions = [];
 }
 function analysisBasePole() {
@@ -548,10 +715,10 @@ function analysisBasePole() {
 function recomputeOverlay() {
   rememberLayer();
   const ls = layersOf(state.model);
-  const invalid = ls.filter((l) => layerThickness(state.model, l.key) == null);
-  if (invalid.length || !ls.length || ui.poleni.checked) {
-    ui.layerStatus.textContent = ui.poleni.checked
-      ? 'Superimposed H/t requires extruded blocks; disable Poleni mode.'
+  const invalid = ls.filter((l) => layerReferenceWidth(state.model, l.key) == null);
+  if (invalid.length || !ls.length || (ui.poleni.checked && !angularMode())) {
+    ui.layerStatus.textContent = ui.poleni.checked && !angularMode()
+      ? 'Activate angular layers in Geometry to compare Poleni curves.'
       : `Superimposed H/t requires a positive, uniform thickness in each layer. Check: ${invalid.map((l) => layerLabel(l.z)).join('; ')}`;
     state.seq = null; state.pole = null; state.segForces = null; state.crossings = null; state.mech = null;
     setThrustEnabled(false); ui.admissible.textContent = 'No superimposed solution — see Z layers.';
@@ -559,15 +726,15 @@ function recomputeOverlay() {
   }
   if (!(state.layers.normalizedBase > 0)) {
     const ref = modelInLayer(state.model, ls[0].key);
-    state.layers.normalizedBase = ref.weights.reduce((a, b) => a + b, 0) / (4 * layerThickness(state.model, ls[0].key));
+    state.layers.normalizedBase = ref.weights.reduce((a, b) => a + b, 0) / (4 * layerReferenceWidth(state.model, ls[0].key));
   }
   ui.normalizedThrust.value = String(Number(state.layers.normalizedBase.toPrecision(10)));
   const h = state.layers.normalizedBase * thrustRangeFactor(ui.thrust.value, state.thrustRangeMax);
   for (const [index, l] of ls.entries()) {
     const model = modelInLayer(state.model, l.key);
-    const t = layerThickness(state.model, l.key);
+    const t = layerReferenceWidth(state.model, l.key);
     const settings = state.layers.settings[l.key] ?? {};
-    const result = solveLayer(model, forcesInLayer(state.forces, l.key), settings, h * t);
+    const result = solveLayer(model, forcesInLayer(state.forces, l.key, state.model), settings, h * t);
     state.layerSolutions.push({ ...result, key: l.key, model, t, H: h * t,
       colour: ['#c62828', '#1565c0', '#2e7d32', '#7b1fa2', '#ef6c00', '#00838f'][index % 6] });
   }
@@ -582,12 +749,12 @@ function recomputeOverlay() {
   reportEnds(ref.construction ? null : endJoints());
   if (ref.construction) reportImposed(ref.construction);
   reportMechanism();
-  const text = `H/t = ${h.toPrecision(5)} ${SYSTEMS[state.system].force.label}/${SYSTEMS[state.system].length.label}`;
+  const text = `${angularMode() ? 'H/c' : 'H/t'} = ${h.toPrecision(5)} ${SYSTEMS[state.system].force.label}/${SYSTEMS[state.system].length.label}`;
   for (const field of [ui.thrustValue, ui.thrustValueM, ui.thrustValueP]) field.textContent = text;
   state.layerSolutions.forEach((r) => {
     const li = document.createElement('li'); li.style.color = r.colour;
     const admissible = r.crossings?.every((c) => c && c.inside);
-    li.textContent = `${layerLabel(Number(r.key))} · H = ${format(r.H, 'force', state.system)} · `
+    li.textContent = `${layerLabel(angularMode() ? r.key : Number(r.key))} · H = ${format(r.H, 'force', state.system)} · `
       + (!r.lot ? 'pick A and B for this layer' : !r.crossings ? 'no chain: admissibility unavailable'
         : admissible ? 'admissible' : 'not admissible');
     ui.layerResults.append(li);
@@ -660,12 +827,14 @@ function newGroup(method, count) {
     if (!m.blockGroups[i]) m.blockGroups[i] = m.groups[0]?.id ?? 1;
   }
 
+  if (ui.poleni.checked) ensureAngularMode();
   const id = Math.max(0, ...(m.groups ?? []).map((g) => Number(g.id) || 0)) + 1;
   const g = {
     id,
     name: groupName(method, m.groups.length),
     method,
     z: Number(ui.blockZ.value) || 0,
+    ...(ui.poleni.checked ? { poleniLayer: creationAngularLayer().id } : {}),
     gamma,
     thickness,
     color: groupColour(m.groups.length),
@@ -964,15 +1133,24 @@ function renderBlockTable() {
     const n = m.blockGroups.filter((id) => id === g.id).length;
     count.textContent = `${n} block${n === 1 ? '' : 's'}`;
     const zSelect = document.createElement('select');
-    zSelect.setAttribute('aria-label', `Layer Z for ${g.name}`);
+    zSelect.setAttribute('aria-label', `${angularMode() ? 'Angular layer' : 'Layer Z'} for ${g.name}`);
     const values = [...new Set([...(m.groups ?? []).map((gg) => zKey(gg.z)), zKey(g.z)])].sort((a, b) => Number(a) - Number(b));
-    values.forEach((z) => { const o = document.createElement('option'); o.value = z; o.textContent = layerLabel(Number(z)); zSelect.append(o); });
-    const add = document.createElement('option'); add.value = 'new'; add.textContent = 'New Z…'; zSelect.append(add);
-    zSelect.value = zKey(g.z);
+    const choices = angularMode() ? (m.poleniLayers ?? []).map((l) => [l.id, layerLabel(l.id)]) : values.map((z) => [z, layerLabel(Number(z))]);
+    choices.forEach(([value, label]) => { const o = document.createElement('option'); o.value = value; o.textContent = label; zSelect.append(o); });
+    const add = document.createElement('option'); add.value = 'new'; add.textContent = angularMode() ? 'Use current angular settings…' : 'New Z…'; zSelect.append(add);
+    zSelect.value = angularMode() ? g.poleniLayer : zKey(g.z);
     zSelect.addEventListener('change', () => {
+      if (angularMode()) {
+        try {
+          rememberLayer(); g.poleniLayer = zSelect.value === 'new' ? creationAngularLayer().id : zSelect.value;
+          state.layerContext = null; state.band = null; state.bandKey = null; state.solidFit = null;
+          reweigh(); recompute(); fitForceView(); draw();
+        } catch (e) { ui.angularStatus.textContent = e.message; }
+        return;
+      }
       let value = zSelect.value;
       if (value === 'new') value = window.prompt('Z start for this group', String(g.z ?? 0));
-      if (value == null || value.trim() === '' || !Number.isFinite(Number(value))) { zSelect.value = zKey(g.z); return; }
+      if (value == null || value.trim() === '' || !Number.isFinite(Number(value))) { zSelect.value = angularMode() ? g.poleniLayer : zKey(g.z); return; }
       rememberLayer(); g.z = Number(value); state.layerContext = null;
       state.band = null; state.bandKey = null; state.imposedKey = null; state.alpha = null;
       state.solidFit = null; reportGroups(); recompute(); fitForceView(); draw();
@@ -1023,7 +1201,7 @@ function renderBlockTable() {
       ['num', String(sides)],
       ['', `(${len(c[0])}, ${len(c[1])})`],
       ['num', force(w)],
-      ['num', len(blockZ(m, i))],
+      ['num', angularMode() ? layerLabel(blockLayerKey(m, i)) : len(blockZ(m, i))],
       ['num', len(Number(m.thickness?.[i]) || 0)],
     ];
     for (const [cls, text] of cells) {
@@ -1108,11 +1286,13 @@ function addEmptyGroup() {
   const m = state.model;
   if (!m?.blocks?.length) return;
   ensureGroups();
+  if (ui.poleni.checked) ensureAngularMode();
   const id = Math.max(0, ...m.groups.map((g) => Number(g.id) || 0)) + 1;
   m.groups = [...m.groups, {
     id,
     name: `Group ${m.groups.length + 1}`,
     method: 'hand',
+    ...(ui.poleni.checked ? { poleniLayer: creationAngularLayer().id } : {}),
     z: Number(ui.blockZ.value) || 0,
     gamma: Number(ui.gamma.value) || 20,
     thickness: Math.max(0, Number(ui.thick.value) || 1),
@@ -1174,7 +1354,7 @@ function isCoupletStudy() {
 }
 
 function refreshRingStudy() {
-  if (layersOf(state.model).length > 1) { state.ringAuto = false; state.ringStudySource = null; return; }
+  if (angularMode() || layersOf(state.model).length > 1) { state.ringAuto = false; state.ringStudySource = null; return; }
   if (!state.ringStudySource) return;
   state.ringStudySource = currentRingStudySource(state.ringStudySource);
   if (isCoupletStudy()) {
@@ -1378,6 +1558,7 @@ async function loadCatalogue() {
  */
 function newWork() {
   resetLayers();
+  ui.poleniLayerSelect.value = 'new'; ui.poleniRadius.value = ''; ui.poleniStart.value = '0'; ui.poleniWidthMode.value = 'tapered';
   state.model = null;
   state.image = null;
   state.imageData = null;
@@ -2797,7 +2978,7 @@ function draw() {
         ? m.blockGroups.map((id) => m.groups.find((g) => g.id === id)?.color)
         : null;
       const singleLayer = !['all', 'overlay'].includes(state.layers.selection);
-      const active = m.blocks.map((_, i) => !singleLayer || zKey(blockZ(m, i)) === state.layers.selection);
+      const active = m.blocks.map((_, i) => !singleLayer || blockLayerKey(m, i) === state.layers.selection);
       const drawOrder = m.blocks.map((_, i) => i).sort((a, b) => Number(active[a]) - Number(active[b]));
       drawBlocks(mainAx, drawOrder.map((i) => m.blocks[i]), {
         labels: ui.showLabels.checked,
@@ -2972,7 +3153,7 @@ function drawLayerLegend() {
   const c = mainAx.ctx, b = mainAx.box;
   c.save(); c.font = figureFont('11px Helvetica, Arial, sans-serif');
   const rows = state.layerSolutions.map((r) => ({ colour: r.colour,
-    text: `${layerLabel(Number(r.key))} · H = ${format(r.H, 'force', state.system)}` }));
+    text: `${layerLabel(angularMode() ? r.key : Number(r.key))} · H = ${format(r.H, 'force', state.system)}` }));
   const w = Math.max(...rows.map((r) => c.measureText(r.text).width)) + 34;
   c.fillStyle = 'rgba(255,255,255,0.9)'; c.fillRect(b.x + 8, b.y + 8, w, rows.length * 18 + 10);
   c.textAlign = 'left'; c.textBaseline = 'middle';
@@ -3981,7 +4162,7 @@ function pickBlockAt(dataPoint) {
   const blocks = state.model?.blocks;
   if (!blocks || !blocks.length) return null;
   for (let i = blocks.length - 1; i >= 0; i--) {
-    if (!['all', 'overlay'].includes(state.layers.selection) && zKey(blockZ(state.model, i)) !== state.layers.selection) continue;
+    if (!['all', 'overlay'].includes(state.layers.selection) && blockLayerKey(state.model, i) !== state.layers.selection) continue;
     if (piecesOf(blocks[i]).some((p) => pointInPolygon(dataPoint, p))) return i;
   }
   return null;
@@ -4011,7 +4192,7 @@ function drawForces() {
   mainAx.clipped((c) => {
     f.points.forEach((p, i) => {
       if (!['all', 'overlay'].includes(state.layers.selection)
-          && zKey(f.z?.[i]) !== state.layers.selection) return;
+          && (angularMode() ? f.layer?.[i] : zKey(f.z?.[i])) !== state.layers.selection) return;
       const v = forceComponents(f, i);
       const mag = forceMag2(v.x, v.y);
       if (!(mag > 0)) return;
@@ -4046,6 +4227,7 @@ function armForce() {
 function ensureForceBases() {
   const f = state.forces ?? { points: [], magnitudes: [], x: [], bases: [] };
   f.z = (f.points ?? []).map((_, i) => Number(f.z?.[i]) || 0);
+  f.layer = (f.points ?? []).map((_, i) => f.layer?.[i] ?? (angularMode() ? layersOf(state.model)[0]?.key ?? null : null));
   f.x = Array.isArray(f.x) ? f.x : [];
   f.bases = Array.isArray(f.bases) ? f.bases : [];
   f.magnitudes.forEach((mag, i) => {
@@ -4082,6 +4264,7 @@ function listForces() {
     del.addEventListener('click', () => {
       f.points.splice(i, 1);
       f.z.splice(i, 1);
+      f.layer.splice(i, 1);
       f.magnitudes.splice(i, 1);
       f.x.splice(i, 1);
       f.bases.splice(i, 1);
@@ -4116,10 +4299,10 @@ function listForces() {
     xInput.addEventListener('change', updateComponents);
     yInput.addEventListener('change', updateComponents);
     const layer = document.createElement('select');
-    const zs = [...new Set([...layersOf(state.model).map((l) => l.key), zKey(f.z[i])])];
-    zs.forEach((z) => { const o = document.createElement('option'); o.value = z; o.textContent = layerLabel(Number(z)); layer.append(o); });
-    layer.value = zKey(f.z[i]); layer.setAttribute('aria-label', `Layer for force ${i + 1}`);
-    layer.addEventListener('change', () => { f.z[i] = Number(layer.value); recompute(); fitForceView(); draw(); });
+    const zs = [...new Set([...layersOf(state.model).map((l) => l.key), angularMode() ? f.layer[i] : zKey(f.z[i])])].filter((v) => v != null);
+    zs.forEach((z) => { const o = document.createElement('option'); o.value = z; o.textContent = layerLabel(angularMode() ? z : Number(z)); layer.append(o); });
+    layer.value = angularMode() ? f.layer[i] : zKey(f.z[i]); layer.setAttribute('aria-label', `Layer for force ${i + 1}`);
+    layer.addEventListener('change', () => { if (angularMode()) f.layer[i] = layer.value; else f.z[i] = Number(layer.value); recompute(); fitForceView(); draw(); });
     componentRow.append('X ', xInput, ' Y ', yInput, ' Z ', layer);
     li.append(componentRow);
 
@@ -5230,7 +5413,7 @@ function commitBlock() {
   // same tidying, but only for blocks that really predate this one.
   const groups = Array.isArray(m.groups) ? m.groups : [];
   const last = groups[groups.length - 1];
-  if (last && last.method === 'draw' && zKey(last.z) === zKey(ui.blockZ.value)
+  if (last && last.method === 'draw' && creationMatchesGroup(last)
       && Number(last.thickness) === Number(ui.thick.value) && Number(last.gamma) === Number(ui.gamma.value)) {
     m.blockGroups[m.blocks.length - 1] = last.id;
     reportGroups();
@@ -5394,6 +5577,8 @@ function drawSolidView() {
     angleDeg: dome.angleDeg,
     thickness: assignedThicknesses(),
     z: m.blocks.map((_, i) => blockZ(m, i)),
+    layerDefinitions: angularMode() ? m.blocks.map((_, i) => angularLayerForBlock(m, i)) : null,
+    referenceRadius: m.poleniRadius,
     steps: dome.poleni ? Math.max(2, Math.round(dome.angleDeg / 4)) : 1,
     align: state.solidAlign,
     full: dome.poleni && !!ui.full3D?.checked,
@@ -5436,7 +5621,7 @@ function drawSolidView() {
     : null;
   let highlight = mechanismHighlight ?? groupHighlight;
   if (!['all', 'overlay'].includes(state.layers.selection)) {
-    highlight = m.blocks.map((_, i) => zKey(blockZ(m, i)) === state.layers.selection
+    highlight = m.blocks.map((_, i) => blockLayerKey(m, i) === state.layers.selection
       ? (highlight?.[i] ?? [224, 155, 71]) : [220, 220, 220]);
   }
 
@@ -5578,6 +5763,8 @@ function currentSolidsForExport() {
     angleDeg: dome.angleDeg,
     thickness: assignedThicknesses(),
     z: m.blocks.map((_, i) => blockZ(m, i)),
+    layerDefinitions: angularMode() ? m.blocks.map((_, i) => angularLayerForBlock(m, i)) : null,
+    referenceRadius: m.poleniRadius,
     steps: dome.poleni ? Math.max(2, Math.round(dome.angleDeg / 4)) : 1,
     align: state.solidAlign,
   });
@@ -5604,7 +5791,7 @@ function supportPointsForExport() {
  */
 function domeRepetition() {
   const dome = domeOptions();
-  if (!dome.poleni || !ui.full3D?.checked) return { domeSectors: 1 };
+  if (angularMode() || !dome.poleni || !ui.full3D?.checked) return { domeSectors: 1 };
   const { sectors } = wholeDome(dome.angleDeg);
   return { domeSectors: sectors, domeAxisX: dome.axisX };
 }
@@ -5688,6 +5875,7 @@ function abaqusRefinement() {
 }
 
 async function exportAbaqus() {
+  if (angularMode()) { ui.saveStatus.textContent = 'Save work preserves angular geometry; Abaqus export is available for Z layers and legacy lunes.'; return; }
   try {
     const m = state.model;
     if (!m?.blocks?.length) throw new Error('no blocks to export');
@@ -5753,7 +5941,7 @@ function sideKey() {
   const d = domeOptions();
   return `${m && m.blocks ? m.blocks.length : 0}:${d.poleni}:`
     + `${d.angleDeg}:${d.axisX}:${state.camera.az}:${state.camera.el}:`
-    + `${state.solidAlign}:${m?.groups?.map((g) => `${g.z}:${g.thickness}`).join(",")}:`
+    + `${JSON.stringify(m?.poleniLayers)}:${m?.poleniRadius}:${m?.layerMode}:${state.solidAlign}:${m?.groups?.map((g) => `${g.z}:${g.thickness}`).join(",")}:`
     + `${m && m.frame ? m.frame.units_per_pixel : 1}`;
 }
 
@@ -5804,7 +5992,12 @@ function reweigh() {
   const groupOf = (i) => groupForBlock(i, fallback);
   const assigned = assignedThicknesses();
 
-  if (dome.poleni) {
+  if (dome.poleni && angularMode()) {
+    const data = m.blocks.map((b, i) => angularBlockProperties(b, angularLayerForBlock(m, i), {
+      axisX: dome.axisX, referenceRadius: m.poleniRadius, gamma: Number(groupOf(i).gamma) || gamma,
+    }));
+    m.weights = data.map((d) => d.weight); m.thickness = data.map((d) => d.width);
+  } else if (dome.poleni) {
     // Poleni scaling keeps each group's assigned thickness as a meridian datum
     // and maps it to the local chord of the lune.
     const { weights, widths } = luneWeights(m.blocks, {
@@ -5844,6 +6037,11 @@ function reportDome() {
     ui.domeStatus.textContent = 'needs a traced arch';
     return;
   }
+  if (angularMode()) {
+    const widths = m.thickness ?? [];
+    ui.domeStatus.textContent = `${layersOf(m).length} explicit angular layer(s) · widths ${Math.min(...widths).toPrecision(4)}–${Math.max(...widths).toPrecision(4)} ${SYSTEMS[state.system].length.label} · ${angularPeriod(m.blocks, dome.axisX) === 180 ? 'paired meridional section' : 'single-sided section'}`;
+    return;
+  }
   const r = widthRange(m.blocks, dome.axisX, dome.angleDeg, assignedThicknesses());
   const scaled = m.frame && m.frame.coordinates === 'physical';
   const show = (v) => (scaled ? format(v, 'length', state.system)
@@ -5878,7 +6076,7 @@ function mergeGeneratedLayer(previous, method) {
   if (!previous?.blocks?.length) return;
   const z = zKey(ui.blockZ.value);
   const replaced = new Set((previous.groups ?? [])
-    .filter((g) => g.method === method && zKey(g.z) === z).map((g) => g.id));
+    .filter((g) => g.method === method && (previous.layerMode === 'poleni' ? creationMatchesGroup(g, previous) : zKey(g.z) === z)).map((g) => g.id));
   const keep = previous.blocks.map((_, i) => i).filter((i) => !replaced.has(previous.blockGroups?.[i]));
   if (!keep.length) return;
   const join = (field) => [...keep.map((i) => previous[field]?.[i]), ...(fresh[field] ?? [])];
@@ -5942,9 +6140,9 @@ function generateRing(opt = {}) {
   reweigh();
   const total = state.model.weights.reduce((a, b) => a + b, 0);
   state.ringStudySource = currentRingStudySource({ ri, tri, n });
-  state.ringAuto = layersOf(state.model).length <= 1 && state.model.blocks.length === blocks.length;
+  state.ringAuto = !angularMode() && layersOf(state.model).length <= 1 && state.model.blocks.length === blocks.length;
   if (resetStudy) state.thicknessStudy = { ok: true, points: [] };
-  const plotted = recordRingState(state.ringStudySource);
+  const plotted = state.ringAuto ? recordRingState(state.ringStudySource) : { row: null, points: [] };
   state.selectedJoint = null;
   state.frozenBranch = null;
   state.plotFitKey = null;
@@ -5964,6 +6162,7 @@ function generateRing(opt = {}) {
         : 'no admissible Couplet line')
       : `${plotted.points.filter((p) => p.admissible).length}/`
         + `${plotted.points.length} admissible states`);
+  if (angularMode()) ui.ringStatus.textContent = `${n} blocks · ${layerLabel(creationAngularLayer(false)?.id)} · explicit Poleni geometry`;
   if (!state.ringAuto) { state.ringStudySource = null; state.thicknessStudy = null; }
   ui.warn.hidden = true;
   ui.meta.textContent = `${state.model.blocks.length} blocks · circular ring · t/ri = ${tri}`;
@@ -6071,7 +6270,7 @@ function generateBlocks() {
   }
   const previous = state.model ?? null;
   const replaceId = previous?.groups?.find((g) => g.id === t.generatedGroupId
-    && zKey(g.z) === zKey(ui.blockZ.value))?.id;
+    && creationMatchesGroup(g, previous))?.id;
   const previousBlocks = previous?.blocks ?? [];
   const keep = previousBlocks.map((_, i) => i)
     .filter((i) => !replaceId || previous?.blockGroups?.[i] !== replaceId);
@@ -6174,7 +6373,8 @@ function attachNavigation(ax) {
       if (mag > 0) {
         const p = mainAx.toData([e.offsetX, e.offsetY]);
         ensureForceBases();
-        state.forces.z.push(Number(ui.forceLayer.value) || 0);
+        state.forces.z.push(angularMode() ? 0 : Number(ui.forceLayer.value) || 0);
+        state.forces.layer.push(angularMode() ? ui.forceLayer.value : null);
         state.forces.points.push(p);
         state.forces.x.push(fx);
         state.forces.magnitudes.push(fy);
@@ -6374,6 +6574,7 @@ ui.clearForces.addEventListener('click', () => {
   state.forces.x = [];
   state.forces.bases = [];
   state.forces.z = [];
+  state.forces.layer = [];
   listForces();
   recompute();
   fitForceView();
@@ -6447,7 +6648,7 @@ ui.system.addEventListener('change', () => {
   let convertedForceTarget = null;
   if (scaled && from !== to) {
     const { kL, kF, density } = conversionFactors(from, to);
-    convertedForceTarget = zKey(Number(ui.forceLayer.value) * kL);
+    convertedForceTarget = angularMode() ? ui.forceLayer.value : zKey(Number(ui.forceLayer.value) * kL);
     const pt = (p) => (p ? [p[0] * kL, p[1] * kL] : p);
     const poly = (q) => (q ?? []).map(pt);
 
@@ -6455,11 +6656,11 @@ ui.system.addEventListener('change', () => {
     state.model = convertModel(state.model, from, to);
     const settings = {};
     Object.entries(state.layers.settings).forEach(([key, value]) => {
-      settings[key === 'all' ? key : zKey(Number(key) * kL)] = { ...value, A: pt(value.A), B: pt(value.B) };
+      settings[key === 'all' || key.startsWith('p:') ? key : zKey(Number(key) * kL)] = { ...value, A: pt(value.A), B: pt(value.B) };
     });
     state.layers.settings = settings;
-    if (!['all', 'overlay'].includes(state.layers.selection)) state.layers.selection = zKey(Number(state.layers.selection) * kL);
-    if (state.layers.overlayLayer != null) state.layers.overlayLayer = zKey(Number(state.layers.overlayLayer) * kL);
+    if (!['all', 'overlay'].includes(state.layers.selection) && !state.layers.selection.startsWith('p:')) state.layers.selection = zKey(Number(state.layers.selection) * kL);
+    if (state.layers.overlayLayer != null && !state.layers.overlayLayer.startsWith('p:')) state.layers.overlayLayer = zKey(Number(state.layers.overlayLayer) * kL);
     if (state.layers.normalizedBase) state.layers.normalizedBase *= kF / kL;
     state.layerContext = null;
     if (state.model.stereotomy) {
@@ -6527,6 +6728,8 @@ ui.system.addEventListener('change', () => {
     field(ui.gamma, density);
     field(ui.thick, kL);
     field(ui.blockZ, kL);
+    field(ui.poleniRadius, kL);
+    field(ui.poleniChord, kL);
     field(ui.subnormalWidth, kL);
     field(ui.ringRi, kL);
     field(ui.refLength, kL);
@@ -7102,6 +7305,13 @@ ui.radiusBand.addEventListener('click', () => {
 });
 
 ui.poleni.addEventListener('change', () => {
+  rememberLayer();
+  if (ui.poleni.checked) {
+    if (!state.model) ensureTraceModel();
+    ensureGroups();
+    try { ensureAngularMode(); } catch (e) { ui.poleni.checked = false; ui.angularStatus.textContent = e.message; return; }
+  } else if (state.model) state.model.layerMode = 'z';
+  state.layers.selection = 'all'; state.layers.normalizedBase = null; state.layerContext = null; restoreLayer();
   reweigh();
   refreshRingStudy();
   state.band = null; state.bandKey = null;
@@ -7120,7 +7330,7 @@ ui.poleni.addEventListener('change', () => {
   fitForceView();
   draw();
 });
-for (const f of [ui.domeAngle, ui.domeAxis]) {
+for (const f of [ui.domeAxis]) {
   f.addEventListener('input', () => {
     if (!ui.poleni.checked) return;
     if (f === ui.domeAxis) state.axisPicked = true;
@@ -7133,6 +7343,26 @@ for (const f of [ui.domeAngle, ui.domeAxis]) {
     draw();
   });
 }
+ui.domeAngle.addEventListener('input', () => {
+  try { ui.poleniChord.value = String(referenceChord(Number(ui.poleniRadius.value), Number(ui.domeAngle.value))); } catch { /* incomplete input */ }
+  if (ui.poleni.checked && !angularMode()) { reweigh(); recompute(); fitForceView(); draw(); }
+});
+ui.poleniChord.addEventListener('change', () => {
+  try { ui.domeAngle.value = String(angleForChord(Number(ui.poleniRadius.value), Number(ui.poleniChord.value))); ui.angularStatus.textContent = 'Angle updated from the reference chord. Apply to save the layer.'; }
+  catch (e) { ui.angularStatus.textContent = e.message; }
+});
+ui.poleniRadius.addEventListener('change', () => {
+  try { ui.poleniChord.value = String(referenceChord(Number(ui.poleniRadius.value), Number(ui.domeAngle.value))); }
+  catch (e) { ui.angularStatus.textContent = e.message; }
+});
+ui.poleniLayerSelect.addEventListener('change', () => {
+  const l = state.model?.poleniLayers?.find((l) => l.id === ui.poleniLayerSelect.value);
+  if (l) { ui.poleniStart.value = l.startAngle; ui.domeAngle.value = l.angleDeg; ui.poleniWidthMode.value = l.mode; }
+  reportAngularControls();
+});
+ui.applyAngularLayer.addEventListener('click', applyAngularLayer);
+ui.activatePoleniLayers.addEventListener('click', applyAngularLayer);
+ui.repeatAngularLayer.addEventListener('click', repeatAngularLayers);
 ui.pickAxis.addEventListener('click', () => {
   if (state.measurements?.picking) stopMeasuring();
   state.pickingAxis = !state.pickingAxis;
@@ -7389,6 +7619,8 @@ function openWork(text, { source = null } = {}) {
   ui.poleni.checked = !!data.dome.poleni;
   ui.domeAngle.value = data.dome.angleDeg;
   ui.domeAxis.value = data.dome.axisX;
+  ui.poleniRadius.value = data.model?.poleniRadius ?? '';
+  ui.poleniLayerSelect.value = 'new';
   state.solidAlign = data.dome.align ?? 'center';
   updateSolidAlignButtons();
   state.axisPicked = true;          // the file's axis, not a fresh default
