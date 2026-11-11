@@ -73,6 +73,7 @@ export function scalePolyline(pts, k) {
 
 /** Multiply a polygon by k. */
 export function scalePolygon(poly, k) {
+  if (poly.pieces) return { pieces: poly.pieces.map((p) => scalePolygon(p, k)) };
   return { x: poly.x.map((v) => v * k), y: poly.y.map((v) => v * k) };
 }
 

@@ -686,3 +686,60 @@ Legacy Poleni sessions keep the scaled-chord implementation until explicit
 adoption. The existing refined Abaqus mesher ignores supplied solid faces when
 section polygons are provided, so angular export is guarded and disabled; JSON
 sessions are the supported persistence path for the new geometry.
+
+## Region roles, automatic dead loads and fixed boundaries
+
+Groups carry `role: "structure" | "load" | "fixed"`. Missing roles in old
+sessions mean `structure`. The Geometry selector assigns the role of newly
+created groups; the Block table allows changing existing groups. All geometry,
+material properties, Z positions and roles remain editable and are saved.
+
+Trace a whole profile with **Load only**, close its outline and choose
+**Subdivide load region from structure**. No radial centre or arbitrary number
+of cuts is required: visible upper faces of structural polygons in the same Z
+layer supply their endpoint X coordinates, projected vertically onto the traced
+region. Clipping at those X values produces vertical load strips. Concave
+outlines are triangulated for clipping, then internal triangulation edges are
+removed; disconnected material in a strip is kept as `pieces`. Area and first
+moments are preserved. Separate outlines must not overlap; nested holes are
+not supported by this first vertical-subdivision tool.
+
+For each load strip, W = gamma × area × thickness is applied vertically at the
+first structural boundary below its centroid, in the same Z layer. The X
+coordinate is unchanged, preserving the vertical load's moment. Generated
+forces are transient and retain an explicit original structural owner: they
+are rebuilt after edits, changes of units and reopening, never saved as a
+second copy of the material's weight. A missing receiver or overlap with
+structural material is an analysis error. These are *dead loads*, not moving
+bodies or additional seismic masses: they contribute virtual work but are not
+amplified by alpha. Manual forces retain their existing semantics.
+
+Only structural blocks enter a selected chain or the solidary equivalent
+layer. Original indices survive filtering, reordering and equivalent fusion,
+so source blocks keep the correct load ownership and macro-block motion.
+Load/fixed thicknesses do not enter the structural H/t normalization.
+
+Fixed regions are immovable and their weight is excluded from the chain and
+its seismic masses. Straight face contacts and isolated corner contacts with
+structural material are detected within each Z layer. Nonpenetration requires
+nonnegative outward normal velocity; separation and tangential sliding are
+allowed, with no friction or tensile resistance. Corner tangent cones are
+checked against polygon material rather than imposing both face normals as
+bilateral restraints. Initial area overlap with fixed material is an error.
+The optimized alpha search checks these conditions for **every candidate**,
+before retaining its minimum; the exact/manual virtual-work solver and the
+mechanism read from the thrust line use the same boundary test.
+
+The mechanism family remains the current ordered arch chain with four hinges.
+This extension filters those modes against fixed boundaries; it does not
+introduce arbitrary contact graphs, additional pivot locations, sliding modes,
+or a general assembly limit-analysis solver. The 2D/3D displacement illustration
+keeps the load and fixed regions at their original positions and checks each
+integration step for area collision, returning the last accepted configuration
+when fixed material is reached. This finite display check is numerical and is
+separate from the infinitesimal admissibility test at activation.
+
+The feature is planar: Poleni models with nonstructural roles report an
+unsupported-analysis diagnostic. JSON saving supports the roles and compound
+strips. Abaqus export is disabled while nonstructural roles are present, since
+its exporter does not yet represent these load-transfer/contact conditions.

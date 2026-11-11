@@ -2,6 +2,7 @@
  * Z partitions the XY problem, never changes its equations. */
 import { angularLayerForBlock, referenceChord } from './poleni-layers.js';
 import { piecesOf } from './geometry.js';
+import { blockRole, structuralRegions, remapRegionSources } from './region-roles.js';
 import { jointsFromBlocks } from './joints.js';
 import { blockCentroid } from './profile.js';
 import { springings } from './trace.js';
@@ -30,7 +31,8 @@ export function layersOf(model) {
   return [...values.values()].sort((a, b) => a.z - b.z);
 }
 export function layerThickness(model, key) {
-  const indices = layersOf(model).find((l) => l.key === key)?.indices ?? [];
+  const indices = (layersOf(model).find((l) => l.key === key)?.indices ?? [])
+    .filter((i) => blockRole(model, i) === 'structure');
   const t = model.thickness?.[indices[0]];
   if (!(t > 0) || !indices.every((i) => Math.abs(model.thickness[i] - t) <= 1e-9 * Math.max(t, 1))) {
     return null;
@@ -47,7 +49,9 @@ export function forcesInLayer(forces, key = 'all', model = null) {
     .filter((i) => key === 'all' || (model?.layerMode === 'poleni' ? forces.layer?.[i] === key : zKey(forces.z?.[i]) === key));
   const pick = (name) => indices.map((i) => forces[name]?.[i] ?? (name === 'z' ? 0 : 0));
   return { points: pick('points'), magnitudes: pick('magnitudes'), x: pick('x'),
-    z: pick('z'), layer: indices.map((i) => forces.layer?.[i] ?? null), sourceIndices: indices };
+    z: pick('z'), layer: indices.map((i) => forces.layer?.[i] ?? null), sourceIndices: indices,
+    ...(forces.ownerSources ? { ownerSources: indices.map((i) => forces.ownerSources[i]) } : {}),
+    ...(forces.regionSources ? { regionSources: indices.map((i) => forces.regionSources[i]) } : {}) };
 }
 
 // Vertex order/direction do not distinguish coincident XY blocks. Their weights
@@ -62,8 +66,10 @@ function polygonKey(block) {
 }
 export function modelInLayer(model, key = 'all') {
   if (!model) return null;
+  const structural = structuralRegions(model);
+  if (structural !== model) return remapRegionSources(modelInLayer(structural, key), structural);
   const ls = layersOf(model);
-  if (ls.length <= 1 && (key === 'all' || ls[0]?.key === key)) return model;
+  if (!model.sourceIds && ls.length <= 1 && (key === 'all' || ls[0]?.key === key)) return model;
   const indices = (model.blocks ?? []).map((_, i) => i)
     .filter((i) => key === 'all' || blockLayerKey(model, i) === key);
   const rows = [], coincident = new Map();
@@ -85,7 +91,8 @@ export function modelInLayer(model, key = 'all') {
   const byX = [...identity].sort((a, b) => blockCentroid(rows[b].blocks)[0] - blockCentroid(rows[a].blocks)[0]);
   let order = identity, recovered = null;
   for (const trial of [identity, [...identity].reverse(), byX, [...byX].reverse()]) {
-    const got = jointsFromBlocks(trial.map((i) => rows[i].blocks));
+    const blocks = trial.map((i) => rows[i].blocks);
+    const got = blocks.some((b) => b.pieces) ? { ok: false } : jointsFromBlocks(blocks);
     if (got.ok) { order = trial; recovered = got; break; }
   }
   const out = { ...model, joints: recovered?.joints ?? null,

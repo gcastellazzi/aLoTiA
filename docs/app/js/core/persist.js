@@ -28,6 +28,7 @@ export const VERSION = 1;
 /** Round-trip a polygon, whatever shape it arrived in. */
 function polygon(p) {
   if (!p) return null;
+  if (p.pieces) return { pieces: p.pieces.map(polygon) };
   if (Array.isArray(p)) {
     return { x: p.map((q) => q[0]), y: p.map((q) => q[1]) };
   }
@@ -231,8 +232,11 @@ export function deserialise(text) {
         }
       }
     }
-    if (!(m.blocks ?? []).every((p) => p && p.x && p.y
-      && p.x.length === p.y.length)) {
+    const validPolygon = (p) => p && (p.pieces
+      ? Array.isArray(p.pieces) && p.pieces.length > 0 && p.pieces.every(validPolygon)
+      : Array.isArray(p.x) && Array.isArray(p.y) && p.x.length >= 3 && p.x.length === p.y.length
+        && [...p.x, ...p.y].every(Number.isFinite));
+    if (!(m.blocks ?? []).every(validPolygon)) {
       throw new Error('the file has a malformed block');
     }
     if (m.blockGroups?.length && m.blockGroups.length !== (m.blocks ?? []).length) {
@@ -240,6 +244,9 @@ export function deserialise(text) {
     }
   }
 
+  if (m?.groups?.some((g) => g.role != null && !['structure', 'load', 'fixed'].includes(g.role))) {
+    throw new Error('the file has an invalid region role');
+  }
   if (m?.groups?.some((g) => g.z != null && !Number.isFinite(g.z))) {
     throw new Error('the file has an invalid group Z');
   }
@@ -313,7 +320,7 @@ export function deserialise(text) {
     model: m
       ? {
         ...m,
-        blocks: (m.blocks ?? []).map((p) => ({ x: [...p.x], y: [...p.y] })),
+        blocks: (m.blocks ?? []).map(polygon),
         // Older files wrote [] where they meant "none"; [] is truthy, so it has
         // to be normalised here or the guards downstream never fire.
         joints: m.joints?.length ? m.joints : null,

@@ -103,7 +103,7 @@ export function bounds(polys) {
   let xmax = -Infinity;
   let ymin = Infinity;
   let ymax = -Infinity;
-  for (const p of polys) {
+  for (const p of polys.flatMap(piecesOf)) {
     for (const v of p.x) {
       if (v < xmin) xmin = v;
       if (v > xmax) xmax = v;

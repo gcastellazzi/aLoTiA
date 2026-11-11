@@ -15,17 +15,20 @@ import {
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary, drawNotice, wrapText,
   drawJointCell, drawBlockEquilibrium, APPLIED_FORCE_COLOUR,
-} from './render/draw.js?v=20261111-solidary';
+} from './render/draw.js?v=20261111-regions';
 import {
   bounds, area as signedAreaOf, piecesOf, pointInPolygon,
-} from './core/geometry.js';
+} from './core/geometry.js?v=20261111-regions';
 import {
   forcePolygon, funicular, poleFromForcePolygon, hangingCable, jointCrossings,
   jointForces,
   freeThrustLine, poleForEnds, thrustRangeFactor,
 } from './core/statics.js';
-import { EQUIVALENT_LAYER, equivalentLayer } from './core/equivalent-layer.js?v=20261111-solidary';
-import { blockZ, blockLayerKey, zKey, layersOf, modelInLayer, forcesInLayer, layerReferenceWidth, solveLayer } from './core/layers.js?v=20261110-poleni';
+import { blockRole, REGION_ROLES, REGION_ROLE_LABELS } from './core/region-roles.js';
+import { regionLoads, subdivideLoadRegion } from './core/region-loads.js';
+import { boundaryConstraints, boundaryCollision } from './core/region-boundaries.js';
+import { EQUIVALENT_LAYER, equivalentLayer } from './core/equivalent-layer.js?v=20261111-regions';
+import { blockZ, blockLayerKey, zKey, layersOf, modelInLayer, forcesInLayer, layerReferenceWidth, solveLayer } from './core/layers.js?v=20261111-regions';
 import { referenceChord, angleForChord, normalAngle, angularLayerForBlock, angularBlockProperties, radialExtent, angularPeriod } from './core/poleni-layers.js';
 import { fromExample, poleOf, consistency } from './core/model.js';
 import {
@@ -39,29 +42,29 @@ import {
 import {
   SYSTEMS, unitsPerPixel, scaleModel, format, archDimensions,
   convertModel, conversionFactors,
-} from './core/units.js?v=20261110-poleni';
+} from './core/units.js?v=20261111-regions';
 
 import {
   serialise, deserialise, suggestedName, FORMAT,
-} from './core/persist.js?v=20261111-solidary';
+} from './core/persist.js?v=20261111-regions';
 import { abaqusInput } from './core/abaqus.js';
 import {
   multiplierInput, mechanismMultiplier, minimumMultiplier, rotationCentres,
-} from './core/multiplier.js?v=20261111-solidary';
+} from './core/multiplier.js?v=20261111-regions';
 import {
   parseNotes, toggleWrap, setBlockStyle, insertLink,
 } from './core/notes.js';
 import {
   bestLineForThrust, constrainedLine, collapseRange, analyse, imposedBand,
   displacedConfiguration, displaced, freezeBranch, lineWithFrozenBranch,
-} from './core/mechanism.js?v=20261111-solidary';
+} from './core/mechanism.js?v=20261111-regions';
 import {
   ringStudySamples, ringBands, thicknesses, heymanPoint, heymanDomain, thirdMiddleBand,
   heymanGeometricalSafety,
 } from './core/study.js';
 import {
   defaultAxis, luneWeights, solids, widthRange, endParallels, wholeDome,
-} from './core/dome.js?v=20261110-poleni';
+} from './core/dome.js?v=20261111-regions';
 import { cutRadially, blockCentroid, blockArea } from './core/profile.js';
 import {
   frame, projectedBounds, solidCentre, recenteredSolids,
@@ -79,6 +82,8 @@ const ui = {
   applyAngularLayer: el('applyAngularLayer'), activatePoleniLayers: el('activatePoleniLayers'),
   repeatAngularLayer: el('repeatAngularLayer'), repeatAngularCount: el('repeatAngularCount'),
   forceLayerLabel: el('forceLayerLabel'), angularStatus: el('angularStatus'), layerHeading: el('layerHeading'), blockLayerHeader: el('blockLayerHeader'), blockWidthHeader: el('blockWidthHeader'),
+  regionRole: el('regionRole'), regionStatus: el('regionStatus'),
+  regionMotionStatus: el('regionMotionStatus'), cutLoadRegion: el('cutLoadRegion'),
   blockZ: el('blockZ'), zValues: el('zValues'), blockZLabel: el('blockZLabel'),
   lotLayer: el('lotLayer'), overlayLayer: el('overlayLayer'), overlayLayerRow: el('overlayLayerRow'),
   normalizedThrust: el('normalizedThrust'), normalizedThrustRow: el('normalizedThrustRow'),
@@ -572,8 +577,10 @@ function reportAngularControls() {
   ui.activatePoleniLayers.hidden = !on || angularMode();
   ui.repeatAngularLayer.disabled = !angularMode() || !layersOf(state.model).length;
   ui.full3D.disabled = angularMode();
-  ui.exportAbaqus.disabled = angularMode();
-  ui.exportAbaqus.title = angularMode() ? 'Abaqus export does not yet support explicit angular layers. Save work preserves their geometry.' : 'Export an Abaqus .inp model';
+  const specialRegions = state.model?.blocks.some((_, i) => blockRole(state.model, i) !== 'structure');
+  ui.exportAbaqus.disabled = angularMode() || !!specialRegions;
+  ui.exportAbaqus.title = angularMode() ? 'Abaqus export does not yet support explicit angular layers. Save work preserves their geometry.'
+    : specialRegions ? 'Abaqus export for load/fixed region roles is not implemented; save the JSON session.' : 'Export an Abaqus .inp model';
   for (const id of ['solidAlignCenter', 'solidAlignLeft', 'solidAlignRight']) el(id).disabled = angularMode();
   if (angularMode() && sideView() === 'solid') ui.sideCaption.textContent = 'Blocks — explicit angular layers';
   if (angularMode()) ui.full3D.checked = false;
@@ -647,7 +654,9 @@ function repeatAngularLayers() {
 
 function reportLayers() {
   const ls = layersOf(state.model);
-  state.equivalentLayer = equivalentLayer(state.model, state.forces, { poleni: ui.poleni.checked });
+  state.regionAnalysis = regionLoads(state.model, state.forces, { poleni: ui.poleni.checked });
+  state.equivalentLayer = equivalentLayer(state.model, state.regionAnalysis.forces, { poleni: ui.poleni.checked });
+  reportRegions();
   ui.equivalentSelect.disabled = !state.equivalentLayer.ok;
   ui.equivalentStatus.textContent = state.equivalentLayer.reason;
   const options = ls.map((l) => [l.key, layerLabel(angularMode() ? l.key : l.z)]);
@@ -665,9 +674,10 @@ function reportLayers() {
       && !ls.some((l) => l.key === state.layers.selection)) {
     state.layers.selection = 'all'; restoreLayer();
   }
-  if (!ls.some((l) => l.key === state.layers.overlayLayer)) state.layers.overlayLayer = ls[0]?.key ?? null;
+  const overlayOptions = options.filter(([key]) => ls.find((l) => l.key === key)?.indices.some((i) => blockRole(state.model, i) === 'structure'));
+  if (!overlayOptions.some(([key]) => key === state.layers.overlayLayer)) state.layers.overlayLayer = overlayOptions[0]?.[0] ?? null;
   fill(ui.lotLayer, [['all', 'All — combined curve'], ['overlay', `All — superimposed ${norm}`], ...(!angularMode() && (ls.length > 1 || state.layers.selection === EQUIVALENT_LAYER) ? [[EQUIVALENT_LAYER, 'Solidary equivalent — α₀']] : []), ...options], state.layers.selection);
-  fill(ui.overlayLayer, options, state.layers.overlayLayer);
+  fill(ui.overlayLayer, overlayOptions, state.layers.overlayLayer);
   const forceOptions = [...options];
   if (!angularMode()) (state.forces.z ?? []).forEach((z) => {
     if (!forceOptions.some(([k]) => k === zKey(z))) forceOptions.push([zKey(z), `${layerLabel(z)} (no blocks)`]);
@@ -717,10 +727,52 @@ function prepareLayerAnalysis() {
     if (!eq.ok) { state.mech = null; state.alpha = null; }
   } else {
     state.layerContext = { source: state.model, model: modelInLayer(state.model, key),
-      forces: forcesInLayer(state.forces, key, state.model) };
+      forces: forcesInLayer(state.regionAnalysis.forces, key, state.model) };
   }
+  if (state.layerContext.model) state.layerContext.model = regionSection(state.layerContext.model, key);
   state.layerSolutions = [];
 }
+function reportRegions() {
+  const m = state.model, data = state.regionAnalysis;
+  const counts = { structure: 0, load: 0, fixed: 0 };
+  (m?.blocks ?? []).forEach((_, i) => { counts[blockRole(m, i)]++; });
+  ui.regionStatus.textContent = `${counts.structure} structural · ${counts.load} load-only · ${counts.fixed} fixed blocks`;
+  if (data?.transfers.length) ui.regionStatus.textContent += ` · ${data.transfers.length} automatic dead loads (not amplified by α)`;
+  if (data?.issues.length) ui.regionStatus.textContent += ` · ${data.issues.map((q) => q.reason).join(' ')}`;
+}
+function regionSection(section, key) {
+  const boundary = boundaryConstraints(state.model, section);
+  const issues = [...(state.regionAnalysis?.issues ?? []), ...boundary.issues]
+    .filter((q) => ['all', 'overlay', EQUIVALENT_LAYER].includes(key) || q.layer === 'all' || q.layer === key);
+  if (issues.length) {
+    ui.layerStatus.textContent = issues.map((q) => q.reason).join(' ');
+    ui.regionStatus.textContent += ` · ${boundary.issues.map((q) => q.reason).join(' ')}`;
+  }
+  const boundaryKey = JSON.stringify((state.model?.blocks ?? []).map((b, i) => blockRole(state.model, i) === 'fixed' ? [b, blockLayerKey(state.model, i)] : null));
+  return { ...section, boundaries: boundary.constraints, boundaryKey, analysisIssue: issues.map((q) => q.reason).join(' ') || null };
+}
+function regionMechanismTransforms(amp) {
+  const m = state.mech, section = analysisModel();
+  const cache = state.regionMotion;
+  if (cache?.mechanism === m && cache.source === state.model && cache.amp === amp) return cache.transforms;
+  let stopped = false;
+  const fixed = state.model?.blocks.some((_, i) => blockRole(state.model, i) === 'fixed');
+  const accept = fixed ? (T) => {
+    // Test each source shape in its own Z layer, including after equivalent
+    // fusion; a piece from another layer must not collide with this layer's wall.
+    const ids = (section.sources ?? section.blocks.map((_, i) => [i])).flat();
+    const originals = ids.map((i) => state.model.blocks[i]);
+    const bodies = ids.map((i) => m.bodyOf[(section.sources ?? section.blocks.map((_, k) => [k])).findIndex((row) => row.includes(i))]);
+    const blocked = boundaryCollision(state.model, { blocks: originals, sources: ids.map((i) => [i]) }, displaced(originals, bodies, T));
+    if (blocked) stopped = true;
+    return !blocked;
+  } : null;
+  const transforms = displacedConfiguration(m.hinges, m.bodies, m.kinematic === false ? 0 : amp, 120, accept);
+  ui.regionMotionStatus.textContent = stopped ? 'Displacement stopped before penetration into a fixed region.' : '';
+  state.regionMotion = { mechanism: m, source: state.model, amp, transforms };
+  return transforms;
+}
+
 function analysisBasePole() {
   if (state.layers.selection === 'all') return state.basePole;
   const total = totalLoad();
@@ -728,12 +780,13 @@ function analysisBasePole() {
 }
 function recomputeOverlay() {
   rememberLayer();
-  const ls = layersOf(state.model);
+  const ls = layersOf(state.model).filter((l) => l.indices.some((i) => blockRole(state.model, i) === 'structure'));
   const invalid = ls.filter((l) => layerReferenceWidth(state.model, l.key) == null);
-  if (invalid.length || !ls.length || (ui.poleni.checked && !angularMode())) {
-    ui.layerStatus.textContent = ui.poleni.checked && !angularMode()
+  const regionIssue = state.regionAnalysis?.issues.map((q) => q.reason).join(' ');
+  if (regionIssue || invalid.length || !ls.length || (ui.poleni.checked && !angularMode())) {
+    ui.layerStatus.textContent = regionIssue || (ui.poleni.checked && !angularMode()
       ? 'Activate angular layers in Geometry to compare Poleni curves.'
-      : `Superimposed H/t requires a positive, uniform thickness in each layer. Check: ${invalid.map((l) => layerLabel(l.z)).join('; ')}`;
+      : `Superimposed H/t requires a positive, uniform thickness in each layer. Check: ${invalid.map((l) => layerLabel(l.z)).join('; ')}`);
     state.seq = null; state.pole = null; state.segForces = null; state.crossings = null; state.mech = null;
     setThrustEnabled(false); ui.admissible.textContent = 'No superimposed solution — see Z layers.';
     showThrust(); return;
@@ -745,10 +798,10 @@ function recomputeOverlay() {
   ui.normalizedThrust.value = String(Number(state.layers.normalizedBase.toPrecision(10)));
   const h = state.layers.normalizedBase * thrustRangeFactor(ui.thrust.value, state.thrustRangeMax);
   for (const [index, l] of ls.entries()) {
-    const model = modelInLayer(state.model, l.key);
+    const model = regionSection(modelInLayer(state.model, l.key), l.key);
     const t = layerReferenceWidth(state.model, l.key);
     const settings = state.layers.settings[l.key] ?? {};
-    const result = solveLayer(model, forcesInLayer(state.forces, l.key, state.model), settings, h * t);
+    const result = solveLayer(model, forcesInLayer(state.regionAnalysis.forces, l.key, state.model), settings, h * t);
     state.layerSolutions.push({ ...result, key: l.key, model, t, H: h * t,
       colour: ['#c62828', '#1565c0', '#2e7d32', '#7b1fa2', '#ef6c00', '#00838f'][index % 6] });
   }
@@ -813,6 +866,7 @@ function ensureGroups() {
     if (!Number.isFinite(Number(g.gamma))) g.gamma = gamma;
     if (!Number.isFinite(Number(g.thickness))) g.thickness = thickness;
     if (!Number.isFinite(g.z)) g.z = 0;
+    if (!REGION_ROLES.includes(g.role)) g.role = 'structure';
     if (!g.color) g.color = groupColour(i);
   });
 }
@@ -847,6 +901,7 @@ function newGroup(method, count) {
     id,
     name: groupName(method, m.groups.length),
     method,
+    role: ui.regionRole.value,
     z: Number(ui.blockZ.value) || 0,
     ...(ui.poleni.checked ? { poleniLayer: creationAngularLayer().id } : {}),
     gamma,
@@ -1170,7 +1225,18 @@ function renderBlockTable() {
       state.solidFit = null; reportGroups(); recompute(); fitForceView(); draw();
       appendLog(`Set Z = ${g.z} for group ${g.name}`);
     });
-    li.append(swatch, name, count, zSelect);
+    const role = document.createElement('select');
+    role.setAttribute('aria-label', `Role for ${g.name}`);
+    REGION_ROLES.forEach((value) => { const o = document.createElement('option'); o.value = value; o.textContent = REGION_ROLE_LABELS[value]; role.append(o); });
+    role.value = g.role ?? 'structure';
+    role.addEventListener('change', () => {
+      g.role = role.value; m.joints = null; m.pointA = null; m.pointB = null;
+      state.alpha = null; state.mech = null; state.band = null; state.bandKey = null; state.frozenBranch = null;
+      state.ringAuto = false; state.ringStudySource = null; state.layerContext = null;
+      recoverJoints(); reweigh(); recompute(); reportGroups(); fitForceView(); draw();
+      appendLog(`Set role ${REGION_ROLE_LABELS[g.role]} for ${g.name}`);
+    });
+    li.append(swatch, name, count, zSelect, role);
     ui.groupList.append(li);
   });
 
@@ -1307,6 +1373,7 @@ function addEmptyGroup() {
     name: `Group ${m.groups.length + 1}`,
     method: 'hand',
     ...(ui.poleni.checked ? { poleniLayer: creationAngularLayer().id } : {}),
+    role: ui.regionRole.value,
     z: Number(ui.blockZ.value) || 0,
     gamma: Number(ui.gamma.value) || 20,
     thickness: Math.max(0, Number(ui.thick.value) || 1),
@@ -1368,7 +1435,7 @@ function isCoupletStudy() {
 }
 
 function refreshRingStudy() {
-  if (angularMode() || layersOf(state.model).length > 1) { state.ringAuto = false; state.ringStudySource = null; return; }
+  if (angularMode() || state.model?.blocks.some((_, i) => blockRole(state.model, i) !== 'structure') || layersOf(state.model).length > 1) { state.ringAuto = false; state.ringStudySource = null; return; }
   if (!state.ringStudySource) return;
   state.ringStudySource = currentRingStudySource(state.ringStudySource);
   if (isCoupletStudy()) {
@@ -1572,6 +1639,8 @@ async function loadCatalogue() {
  */
 function newWork() {
   resetLayers();
+  ui.regionRole.value = 'structure';
+  state.regionMotion = null;
   ui.poleniLayerSelect.value = 'new'; ui.poleniRadius.value = ''; ui.poleniStart.value = '0'; ui.poleniWidthMode.value = 'tapered';
   state.model = null;
   state.image = null;
@@ -1928,8 +1997,9 @@ function alphaSignature() {
     m.blocks.length,
     m.joints.map((j) => [...j.a, ...j.b].map(r).join(',')).join(';'),
     (m.weights ?? []).map(r).join(','),
+    JSON.stringify([m.boundaries, m.analysisIssue, m.boundaryKey]),
     JSON.stringify(m.centroids),
-    JSON.stringify([f.points ?? [], f.magnitudes ?? [], f.x ?? [], f.blocks ?? []]),
+    JSON.stringify([f.points ?? [], f.magnitudes ?? [], f.x ?? [], f.blocks ?? [], f.ownerSources ?? []]),
     ui.imposeEnds.checked && state.ends.A && state.ends.B
       ? `${state.ends.A.map(r)}|${state.ends.B.map(r)}` : '',
   ].join('#');
@@ -1977,20 +2047,20 @@ function describeAlphaHinges(r) {
 function reportAlpha() {
   const s = currentAlpha();
   const m = analysisModel();
-  ui.alphaFind.disabled = !m?.joints;
-  ui.alphaPick.disabled = !m?.joints;
+  ui.alphaFind.disabled = !m?.joints || !!m?.analysisIssue;
+  ui.alphaPick.disabled = !m?.joints || !!m?.analysisIssue;
   ui.alphaPick.classList.toggle('armed', !!s?.picking);
   ui.alphaPick.textContent = s?.picking ? `Picking (${s.picks.length}/4)` : 'Pick hinges';
-  if (!m?.joints) {
+  if (!m?.joints || m.analysisIssue) {
     ui.alphaResult.className = 'verdict';
-    ui.alphaResult.textContent = state.layers.selection === EQUIVALENT_LAYER && !state.equivalentLayer?.ok
-      ? state.equivalentLayer.reason : m ? noJointsReason(m) : '—';
+    ui.alphaResult.textContent = m?.analysisIssue ?? (state.layers.selection === EQUIVALENT_LAYER && !state.equivalentLayer?.ok
+      ? state.equivalentLayer.reason : m ? noJointsReason(m) : '—');
     ui.alphaDetail.textContent = '';
     return;
   }
   if (!s || (!s.plus && !s.minus && !s.manual && !s.picks.length)) {
     ui.alphaResult.className = 'verdict';
-    ui.alphaResult.textContent = '—';
+    ui.alphaResult.textContent = s?.evaluated ? 'No compatible four-hinge mechanism found in this search.' : '—';
     ui.alphaDetail.textContent = '';
     ui.alphaShow.value = 'none';
     return;
@@ -2027,7 +2097,7 @@ function reportAlpha() {
 
 function findAlpha() {
   const m = analysisModel();
-  if (!m?.joints) { reportAlpha(); return; }
+  if (!m?.joints || m.analysisIssue) { reportAlpha(); return; }
   const s = alphaState();
   try {
     const input = multiplierInput(m, analysisForces());
@@ -2107,6 +2177,7 @@ function reportMechanism(thrustFraction) {
   // of the one read off the line of thrust: the drawing, the displacement
   // slider and the 3-D view all work from state.mech.
   reportAlpha();
+  ui.regionMotionStatus.textContent = '';
   const alphaMech = m?.joints ? shownAlphaMechanism() : null;
   if (alphaMech) {
     state.mech = alphaMech;
@@ -2127,10 +2198,10 @@ function reportMechanism(thrustFraction) {
     ui.mechAmp.disabled = true;
     return;
   }
-  if (!m.joints || !state.crossings) {
+  if (!m.joints || !state.crossings || m.analysisIssue) {
     state.mech = null;
     ui.mechVerdict.className = 'verdict';
-    ui.mechVerdict.textContent = m.joints ? '—' : noJointsReason(m);
+    ui.mechVerdict.textContent = m.analysisIssue ?? (m.joints ? '—' : noJointsReason(m));
     ui.mechCount.textContent = '';
     ui.mechBand.textContent = '';
     ui.mechAmp.disabled = true;
@@ -2146,7 +2217,7 @@ function reportMechanism(thrustFraction) {
       : { B: state.ends.B, A: state.ends.A })
     : null;
   const a = analyse(state.crossings, m.joints, m.blocks.length,
-    undefined, imposedSupports);
+    undefined, imposedSupports, m.boundaries);
   state.mech = a;
 
   ui.mechVerdict.className = `verdict ${a.dof > 0 ? 'bad' : a.dof === 0 ? 'ok' : ''}`;
@@ -2293,16 +2364,18 @@ function recompute() {
   state.lot = null;
   state.fpKinds = null;
   if (state.layers.selection === 'overlay') { recomputeOverlay(); return; }
-  if (!m || !m.blocks || !m.blocks.length || !referencePole) {
+  if (!m || !m.blocks || !m.blocks.length || !referencePole || m.analysisIssue) {
     state.seq = null;
     state.pole = null;
     state.segForces = null;
     state.crossings = null;
     setThrustEnabled(false);
-    ui.thrustValue.textContent = state.layers.selection === EQUIVALENT_LAYER
-      ? 'Equivalent layer unavailable — see compatibility.' : 'trace the arch first';
+    ui.thrustValue.textContent = m?.analysisIssue ?? (state.layers.selection === EQUIVALENT_LAYER
+      ? 'Equivalent layer unavailable — see compatibility.' : 'trace the arch first');
     ui.thrustValueM.textContent = ui.thrustValue.textContent;
     ui.thrustValueP.textContent = ui.thrustValue.textContent;
+    ui.admissible.className = m?.analysisIssue ? 'verdict bad' : 'verdict';
+    ui.admissible.textContent = m?.analysisIssue ?? 'No structural solution.';
     reportEnds(null);
     reportMechanism();
     return;
@@ -2794,7 +2867,9 @@ function loadTitle(loadIndex) {
   const active = analysisModel();
   if (active !== m && Number.isInteger(original)) {
     if (original < active.blocks.length) return `Block #${(active.sources?.[original]?.[0] ?? original) + 1}`;
-    return `Force #${(analysisForces().sourceIndices?.[original - active.blocks.length] ?? 0) + 1}`;
+    const force = analysisForces().sourceIndices?.[original - active.blocks.length] ?? 0;
+    const region = state.regionAnalysis?.forces.regionSources?.[force];
+    return region != null ? `Load region block #${region + 1}` : `Force #${force + 1}`;
   }
   if (!Number.isInteger(original)) return `Block #${loadIndex + 1}`;
   if (original < (m.blocks?.length ?? 0)) return `Block #${original + 1}`;
@@ -2989,6 +3064,8 @@ function draw() {
     if (ui.showMech.checked && state.mech) {
       // While a mechanism is on show, what matters is which pieces move
       // together, not that adjacent stones are distinguishable.
+      const passive = m.blocks.filter((_, i) => blockRole(m, i) !== 'structure');
+      drawBlocks(mainAx, passive, { colours: m.blocks.map((_, i) => i).filter((i) => blockRole(m, i) !== 'structure').map((i) => blockRole(m, i) === 'fixed' ? '#89939d' : '#e5cb83') });
       drawMacroBlocks(mainAx, analysisModel().blocks, state.mech.bodyOf);
     } else {
       ensureGroups();
@@ -3000,7 +3077,7 @@ function draw() {
       const drawOrder = m.blocks.map((_, i) => i).sort((a, b) => Number(active[a]) - Number(active[b]));
       drawBlocks(mainAx, drawOrder.map((i) => m.blocks[i]), {
         labels: ui.showLabels.checked,
-        colours: drawOrder.map((i) => colours?.[i]),
+        colours: drawOrder.map((i) => blockRole(m, i) === 'fixed' ? '#89939d' : blockRole(m, i) === 'load' ? '#e5cb83' : colours?.[i]),
         opacities: drawOrder.map((i) => active[i] ? 1 : 0.14),
         numbers: drawOrder.map((i) => i + 1),
         // The row the block table has picked. `drawBlocks` already knows how
@@ -3064,7 +3141,7 @@ function draw() {
     const a = state.mech;
     const amp = (Number(ui.mechAmp.value) / 100) * 0.25;   // radians, capped
     if (a.dof > 0 && amp > 0) {
-      const T = displacedConfiguration(a.hinges, a.bodies, amp);
+      const T = regionMechanismTransforms(amp);
       drawMechanism(mainAx, displaced(analysisModel().blocks, a.bodyOf, T));
       drawCentres(mainAx, a.motion);
     }
@@ -4200,7 +4277,7 @@ function selectEquilibriumBlockAt(ax, e) {
 }
 
 function drawForces() {
-  const f = state.forces;
+  const f = state.regionAnalysis?.forces ?? state.forces;
   if (!f.points.length) return;
   const max = Math.max(...f.magnitudes.map((_, i) => {
     const v = forceComponents(f, i);
@@ -4224,7 +4301,7 @@ function drawForces() {
       c.fillStyle = APPLIED_FORCE_COLOUR;
       c.textAlign = 'left';
       c.textBaseline = 'bottom';
-      c.fillText(`F${i + 1}`, X + 4, Y);
+      c.fillText(f.regionSources?.[i] != null ? `W${f.regionSources[i] + 1}` : `F${i + 1}`, X + 4, Y);
     });
   });
 }
@@ -5077,12 +5154,13 @@ function reportProfiles() {
   const n = p.list.length + (p.current && p.current.length >= 3 ? 1 : 0);
   const ready = n > 0 && p.centre;
   ui.cutProfile.disabled = !ready;
+  ui.cutLoadRegion.disabled = !n || ui.regionRole.value !== 'load' || ui.poleni.checked;
   ui.profileStatus.textContent = !n
     ? 'no outline traced'
     : `${n} outline${n === 1 ? '' : 's'}`
       + (p.centre
         ? ` · centre at (${p.centre[0].toPrecision(4)}, ${p.centre[1].toPrecision(4)})`
-        : ' · pick the centre of the cuts');
+        : ui.regionRole.value === 'load' ? ' · ready for vertical subdivision from structure' : ' · pick the centre of the cuts');
 }
 
 /** Start, or finish, a closed outline. */
@@ -5101,6 +5179,31 @@ function armProfile() {
     ? 'Close this outline' : 'Trace an outline';
   reportProfiles();
   draw();
+}
+
+function cutLoadProfiles() {
+  if (ui.regionRole.value !== 'load') return;
+  rememberLayer();
+  const p = state.profiles;
+  if (p.current?.length >= 3) armProfile();
+  try {
+    if (ui.poleni.checked) throw new Error('Automatic load regions currently require planar Z layers.');
+    const previous = state.model;
+    const result = subdivideLoadRegion(p.list, previous, zKey(ui.blockZ.value));
+    const blocks = result.blocks;
+    state.model = { ...previous, blocks, centroids: result.centroids, areas: result.areas,
+      weights: blocks.map(() => 0), thickness: blocks.map(() => Number(ui.thick.value)),
+      groups: [], blockGroups: [], joints: null, pointA: null, pointB: null,
+      forcePolygon: null, thrustLine: null };
+    clearPlotState();
+    mergeGeneratedLayer(previous, 'profile');
+    newGroup('profile', blocks.length);
+    state.consistent = { ok: true, reason: null, extraRows: 0 };
+    state.ringAuto = false; state.ringStudySource = null;
+    reweigh(); recompute(); reportProfiles(); reportBlocks(); fitViews(); draw();
+    ui.warn.hidden = true;
+    appendLog(`Subdivided a load region into ${blocks.length} vertical strips from the structural upper faces`);
+  } catch (e) { ui.warn.hidden = false; ui.warn.textContent = e.message; }
 }
 
 /** Turn the traced outlines into voussoirs by cutting them radially. */
@@ -5290,7 +5393,7 @@ function splitEdgeAt(split) {
  * than inventing them.
  */
 function chainDiagnosis() {
-  const blocks = state.model?.blocks ?? [];
+  const blocks = (state.model?.blocks ?? []).filter((b, i) => blockRole(state.model, i) === 'structure' && !b.pieces);
   if (blocks.length < 3) return null;
   const b = bounds(blocks);
   const diag = Math.hypot(b.xmax - b.xmin, b.ymax - b.ymin);
@@ -5350,6 +5453,11 @@ function recoverJoints() {
   const m = state.model;
   const n = m?.blocks?.length ?? 0;
   if (!n) return false;
+  if (m.blocks.some((_, i) => blockRole(m, i) !== 'structure')) {
+    m.joints = null; m.pointA = null; m.pointB = null;
+    return !!modelInLayer(m, 'all')?.joints;
+  }
+  if (m.blocks.some((b) => b.pieces)) { m.joints = null; return false; }
 
   const identity = m.blocks.map((_, i) => i);
   const byX = [...identity].sort(
@@ -5579,7 +5687,7 @@ function drawSolidView() {
   if (ui.showMech.checked && state.mech && state.mech.dof > 0) {
     const amp = (Number(ui.mechAmp.value) / 100) * 0.25;
     if (amp > 0) {
-      const T = displacedConfiguration(state.mech.hinges, state.mech.bodies, amp);
+      const T = regionMechanismTransforms(amp);
       const active = analysisModel();
       const sourceBodies = m.blocks.map((_, i) => {
         const k = active === m ? i : active.sources?.findIndex((ids) => ids.includes(i));
@@ -5628,7 +5736,7 @@ function drawSolidView() {
       const at = active === m ? k : active.sources?.findIndex((ids) => ids.includes(k));
       const b = at >= 0 ? state.mech.bodyOf[at] : -1;
       const c = BODY_RGB[b % BODY_RGB.length];
-      return b < 0 ? [200, 200, 200] : c;
+      return b < 0 ? (blockRole(m, k) === 'load' ? [229, 203, 131] : [137, 147, 157]) : c;
     })
     : null;
   const groupHighlight = ui.showGroups.checked && !mechanismHighlight
@@ -5637,7 +5745,9 @@ function drawSolidView() {
       return rgbFromHex(g?.color);
     })
     : null;
-  let highlight = mechanismHighlight ?? groupHighlight;
+  const regionHighlight = m.blocks.some((_, i) => blockRole(m, i) !== 'structure')
+    ? m.blocks.map((_, i) => blockRole(m, i) === 'load' ? [229, 203, 131] : blockRole(m, i) === 'fixed' ? [137, 147, 157] : [196, 156, 110]) : null;
+  let highlight = mechanismHighlight ?? groupHighlight ?? regionHighlight;
   if (!['all', 'overlay', EQUIVALENT_LAYER].includes(state.layers.selection)) {
     highlight = m.blocks.map((_, i) => blockLayerKey(m, i) === state.layers.selection
       ? (highlight?.[i] ?? [224, 155, 71]) : [220, 220, 220]);
@@ -5893,6 +6003,9 @@ function abaqusRefinement() {
 }
 
 async function exportAbaqus() {
+  if (state.model?.blocks.some((_, i) => blockRole(state.model, i) !== 'structure')) {
+    ui.saveStatus.textContent = 'Load/fixed region roles are preserved in JSON; their Abaqus export is not implemented.'; return;
+  }
   if (angularMode()) { ui.saveStatus.textContent = 'Save work preserves angular geometry; Abaqus export is available for Z layers and legacy lunes.'; return; }
   try {
     const m = state.model;
@@ -6033,7 +6146,7 @@ function reweigh() {
   }
 
   state.layerContext = null;
-  const total = m.weights.reduce((a, b) => a + b, 0);
+  const total = m.weights.reduce((sum, w, i) => sum + (blockRole(m, i) === 'fixed' ? 0 : w), 0);
   state.basePole = [total / 4, -total / 2];
   reportDome();
   reportGroups();
@@ -6094,7 +6207,7 @@ function mergeGeneratedLayer(previous, method) {
   if (!previous?.blocks?.length) return;
   const z = zKey(ui.blockZ.value);
   const replaced = new Set((previous.groups ?? [])
-    .filter((g) => g.method === method && (previous.layerMode === 'poleni' ? creationMatchesGroup(g, previous) : zKey(g.z) === z)).map((g) => g.id));
+    .filter((g) => g.method === method && (g.role ?? 'structure') === (ui.regionRole?.value ?? 'structure') && (previous.layerMode === 'poleni' ? creationMatchesGroup(g, previous) : zKey(g.z) === z)).map((g) => g.id));
   const keep = previous.blocks.map((_, i) => i).filter((i) => !replaced.has(previous.blockGroups?.[i]));
   if (!keep.length) return;
   const join = (field) => [...keep.map((i) => previous[field]?.[i]), ...(fresh[field] ?? [])];
@@ -7414,6 +7527,8 @@ ui.mechOn.addEventListener('change', () => {
   draw();
 });
 ui.mechAmp.addEventListener('input', draw);
+ui.regionRole.addEventListener('change', reportProfiles);
+ui.cutLoadRegion.addEventListener('click', cutLoadProfiles);
 ui.equivalentSelect.addEventListener('click', () => changeLayer(EQUIVALENT_LAYER));
 ui.alphaFind.addEventListener('click', findAlpha);
 ui.alphaPick.addEventListener('click', () => {

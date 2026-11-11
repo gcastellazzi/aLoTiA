@@ -13,7 +13,7 @@ function source(name) {
 test('equivalent selection uses derived geometry and force ownership; invalid rebuilds clear old mechanisms without falling back to all layers', () => {
   const original = { blocks: ['original'], weights: [1] }, derived = { blocks: ['derived'], weights: [2] }, forces = { points: [[0, 0]], blocks: [0] };
   const context = { EQUIVALENT_LAYER, state: { model: original, layers: { selection: EQUIVALENT_LAYER },
-    equivalentLayer: { ok: true, model: derived, forces }, alpha: {}, mech: {} }, reportLayers() {} };
+    equivalentLayer: { ok: true, model: derived, forces }, alpha: {}, mech: {} }, reportLayers() {}, regionSection: (m) => m };
   vm.createContext(context);
   for (const name of ['editingLayer', 'prepareLayerAnalysis', 'analysisModel', 'analysisForces']) vm.runInContext(source(name), context);
   context.prepareLayerAnalysis();

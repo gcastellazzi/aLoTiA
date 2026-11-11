@@ -106,6 +106,11 @@
         <input type="number" id="blockZ" step="0.1" value="0" list="zValues">
         <datalist id="zValues"></datalist>
       </label>
+      <label class="inline">Region role
+        <select id="regionRole"><option value="structure">Structure</option><option value="load">Load only</option><option value="fixed">Fixed boundary</option></select>
+      </label>
+      <p class="hint">Load-only regions transmit dead weight vertically and do not become moving blocks. Fixed regions allow detachment and frictionless sliding, but prevent penetration.</p>
+      <p id="regionStatus" class="meta"></p>
       <p class="hint">New blocks occupy [Z, Z + thickness]. Groups sharing Z belong to the same layer.</p>
       <label><input type="checkbox" id="showGroups"> Group colours</label>
       <label class="inline">Clear blocks in
@@ -209,6 +214,8 @@
         <input type="number" id="nCuts" min="1" max="200" value="16">
       </label>
       <button id="cutProfile" disabled>Cut into blocks</button>
+      <button id="cutLoadRegion" disabled>Subdivide load region from structure</button>
+      <p class="hint">For Load only: vertical cuts project the endpoints of the underlying structural upper faces onto the outline. Create the structure in the same Z layer first. Each strip transfers its weight vertically; loads without a receiving block are reported.</p>
       <p id="profileStatus" class="meta">no outline traced</p>
     </section>
 
@@ -432,6 +439,8 @@
       </label>
       <p id="alphaResult" class="verdict">&mdash;</p>
       <p id="alphaDetail" class="meta"></p>
+      <p id="regionMotionStatus" class="meta"></p>
+      <p class="hint">Fixed-region contacts are checked at initiation for the four-hinge chain mechanisms searched here. This does not search arbitrary block assemblies or sliding collapse modes.</p>
     </section>
       <section>
         <h2>Points A and B</h2>
@@ -656,6 +665,6 @@ Plain text, with **bold**, *emph*, _underline_ and
     &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
 </footer>
 
-<script type="module" src="js/app.js?v=20261111-solidary"></script>
+<script type="module" src="js/app.js?v=20261111-regions"></script>
 </body>
 </html>

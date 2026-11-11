@@ -4,6 +4,7 @@
 import { layersOf, blockZ, forcesInLayer } from './layers.js';
 import { piecesOf, distance, pointInPolygon } from './geometry.js';
 import { contactJoint, endJoint, orientJoints } from './joints.js';
+import { structuralRegions, remapRegionSources } from './region-roles.js';
 import { springings } from './trace.js';
 
 export const EQUIVALENT_LAYER = 'equivalent';
@@ -64,6 +65,12 @@ function recover(blocks, tol) {
 export function equivalentLayer(source, forces = {}, { poleni = false } = {}) {
   const fail = (reason) => ({ ok: false, reason, model: null, forces: null });
   if (poleni || source?.layerMode === 'poleni') return fail('The solidary equivalent layer is available for planar Z layers; Poleni is excluded.');
+  const structural = structuralRegions(source);
+  if (structural !== source) {
+    const result = equivalentLayer(structural, forces, { poleni });
+    if (result.ok) result.model = remapRegionSources(result.model, structural);
+    return result;
+  }
   const ls = layersOf(source);
   if (ls.length < 2) return fail('At least two populated Z layers are required.');
   const uneven = ls.find((l) => l.indices.length < 2 || l.indices.length !== ls[0].indices.length);
@@ -116,7 +123,10 @@ export function equivalentLayer(source, forces = {}, { poleni = false } = {}) {
   for (let i = 0; i < selectedForces.points.length; i++) {
     const p = selectedForces.points[i], layer = ls.find((l) => l.key === String(Number(selectedForces.z[i]) || 0));
     if (!layer) return fail(`Force ${i + 1}: its Z layer has no blocks.`);
-    let at = layer.indices.find((k) => piecesOf(source.blocks[k]).some((q) => pointInPolygon(p, q)));
+    const owner = selectedForces.ownerSources?.[i];
+    let at = Number.isInteger(owner) ? (source.sourceIds ? source.sourceIds.indexOf(owner) : owner) : null;
+    if (at != null && !layer.indices.includes(at)) return fail(`Force ${i + 1}: its receiving structural block is outside its layer.`);
+    if (at == null) at = layer.indices.find((k) => piecesOf(source.blocks[k]).some((q) => pointInPolygon(p, q)));
     if (at == null) at = layer.indices.reduce((best, k) => distance(source.centroids[k], p) < distance(source.centroids[best], p) ? k : best);
     selectedForces.blocks.push(sources.findIndex((ids) => ids.includes(at)));
   }

@@ -34,6 +34,7 @@ import {
   forcePolygon, freeThrustLine, funicular, jointCrossings, poleForEnds,
 } from './statics.js';
 import { distance, piecesOf } from './geometry.js';
+import { boundaryMotionAllowed } from './region-boundaries.js';
 import { nullSpace } from './linalg.js';
 
 /** How close to a face counts as touching it, as a fraction of the joint. */
@@ -684,7 +685,7 @@ export function separationRate(hinges, bodyList, motion) {
  * @param {number} amplitude    radians turned by the fastest body
  * @returns {Array<{cos,sin,tx,ty}>} one rigid transform per body
  */
-export function displacedConfiguration(hinges, bodyList, amplitude, steps = 120) {
+export function displacedConfiguration(hinges, bodyList, amplitude, steps = 120, accept = null) {
   const n = bodyList.length;
   const T = Array.from({ length: n }, () => ({ cos: 1, sin: 0, tx: 0, ty: 0 }));
   if (!n || !amplitude) return T;
@@ -758,6 +759,7 @@ export function displacedConfiguration(hinges, bodyList, amplitude, steps = 120)
         T[i] = { ...t, tx: t.tx + m.vx * k, ty: t.ty + m.vy * k };
       }
     });
+    if (accept && !accept(T)) return T0;
   }
   return T;
 }
@@ -796,7 +798,7 @@ export function displaced(polys, bodyOf, transforms) {
  * @param {object[]} joints
  * @param {number} nBlocks
  */
-export function analyse(crossings, joints, nBlocks, tol = TOUCH, supports = null) {
+export function analyse(crossings, joints, nBlocks, tol = TOUCH, supports = null, boundaries = []) {
   const hinges = findHinges(crossings, joints, tol, supports);
   const bodyList = bodies(hinges, nBlocks);
   const bodyOf = bodyOfBlock(bodyList, nBlocks);
@@ -807,6 +809,7 @@ export function analyse(crossings, joints, nBlocks, tol = TOUCH, supports = null
   const sep = motion
     ? separationSense(hinges, bodyList, motion)
     : { sense: 1, openings: [] };
+  const boundaryAllowed = !motion || boundaryMotionAllowed(boundaries, bodyOf, motion.motions, sep.sense);
   // NOT `...count`: it carries `hinges` and `bodies` as counts, and spreading
   // it over the arrays of the same name silently replaced them with numbers.
   return {
@@ -817,12 +820,12 @@ export function analyse(crossings, joints, nBlocks, tol = TOUCH, supports = null
     bodyCount: count.bodies,
     constraints: count.constraints,
     dof: count.dof,
-    verdict: sep.sense === 0
+    verdict: !boundaryAllowed ? 'this mechanism would penetrate a fixed boundary region' : sep.sense === 0
       ? `${count.verdict}, but the joints cannot all open: `
         + 'this hinge pattern would need the masonry to interpenetrate'
       : count.verdict,
     motion,
     openings: sep.openings,
-    kinematic: sep.sense !== 0,
+    kinematic: sep.sense !== 0 && boundaryAllowed,
   };
 }

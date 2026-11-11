@@ -34,6 +34,8 @@ import {
 } from './mechanism.js';
 import { pointInPolygon, piecesOf, distance } from './geometry.js';
 
+import { boundaryMotionAllowed } from './region-boundaries.js';
+
 const FACES = ['intrados', 'extrados'];
 
 function vertical(w) {
@@ -48,6 +50,7 @@ function vertical(w) {
  * @param {object} forces  `{points, magnitudes, x}` as the application stores them
  */
 export function multiplierInput(model, forces = null) {
+  if (model?.analysisIssue) throw new Error(model.analysisIssue);
   const blocks = model?.blocks ?? [];
   const joints = model?.joints ?? null;
   if (!joints || joints.length !== blocks.length + 1) {
@@ -65,7 +68,9 @@ export function multiplierInput(model, forces = null) {
       : [Number(forces.x?.[i] ?? 0) || 0, Number(raw) || 0];
     if (!fx && !fy) return;
     // A derived layer carries ownership from the original force's Z layer.
-    let block = Number.isInteger(forces.blocks?.[i]) && forces.blocks[i] >= 0 && forces.blocks[i] < blocks.length
+    const owner = forces.ownerSources?.[i];
+    const owned = Number.isInteger(owner) ? (model.sources ?? blocks.map((_, k) => [k])).findIndex((ids) => ids.includes(owner)) : -1;
+    let block = owned >= 0 ? owned : Number.isInteger(forces.blocks?.[i]) && forces.blocks[i] >= 0 && forces.blocks[i] < blocks.length
       ? forces.blocks[i] : blocks.findIndex((b) => piecesOf(b).some((q) => pointInPolygon(p, q)));
     if (block < 0) {
       block = centroids.reduce((best, c, k) => (best < 0
@@ -73,7 +78,7 @@ export function multiplierInput(model, forces = null) {
     }
     applied.push({ point: [p[0], p[1]], vector: [fx, -fy], block });
   });
-  return { joints, weights, centroids, applied, nBlocks: blocks.length };
+  return { joints, weights, centroids, applied, nBlocks: blocks.length, boundaries: model.boundaries ?? [] };
 }
 
 /** Velocity of point p on a rigid body moving as {vx, vy, omega}. */
@@ -224,6 +229,9 @@ export function mechanismMultiplier(input, picks) {
     m.vx *= sense; m.vy *= sense; m.omega *= sense;
   });
   const openings = rates.map((v) => v * sense);
+  if (!boundaryMotionAllowed(input.boundaries, bodyOf, motion.motions)) {
+    return fail('this mechanism would penetrate a fixed boundary region');
+  }
 
   const { Lh, Lw, scale } = virtualWork(input, bodyOf, motion);
   if (!(Math.abs(Lh) > scale * 1e-9)) {
@@ -381,6 +389,9 @@ export function minimumMultiplier(input, opt = {}) {
     if (o1 >= -eps && o2 >= -eps && o3 >= -eps && o4 >= -eps) sense = 1;
     else if (o1 <= eps && o2 <= eps && o3 <= eps && o4 <= eps) sense = -1;
     else return;
+
+    if (input.boundaries?.length && !boundaryMotionAllowed(input.boundaries,
+      (block) => block < i || block >= l ? -1 : block < j ? 0 : block < k ? 1 : 2, [b1, b2, b3], sense)) return;
 
     const acc = { h: 0, w: 0 };
     work(i, j, w1, b1.ox, b1.oy, acc);
