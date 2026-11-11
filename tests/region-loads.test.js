@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { blockArea, blockCentroid, piecesOf } from '../docs/app/js/core/geometry.js';
-import { subdivideLoadRegion, regionLoads } from '../docs/app/js/core/region-loads.js';
+import { subdivideLoadRegion, regionLoads, loadSurface } from '../docs/app/js/core/region-loads.js';
 import { modelInLayer } from '../docs/app/js/core/layers.js';
 import { multiplierInput, virtualWork } from '../docs/app/js/core/multiplier.js';
 import { convertModel } from '../docs/app/js/core/units.js';
@@ -76,11 +76,17 @@ test('roles and compound load strips survive saving, loading and unit conversion
   json.model.groups[0].role = 'unsupported'; assert.throws(() => deserialise(json), /invalid region role/);
 });
 
-test('overlapping load outlines and load material inside structure are refused', () => {
+test('overlapping load outlines remain ambiguous, while overlap with structure is tolerated', () => {
   const m = base();
   assert.throws(() => subdivideLoadRegion([rect(0, 1, 2, 3), rect(.5, 2, 1.5, 4)], m), /non-overlapping/);
   addRegion(m, [rect(.2, .5, .8, 1.5)]);
-  assert.match(regionLoads(m).issues[0].reason, /overlaps structural/);
+  const before = structuredClone(m), data = regionLoads(m);
+  assert.equal(data.issues.length, 0); assert.equal(data.transfers.length, 1);
+  assert.equal(data.transfers[0].owner, 0);
+  close(data.transfers[0].weight, m.weights[2]);
+  close(data.transfers[0].point[0], m.centroids[2][0]);
+  close(data.transfers[0].point[1], 1);
+  assert.deepEqual(m, before);
 });
 
 test('appending generated loads keeps legacy manual-force metadata aligned', () => {
@@ -93,4 +99,17 @@ test('appending generated loads keeps legacy manual-force metadata aligned', () 
   assert.deepEqual(data.forces.magnitudes, [3, 20]);
   assert.deepEqual(data.forces.regionSources, [null, 2]);
   assert.deepEqual(f, before);
+});
+
+
+test('a resultant inside structural material transfers to its upper face with unchanged weight and moment', () => {
+  const m = base(); addRegion(m, [rect(.2, .6, .8, 1.2)]);
+  const data = regionLoads(m);
+  assert.equal(data.issues.length, 0); assert.equal(data.transfers.length, 1);
+  const t = data.transfers[0];
+  close(t.point[0], .5); close(t.point[1], 1); close(t.weight, .6 * .6 * 20);
+  close(t.point[0] * t.weight, m.centroids[2][0] * m.weights[2]);
+  const compound = { pieces: [rect(0, 0, 1, 1), rect(0, 3, 1, 4)] };
+  close(loadSurface(compound, [.5, .9]), 1); // never lift onto unrelated material above
+  assert.equal(loadSurface(compound, [.5, -1]), -Infinity);
 });

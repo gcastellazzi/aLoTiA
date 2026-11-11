@@ -25,7 +25,7 @@ import {
   freeThrustLine, poleForEnds, thrustRangeFactor,
 } from './core/statics.js';
 import { blockRole, REGION_ROLES, REGION_ROLE_LABELS } from './core/region-roles.js';
-import { regionLoads, subdivideLoadRegion } from './core/region-loads.js';
+import { regionLoads, subdivideLoadRegion } from './core/region-loads.js?v=20261111-region-snap';
 import { boundaryConstraints, boundaryCollision } from './core/region-boundaries.js';
 import { EQUIVALENT_LAYER, equivalentLayer } from './core/equivalent-layer.js?v=20261111-regions';
 import { blockZ, blockLayerKey, zKey, layersOf, modelInLayer, forcesInLayer, layerReferenceWidth, solveLayer } from './core/layers.js?v=20261111-regions';
@@ -82,6 +82,7 @@ const ui = {
   applyAngularLayer: el('applyAngularLayer'), activatePoleniLayers: el('activatePoleniLayers'),
   repeatAngularLayer: el('repeatAngularLayer'), repeatAngularCount: el('repeatAngularCount'),
   forceLayerLabel: el('forceLayerLabel'), angularStatus: el('angularStatus'), layerHeading: el('layerHeading'), blockLayerHeader: el('blockLayerHeader'), blockWidthHeader: el('blockWidthHeader'),
+  profileSnap: el('profileSnap'),
   regionRole: el('regionRole'), regionStatus: el('regionStatus'),
   regionMotionStatus: el('regionMotionStatus'), cutLoadRegion: el('cutLoadRegion'),
   blockZ: el('blockZ'), zValues: el('zValues'), blockZLabel: el('blockZLabel'),
@@ -5165,6 +5166,7 @@ function reportProfiles() {
 
 /** Start, or finish, a closed outline. */
 function armProfile() {
+  state.snap = null;
   if (state.measurements?.picking) stopMeasuring();
   const p = state.profiles;
   if (p.current) {
@@ -5279,10 +5281,11 @@ const SNAP_PX = 11;
  * Only committed blocks are offered — snapping to the corner just placed would
  * turn a slightly short click into an edge of no length.
  */
-function cornerNear(px) {
+function cornerNear(px, include = () => true) {
   let best = null;
   let bestD = SNAP_PX;
-  for (const block of state.model?.blocks ?? []) {
+  for (const [bi, block] of (state.model?.blocks ?? []).entries()) {
+    if (!include(bi)) continue;
     for (const piece of piecesOf(block)) {
       const xs = piece?.x ?? [];
       const ys = piece?.y ?? [];
@@ -5294,6 +5297,15 @@ function cornerNear(px) {
     }
   }
   return best;
+}
+
+/** Region outlines snap to committed nodes in the creation layer only.
+ * Unlike block-edge snapping, this never modifies an existing polygon. */
+function profileSnapAt(px) {
+  if (!ui.profileSnap.checked) return null;
+  const key = angularMode() ? ui.poleniLayerSelect.value : zKey(ui.blockZ.value);
+  const point = cornerNear(px, (i) => blockLayerKey(state.model, i) === key);
+  return point ? { kind: 'corner', point } : null;
 }
 
 /**
@@ -5576,7 +5588,7 @@ function drawProfiles() {
   const p = state.profiles;
   const live = p.current && p.current.length ? [p.current] : [];
   const all = [...p.list, ...live];
-  if (!all.length && !p.centre && !state.newBlock) return;
+  if (!all.length && !p.centre && !state.newBlock && !(p.current && state.snap)) return;
 
   mainAx.clipped((c) => {
     c.lineWidth = 1.6;
@@ -5617,7 +5629,7 @@ function drawProfiles() {
     // is already there, a diamond for a point on an edge, which the click will
     // split. The two are worth telling apart — one leaves the old block as it
     // was, the other gives it a vertex.
-    if (state.newBlock && state.snap) {
+    if ((state.newBlock || p.current) && state.snap) {
       const [X, Y] = mainAx.toPx(state.snap.point);
       c.strokeStyle = '#2e7d32';
       c.lineWidth = 1.6;
@@ -6534,7 +6546,10 @@ function attachNavigation(ax) {
       return;
     }
     if (ax === mainAx && state.profiles.current) {
-      state.profiles.current.push(mainAx.toData([e.offsetX, e.offsetY]));
+      const at = [e.offsetX, e.offsetY];
+      const snap = profileSnapAt(at);
+      state.profiles.current.push(snap ? [...snap.point] : mainAx.toData(at));
+      state.snap = snap;
       reportProfiles();
       draw();
       return;
@@ -6639,10 +6654,10 @@ function attachNavigation(ax) {
     selectEquilibriumBlockAt(ax, e);
   });
   ax.canvas.addEventListener('pointermove', (e) => {
-    if (ax === mainAx && state.newBlock) {
+    if (ax === mainAx && (state.newBlock || state.profiles.current)) {
       // Shown before it is used: a snap the student cannot see is a click that
       // lands somewhere they did not aim at.
-      const found = snapAt([e.offsetX, e.offsetY]);
+      const found = state.profiles.current ? profileSnapAt([e.offsetX, e.offsetY]) : snapAt([e.offsetX, e.offsetY]);
       const key = (v) => (v ? `${v.kind}:${v.point}` : '');
       const moved = key(found) !== key(state.snap);
       state.snap = found;
@@ -7527,7 +7542,8 @@ ui.mechOn.addEventListener('change', () => {
   draw();
 });
 ui.mechAmp.addEventListener('input', draw);
-ui.regionRole.addEventListener('change', reportProfiles);
+ui.profileSnap.addEventListener('change', () => { state.snap = null; draw(); });
+ui.regionRole.addEventListener('change', () => { state.snap = null; reportProfiles(); draw(); });
 ui.cutLoadRegion.addEventListener('click', cutLoadProfiles);
 ui.equivalentSelect.addEventListener('click', () => changeLayer(EQUIVALENT_LAYER));
 ui.alphaFind.addEventListener('click', findAlpha);

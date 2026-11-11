@@ -1,9 +1,9 @@
 /** Planar dead-load regions: structural extrados projections define vertical
  * strips; their weights become unamplified applied loads, never rigid bodies. */
-import { piecesOf, blockArea, blockCentroid, signedArea } from './geometry.js';
+import { piecesOf, blockArea, blockCentroid, signedArea, pointInPolygon } from './geometry.js';
 import { blockRole, structuralRegions } from './region-roles.js';
 import { blockLayerKey, blockZ } from './layers.js';
-import { vertices, triangulate, clipSlab, geometricTolerance, polygonsOverlap, mergeClippedPieces } from './region-geometry.js';
+import { vertices, triangulate, clipSlab, geometricTolerance, polygonsOverlap, mergeClippedPieces, onSegment } from './region-geometry.js';
 
 export function verticalHit(block, x, ceiling, tol = 1e-9) {
   let y = -Infinity;
@@ -22,6 +22,21 @@ export function verticalHit(block, x, ceiling, tol = 1e-9) {
     }
   }
   return y;
+}
+
+/** The load resultant can fall inside masonry because the traced outlines
+ * overlap. Use that piece's upper face, rather than mistakenly hitting its
+ * intrados; the full dead load and its vertical moment are unchanged. */
+export function loadSurface(block, point, tol = 1e-9) {
+  let top = -Infinity;
+  for (const p of piecesOf(block)) {
+    const y = verticalHit(p, point[0], Infinity, tol);
+    if (!Number.isFinite(y)) continue;
+    const v = vertices(p);
+    const contains = pointInPolygon(point, p) || v.some((a, i) => onSegment(point, a, v[(i + 1) % v.length], tol));
+    if (y <= point[1] + tol || contains) top = Math.max(top, y);
+  }
+  return top;
 }
 
 export function subdivideLoadRegion(outlines, model, layerKey = '0') {
@@ -75,11 +90,9 @@ export function regionLoads(model, forces = {}, { poleni = false } = {}) {
   const tol = geometricTolerance(model.blocks.flatMap(piecesOf));
   for (const i of extras.filter((k) => blockRole(model, k) === 'load')) {
     const key = blockLayerKey(model, i), point = model.centroids[i], weight = model.weights[i];
-    const overlap = structural.find((j) => blockLayerKey(model, j) === key && piecesOf(model.blocks[i]).some((p) => piecesOf(model.blocks[j]).some((q) => polygonsOverlap(p, q, tol))));
-    if (overlap != null) { issues.push({ layer: key, reason: `Load block #${i + 1} overlaps structural block #${overlap + 1}; trace the load region outside the structure.` }); continue; }
     let owner = -1, top = -Infinity;
     for (const j of structural.filter((k) => blockLayerKey(model, k) === key)) {
-      const y = verticalHit(model.blocks[j], point[0], point[1], tol);
+      const y = loadSurface(model.blocks[j], point, tol);
       if (y > top) { top = y; owner = j; }
     }
     if (owner < 0) { issues.push({ layer: key, reason: `Load block #${i + 1}: no structural block below its vertical line of action in this Z layer.` }); continue; }

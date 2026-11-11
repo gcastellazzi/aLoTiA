@@ -709,8 +709,12 @@ first structural boundary below its centroid, in the same Z layer. The X
 coordinate is unchanged, preserving the vertical load's moment. Generated
 forces are transient and retain an explicit original structural owner: they
 are rebuilt after edits, changes of units and reopening, never saved as a
-second copy of the material's weight. A missing receiver or overlap with
-structural material is an analysis error. These are *dead loads*, not moving
+second copy of the material's weight. Overlap between a load region and
+structural material is tolerated as a tracing imperfection: the full assigned
+dead weight is retained (no subtraction of the overlap). If its resultant lies
+inside a structural piece, it is applied on that piece's upper face at the
+same X. Material entirely above a load is not a receiving support. A missing
+receiver remains an analysis error. These are *dead loads*, not moving
 bodies or additional seismic masses: they contribute virtual work but are not
 amplified by alpha. Manual forces retain their existing semantics.
 
@@ -743,3 +747,9 @@ The feature is planar: Poleni models with nonstructural roles report an
 unsupported-analysis diagnostic. JSON saving supports the roles and compound
 strips. Abaqus export is disabled while nonstructural roles are present, since
 its exporter does not yet represent these load-transfer/contact conditions.
+
+Outline tracing offers node snapping (enabled by default) in the creation
+layer. A green square previews the exact existing node used by the next click.
+The radius is 11 screen pixels at any zoom; the checkbox disables snapping for
+free placement. Snapping an outline never inserts vertices into existing
+blocks, unlike the separate block-edge snapping tool.

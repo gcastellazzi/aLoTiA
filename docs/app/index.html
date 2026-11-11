@@ -209,6 +209,8 @@
         haunch, a widening pier, or the two shells of a dome. Trace each closed
         outline in turn; the joints come from rays out of a picked centre, so
         every shell is cut at the same angles.</p>
+      <label class="inline"><input type="checkbox" id="profileSnap" checked> Snap outline to existing nodes</label>
+      <p class="hint">A green square marks a node in the same layer. Click near it to use its exact coordinates; turn snapping off to place a point freely.</p>
       <button id="pickCutCentre">Pick the centre of the cuts</button>
       <label class="inline">Blocks
         <input type="number" id="nCuts" min="1" max="200" value="16">
@@ -665,6 +667,6 @@ Plain text, with **bold**, *emph*, _underline_ and
     &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
 </footer>
 
-<script type="module" src="js/app.js?v=20261111-regions"></script>
+<script type="module" src="js/app.js?v=20261111-region-snap"></script>
 </body>
 </html>
