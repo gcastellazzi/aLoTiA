@@ -33,7 +33,7 @@
 import {
   forcePolygon, freeThrustLine, funicular, jointCrossings, poleForEnds,
 } from './statics.js';
-import { distance } from './geometry.js';
+import { distance, piecesOf } from './geometry.js';
 import { nullSpace } from './linalg.js';
 
 /** How close to a face counts as touching it, as a fraction of the joint. */
@@ -780,11 +780,11 @@ export function transformPoint(t, p) {
 export function displaced(polys, bodyOf, transforms) {
   return polys.map((p, k) => {
     const t = transforms[bodyOf[k]];
-    if (!t) return { x: [...p.x], y: [...p.y] };
-    return {
-      x: p.x.map((x, i) => t.cos * x - t.sin * p.y[i] + t.tx),
-      y: p.y.map((y, i) => t.sin * p.x[i] + t.cos * y + t.ty),
+    const move = (q) => !t ? { x: [...q.x], y: [...q.y] } : {
+      x: q.x.map((x, i) => t.cos * x - t.sin * q.y[i] + t.tx),
+      y: q.y.map((y, i) => t.sin * q.x[i] + t.cos * y + t.ty),
     };
+    return p.pieces ? { pieces: piecesOf(p).map(move) } : move(p);
   });
 }
 

@@ -64,7 +64,9 @@ export function multiplierInput(model, forces = null) {
       ? [Number(raw[0]) || 0, Number(raw[1]) || 0]
       : [Number(forces.x?.[i] ?? 0) || 0, Number(raw) || 0];
     if (!fx && !fy) return;
-    let block = blocks.findIndex((b) => piecesOf(b).some((q) => pointInPolygon(p, q)));
+    // A derived layer carries ownership from the original force's Z layer.
+    let block = Number.isInteger(forces.blocks?.[i]) && forces.blocks[i] >= 0 && forces.blocks[i] < blocks.length
+      ? forces.blocks[i] : blocks.findIndex((b) => piecesOf(b).some((q) => pointInPolygon(p, q)));
     if (block < 0) {
       block = centroids.reduce((best, c, k) => (best < 0
         || distance(c, p) < distance(centroids[best], p) ? k : best), -1);

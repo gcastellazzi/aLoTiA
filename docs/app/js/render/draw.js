@@ -1508,7 +1508,7 @@ export function drawMechanism(ax, polys, opt = {}) {
     c.strokeStyle = colour;
     c.lineWidth = 1.2;
     c.fillStyle = 'rgba(162,20,47,0.10)';
-    polys.forEach((p) => {
+    polys.flatMap(piecesOf).forEach((p) => {
       c.beginPath();
       for (let i = 0; i < p.x.length; i++) {
         const [X, Y] = ax.toPx([p.x[i], p.y[i]]);

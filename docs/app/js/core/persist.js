@@ -244,7 +244,7 @@ export function deserialise(text) {
     throw new Error('the file has an invalid group Z');
   }
   if (data.layers) {
-    if (!['all', 'overlay'].includes(data.layers.selection) && !/^p:[1-9]\d*$/.test(data.layers.selection) && !Number.isFinite(Number(data.layers.selection))) {
+    if (!['all', 'overlay', 'equivalent'].includes(data.layers.selection) && !/^p:[1-9]\d*$/.test(data.layers.selection) && !Number.isFinite(Number(data.layers.selection))) {
       throw new Error('the file has an invalid layer selection');
     }
     for (const settings of Object.values(data.layers.settings ?? {})) {

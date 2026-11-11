@@ -414,6 +414,9 @@
         hinges at the ends of the joints, or over the four hinges you pick.
         The mechanism found from the line of thrust above is not used: its
         own line passes through its hinges, so its multiplier is zero.</p>
+      <p class="hint">For compatible Z layers, assume solidary motion and use a temporary equivalent layer: weights and moments add, with no relative sliding or detachment between layers. Original blocks remain editable; the 3D view shows their shared motion.</p>
+      <button id="equivalentSelect" type="button" disabled>Use solidary equivalent layer</button>
+      <p id="equivalentStatus" class="meta"></p>
       <div class="row">
         <button id="alphaFind" type="button">Find &alpha;<sub>0</sub></button>
         <button id="alphaPick" type="button">Pick hinges</button>
@@ -653,6 +656,6 @@ Plain text, with **bold**, *emph*, _underline_ and
     &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
 </footer>
 
-<script type="module" src="js/app.js?v=20261110-poleni"></script>
+<script type="module" src="js/app.js?v=20261111-solidary"></script>
 </body>
 </html>

@@ -15,7 +15,7 @@ import {
   drawHinges, drawMacroBlocks, drawMechanism, drawCentres,
   drawEnds, drawPreliminary, drawNotice, wrapText,
   drawJointCell, drawBlockEquilibrium, APPLIED_FORCE_COLOUR,
-} from './render/draw.js?v=20261110-poleni';
+} from './render/draw.js?v=20261111-solidary';
 import {
   bounds, area as signedAreaOf, piecesOf, pointInPolygon,
 } from './core/geometry.js';
@@ -24,6 +24,7 @@ import {
   jointForces,
   freeThrustLine, poleForEnds, thrustRangeFactor,
 } from './core/statics.js';
+import { EQUIVALENT_LAYER, equivalentLayer } from './core/equivalent-layer.js?v=20261111-solidary';
 import { blockZ, blockLayerKey, zKey, layersOf, modelInLayer, forcesInLayer, layerReferenceWidth, solveLayer } from './core/layers.js?v=20261110-poleni';
 import { referenceChord, angleForChord, normalAngle, angularLayerForBlock, angularBlockProperties, radialExtent, angularPeriod } from './core/poleni-layers.js';
 import { fromExample, poleOf, consistency } from './core/model.js';
@@ -42,18 +43,18 @@ import {
 
 import {
   serialise, deserialise, suggestedName, FORMAT,
-} from './core/persist.js?v=20261110-poleni';
+} from './core/persist.js?v=20261111-solidary';
 import { abaqusInput } from './core/abaqus.js';
 import {
   multiplierInput, mechanismMultiplier, minimumMultiplier, rotationCentres,
-} from './core/multiplier.js';
+} from './core/multiplier.js?v=20261111-solidary';
 import {
   parseNotes, toggleWrap, setBlockStyle, insertLink,
 } from './core/notes.js';
 import {
   bestLineForThrust, constrainedLine, collapseRange, analyse, imposedBand,
   displacedConfiguration, displaced, freezeBranch, lineWithFrozenBranch,
-} from './core/mechanism.js';
+} from './core/mechanism.js?v=20261111-solidary';
 import {
   ringStudySamples, ringBands, thicknesses, heymanPoint, heymanDomain, thirdMiddleBand,
   heymanGeometricalSafety,
@@ -110,6 +111,7 @@ const ui = {
   mechAmp: el('mechAmp'), goHmin: el('goHmin'), goHmax: el('goHmax'),
   full3D: el('full3D'),
   abaqusLateral: el('abaqusLateral'),
+  equivalentSelect: el('equivalentSelect'), equivalentStatus: el('equivalentStatus'),
   alphaFind: el('alphaFind'), alphaPick: el('alphaPick'), alphaClear: el('alphaClear'),
   alphaShow: el('alphaShow'), alphaResult: el('alphaResult'), alphaDetail: el('alphaDetail'),
   poleni: el('poleni'), domeAngle: el('domeAngle'), domeAxis: el('domeAxis'),
@@ -645,6 +647,9 @@ function repeatAngularLayers() {
 
 function reportLayers() {
   const ls = layersOf(state.model);
+  state.equivalentLayer = equivalentLayer(state.model, state.forces, { poleni: ui.poleni.checked });
+  ui.equivalentSelect.disabled = !state.equivalentLayer.ok;
+  ui.equivalentStatus.textContent = state.equivalentLayer.reason;
   const options = ls.map((l) => [l.key, layerLabel(angularMode() ? l.key : l.z)]);
   const norm = angularMode() ? 'H/c' : 'H/t';
   ui.layerHeading.textContent = angularMode() ? 'Angular layers — Poleni' : 'Z layers';
@@ -656,12 +661,12 @@ function reportLayers() {
     });
     sel.value = choices.some(([k]) => k === current) ? current : choices[0]?.[0] ?? '';
   };
-  if (state.layers.selection !== 'all' && state.layers.selection !== 'overlay'
+  if (state.layers.selection !== 'all' && state.layers.selection !== 'overlay' && state.layers.selection !== EQUIVALENT_LAYER
       && !ls.some((l) => l.key === state.layers.selection)) {
     state.layers.selection = 'all'; restoreLayer();
   }
   if (!ls.some((l) => l.key === state.layers.overlayLayer)) state.layers.overlayLayer = ls[0]?.key ?? null;
-  fill(ui.lotLayer, [['all', 'All — combined curve'], ['overlay', `All — superimposed ${norm}`], ...options], state.layers.selection);
+  fill(ui.lotLayer, [['all', 'All — combined curve'], ['overlay', `All — superimposed ${norm}`], ...(!angularMode() && (ls.length > 1 || state.layers.selection === EQUIVALENT_LAYER) ? [[EQUIVALENT_LAYER, 'Solidary equivalent — α₀']] : []), ...options], state.layers.selection);
   fill(ui.overlayLayer, options, state.layers.overlayLayer);
   const forceOptions = [...options];
   if (!angularMode()) (state.forces.z ?? []).forEach((z) => {
@@ -683,6 +688,7 @@ function reportLayers() {
   ui.blockZLabel.textContent = `Z start ${SYSTEMS[state.system].length.label}`;
   ui.layerResults.replaceChildren();
   ui.layerStatus.textContent = !ls.length ? (angularMode() ? 'Create blocks to populate angular layers.' : 'Create blocks to define Z layers.')
+    : state.layers.selection === EQUIVALENT_LAYER ? state.equivalentLayer.reason
     : overlay ? `One curve per layer; common ${norm}. Ends and reactions are saved per layer. The force polygon and other readings refer to the layer selected below.`
       : state.layers.selection === 'all' ? `${ls.length} layer(s) — combined XY weights; each applied force counted once.`
         : `${layerLabel(angularMode() ? state.layers.selection : Number(state.layers.selection))} — other layers shown faintly.`;
@@ -697,14 +703,22 @@ function changeLayer(selection, overlayLayer = state.layers.overlayLayer) {
   state.frozenBranch = null; state.alpha = null; state.mech = null;
   state.selectedJoint = null; state.selectedEquilibriumBlock = null;
   restoreLayer();
-  if (selection !== 'all' && selection !== 'overlay') ui.forceLayer.value = selection;
+  if (!['all', 'overlay', EQUIVALENT_LAYER].includes(selection)) ui.forceLayer.value = selection;
   recompute(); fitForceView(); draw();
 }
 function prepareLayerAnalysis() {
   reportLayers();
   const key = editingLayer() ?? 'all';
-  state.layerContext = { source: state.model, model: modelInLayer(state.model, key),
-    forces: forcesInLayer(state.forces, key, state.model) };
+  if (key === EQUIVALENT_LAYER) {
+    const eq = state.equivalentLayer;
+    state.layerContext = { source: state.model, model: eq.model ?? { ...state.model,
+      blocks: [], weights: [], centroids: [], areas: [], thickness: [], joints: null, pointA: null, pointB: null,
+      equivalent: { invalid: true }, jointRecovery: { ok: false, reason: eq.reason } }, forces: eq.forces ?? { points: [], magnitudes: [] } };
+    if (!eq.ok) { state.mech = null; state.alpha = null; }
+  } else {
+    state.layerContext = { source: state.model, model: modelInLayer(state.model, key),
+      forces: forcesInLayer(state.forces, key, state.model) };
+  }
   state.layerSolutions = [];
 }
 function analysisBasePole() {
@@ -1799,6 +1813,7 @@ function describe() {
  * with no idea which examples would work or why.
  */
 function noJointsReason(m) {
+  if (m?.equivalent?.invalid) return m.jointRecovery.reason;
   const r = m && m.jointRecovery;
   if (r && r.reason) {
     return `no joints for this example — ${r.reason}.`
@@ -1913,7 +1928,8 @@ function alphaSignature() {
     m.blocks.length,
     m.joints.map((j) => [...j.a, ...j.b].map(r).join(',')).join(';'),
     (m.weights ?? []).map(r).join(','),
-    JSON.stringify([f.points ?? [], f.magnitudes ?? [], f.x ?? []]),
+    JSON.stringify(m.centroids),
+    JSON.stringify([f.points ?? [], f.magnitudes ?? [], f.x ?? [], f.blocks ?? []]),
     ui.imposeEnds.checked && state.ends.A && state.ends.B
       ? `${state.ends.A.map(r)}|${state.ends.B.map(r)}` : '',
   ].join('#');
@@ -1967,7 +1983,8 @@ function reportAlpha() {
   ui.alphaPick.textContent = s?.picking ? `Picking (${s.picks.length}/4)` : 'Pick hinges';
   if (!m?.joints) {
     ui.alphaResult.className = 'verdict';
-    ui.alphaResult.textContent = m ? noJointsReason(m) : '—';
+    ui.alphaResult.textContent = state.layers.selection === EQUIVALENT_LAYER && !state.equivalentLayer?.ok
+      ? state.equivalentLayer.reason : m ? noJointsReason(m) : '—';
     ui.alphaDetail.textContent = '';
     return;
   }
@@ -2282,7 +2299,8 @@ function recompute() {
     state.segForces = null;
     state.crossings = null;
     setThrustEnabled(false);
-    ui.thrustValue.textContent = 'trace the arch first';
+    ui.thrustValue.textContent = state.layers.selection === EQUIVALENT_LAYER
+      ? 'Equivalent layer unavailable — see compatibility.' : 'trace the arch first';
     ui.thrustValueM.textContent = ui.thrustValue.textContent;
     ui.thrustValueP.textContent = ui.thrustValue.textContent;
     reportEnds(null);
@@ -2977,7 +2995,7 @@ function draw() {
       const colours = ui.showGroups.checked
         ? m.blockGroups.map((id) => m.groups.find((g) => g.id === id)?.color)
         : null;
-      const singleLayer = !['all', 'overlay'].includes(state.layers.selection);
+      const singleLayer = !['all', 'overlay', EQUIVALENT_LAYER].includes(state.layers.selection);
       const active = m.blocks.map((_, i) => !singleLayer || blockLayerKey(m, i) === state.layers.selection);
       const drawOrder = m.blocks.map((_, i) => i).sort((a, b) => Number(active[a]) - Number(active[b]));
       drawBlocks(mainAx, drawOrder.map((i) => m.blocks[i]), {
@@ -4162,7 +4180,7 @@ function pickBlockAt(dataPoint) {
   const blocks = state.model?.blocks;
   if (!blocks || !blocks.length) return null;
   for (let i = blocks.length - 1; i >= 0; i--) {
-    if (!['all', 'overlay'].includes(state.layers.selection) && blockLayerKey(state.model, i) !== state.layers.selection) continue;
+    if (!['all', 'overlay', EQUIVALENT_LAYER].includes(state.layers.selection) && blockLayerKey(state.model, i) !== state.layers.selection) continue;
     if (piecesOf(blocks[i]).some((p) => pointInPolygon(dataPoint, p))) return i;
   }
   return null;
@@ -4191,7 +4209,7 @@ function drawForces() {
   const span = (mainAx.view.ymax - mainAx.view.ymin) * 0.16;
   mainAx.clipped((c) => {
     f.points.forEach((p, i) => {
-      if (!['all', 'overlay'].includes(state.layers.selection)
+      if (!['all', 'overlay', EQUIVALENT_LAYER].includes(state.layers.selection)
           && (angularMode() ? f.layer?.[i] : zKey(f.z?.[i])) !== state.layers.selection) return;
       const v = forceComponents(f, i);
       const mag = forceMag2(v.x, v.y);
@@ -5563,11 +5581,11 @@ function drawSolidView() {
     if (amp > 0) {
       const T = displacedConfiguration(state.mech.hinges, state.mech.bodies, amp);
       const active = analysisModel();
-      const moved = displaced(active.blocks, state.mech.bodyOf, T);
-      shown = m.blocks.map((b, i) => {
+      const sourceBodies = m.blocks.map((_, i) => {
         const k = active === m ? i : active.sources?.findIndex((ids) => ids.includes(i));
-        return k >= 0 ? moved[k] : b;
+        return k >= 0 ? state.mech.bodyOf[k] : -1;
       });
+      shown = displaced(m.blocks, sourceBodies, T);
     }
   }
 
@@ -5620,7 +5638,7 @@ function drawSolidView() {
     })
     : null;
   let highlight = mechanismHighlight ?? groupHighlight;
-  if (!['all', 'overlay'].includes(state.layers.selection)) {
+  if (!['all', 'overlay', EQUIVALENT_LAYER].includes(state.layers.selection)) {
     highlight = m.blocks.map((_, i) => blockLayerKey(m, i) === state.layers.selection
       ? (highlight?.[i] ?? [224, 155, 71]) : [220, 220, 220]);
   }
@@ -6656,10 +6674,10 @@ ui.system.addEventListener('change', () => {
     state.model = convertModel(state.model, from, to);
     const settings = {};
     Object.entries(state.layers.settings).forEach(([key, value]) => {
-      settings[key === 'all' || key.startsWith('p:') ? key : zKey(Number(key) * kL)] = { ...value, A: pt(value.A), B: pt(value.B) };
+      settings[key === 'all' || key === EQUIVALENT_LAYER || key.startsWith('p:') ? key : zKey(Number(key) * kL)] = { ...value, A: pt(value.A), B: pt(value.B) };
     });
     state.layers.settings = settings;
-    if (!['all', 'overlay'].includes(state.layers.selection) && !state.layers.selection.startsWith('p:')) state.layers.selection = zKey(Number(state.layers.selection) * kL);
+    if (!['all', 'overlay', EQUIVALENT_LAYER].includes(state.layers.selection) && !state.layers.selection.startsWith('p:')) state.layers.selection = zKey(Number(state.layers.selection) * kL);
     if (state.layers.overlayLayer != null && !state.layers.overlayLayer.startsWith('p:')) state.layers.overlayLayer = zKey(Number(state.layers.overlayLayer) * kL);
     if (state.layers.normalizedBase) state.layers.normalizedBase *= kF / kL;
     state.layerContext = null;
@@ -7396,6 +7414,7 @@ ui.mechOn.addEventListener('change', () => {
   draw();
 });
 ui.mechAmp.addEventListener('input', draw);
+ui.equivalentSelect.addEventListener('click', () => changeLayer(EQUIVALENT_LAYER));
 ui.alphaFind.addEventListener('click', findAlpha);
 ui.alphaPick.addEventListener('click', () => {
   const s = alphaState();

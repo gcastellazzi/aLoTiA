@@ -615,6 +615,38 @@ endpoints and h are converted consistently when changing physical units. Image
 calibration rescales XY only: entered Z and depth are already physical lengths.
 
 
+## Solidary equivalent layer (`equivalent-layer.js`)
+
+Select **Solidary equivalent — α₀** in LoT, or **Use solidary equivalent layer**
+in Mechanism, to assume that the planar Z layers move together. This is an
+explicit kinematic assumption: compatibility of the projected joints alone
+does not establish transverse connection, friction or resistance to detachment.
+Poleni is excluded from this reduction.
+
+Each populated layer must be an ordered chain with the same number of blocks
+(at least two). Corresponding straight joints, supports included, must be
+collinear and overlap over positive length; merely touching at one point is
+insufficient. A relative geometric tolerance of 1e-8 of the section diagonal
+is used, with a floating-point floor for translated coordinates. Incompatible
+chains report a diagnostic and cannot supply an equivalent α₀.
+
+For corresponding blocks, W = ΣWᵢ and G = Σ(WᵢGᵢ)/W. The equivalent block
+retains the projected source pieces; their outlines may overlap and are not
+interpreted as a new homogeneous material section. Joints span the union of
+contacts. Their extremes bound every original contact, so the mechanism's
+opening test prevents penetration along all those straight segments. The
+existing virtual-work solver evaluates the combined weights and their first
+moments, never an average of independent layer multipliers. Each applied force
+keeps its point/vector and ownership from its original Z layer (nearest-block
+fallback is restricted to that layer). Orphan force layers are refused.
+
+`sources[k]` links each virtual block to the original editable blocks. The
+central Z reference is the midpoint of the complete occupied Z range; it does
+not enter planar equations. In 3D, each source block retains its own shape,
+depth and position and receives the rigid motion of its equivalent block.
+Only selection/settings are saved: the derived section is rebuilt after edits,
+loading and unit conversion, so it never duplicates the project's material.
+
 ## Explicit Poleni layers (`poleni-layers.js`)
 
 `model.layerMode = "poleni"` selects populated records from `model.poleniLayers`.
