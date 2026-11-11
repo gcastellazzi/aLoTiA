@@ -113,3 +113,45 @@ test('a resultant inside structural material transfers to its upper face with un
   close(loadSurface(compound, [.5, .9]), 1); // never lift onto unrelated material above
   assert.equal(loadSurface(compound, [.5, -1]), -Infinity);
 });
+
+test('unsupported strips fuse through adjacent load strips and preserve resultant weight and moment', () => {
+  const m = base();
+  // Unsupported strips precede the supported anchor in the original array.
+  addRegion(m, [rect(-2, 1, -1, 2), rect(-1, 1, 0, 2), rect(0, 1, 1, 2)]);
+  const before = structuredClone(m), data = regionLoads(m);
+  assert.equal(data.issues.length, 0); assert.equal(data.resultants.length, 1);
+  assert.deepEqual(data.resultants[0].sources, [2, 3, 4]);
+  assert.equal(data.resultants[0].anchor, 4); assert.equal(data.resultants[0].owner, 0);
+  assert.ok(data.transfers.every((t) => t.owner === 0 && t.mergedInto === 4));
+  close(data.forces.magnitudes[0], 60); close(data.forces.points[0][0], -.5);
+  close(data.forces.points[0][0] * data.forces.magnitudes[0], -30);
+  const active = modelInLayer(m), input = multiplierInput(active, data.forces);
+  const separate = { ...input, applied: [2, 3, 4].map((i) => ({ point: m.centroids[i], vector: [0, -m.weights[i]], block: 0 })) };
+  const motion = { motions: [{ vx: 1.3, vy: -.2, omega: .7 }] };
+  const fusedWork = virtualWork(input, [0, 0], motion), originalWork = virtualWork(separate, [0, 0], motion);
+  close(fusedWork.Lw, originalWork.Lw); close(fusedWork.Lh, originalWork.Lh);
+  assert.deepEqual(m, before);
+  const converted = regionLoads(convertModel(m, 'SI', 'Nmm'));
+  assert.equal(converted.resultants.length, 1); assert.equal(converted.resultants[0].anchor, 4);
+  close(converted.forces.magnitudes[0], 60000); close(converted.forces.points[0][0], -500);
+});
+
+test('unsupported loads need an actual supported adjacency path in their own Z layer', () => {
+  for (const block of [rect(-1, 2, 0, 3), rect(-1, 1, -.05, 2)]) {
+    const m = base(); addRegion(m, [block, rect(0, 1, 1, 2)]);
+    assert.match(regionLoads(m).issues[0].reason, /no adjacent supported load block/);
+  }
+  const m = base(); addRegion(m, [rect(-1, 1, 0, 2)], 'load', 2); addRegion(m, [rect(0, 1, 1, 2)]);
+  assert.equal(regionLoads(m).issues.length, 1); // never bridge two Z layers
+  const noAnchor = base(); addRegion(noAnchor, [rect(-2, 1, -1, 2), rect(-1, 1, 0, 2)]);
+  assert.equal(regionLoads(noAnchor).issues.length, 2);
+});
+
+test('two supported loads keep their own receivers; each intervening orphan joins the closest connected anchor', () => {
+  const m = base(); m.blocks[1] = rect(3, 0, 4, 1); m.centroids[1] = blockCentroid(m.blocks[1]);
+  addRegion(m, [rect(0, 1, 1, 2), rect(1, 1, 2, 2), rect(2, 1, 3, 2), rect(3, 1, 4, 2)]);
+  const data = regionLoads(m);
+  assert.equal(data.issues.length, 0); assert.equal(data.resultants.length, 2);
+  assert.deepEqual(data.transfers.map((t) => t.owner), [0, 0, 1, 1]);
+  assert.deepEqual(data.resultants.map((r) => r.sources), [[2, 3], [4, 5]]);
+});

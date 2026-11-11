@@ -25,7 +25,8 @@ import {
   freeThrustLine, poleForEnds, thrustRangeFactor,
 } from './core/statics.js';
 import { blockRole, REGION_ROLES, REGION_ROLE_LABELS } from './core/region-roles.js';
-import { regionLoads, subdivideLoadRegion } from './core/region-loads.js?v=20261111-region-snap';
+import { regionBodyAssignments, regionMotionGeometry } from './core/region-motion.js';
+import { regionLoads, subdivideLoadRegion } from './core/region-loads.js?v=20261111-load-follow';
 import { boundaryConstraints, boundaryCollision } from './core/region-boundaries.js';
 import { EQUIVALENT_LAYER, equivalentLayer } from './core/equivalent-layer.js?v=20261111-regions';
 import { blockZ, blockLayerKey, zKey, layersOf, modelInLayer, forcesInLayer, layerReferenceWidth, solveLayer } from './core/layers.js?v=20261111-regions';
@@ -738,7 +739,9 @@ function reportRegions() {
   const counts = { structure: 0, load: 0, fixed: 0 };
   (m?.blocks ?? []).forEach((_, i) => { counts[blockRole(m, i)]++; });
   ui.regionStatus.textContent = `${counts.structure} structural · ${counts.load} load-only · ${counts.fixed} fixed blocks`;
-  if (data?.transfers.length) ui.regionStatus.textContent += ` · ${data.transfers.length} automatic dead loads (not amplified by α)`;
+  if (data?.resultants.length) ui.regionStatus.textContent += ` · ${data.resultants.length} automatic dead loads (not amplified by α)`;
+  const fused = data?.transfers.filter((t) => t.mergedInto !== t.source).length ?? 0;
+  if (fused) ui.regionStatus.textContent += ` · ${fused} load blocks fused with adjacent supported loads`;
   if (data?.issues.length) ui.regionStatus.textContent += ` · ${data.issues.map((q) => q.reason).join(' ')}`;
 }
 function regionSection(section, key) {
@@ -3065,9 +3068,10 @@ function draw() {
     if (ui.showMech.checked && state.mech) {
       // While a mechanism is on show, what matters is which pieces move
       // together, not that adjacent stones are distinguishable.
-      const passive = m.blocks.filter((_, i) => blockRole(m, i) !== 'structure');
-      drawBlocks(mainAx, passive, { colours: m.blocks.map((_, i) => i).filter((i) => blockRole(m, i) !== 'structure').map((i) => blockRole(m, i) === 'fixed' ? '#89939d' : '#e5cb83') });
-      drawMacroBlocks(mainAx, analysisModel().blocks, state.mech.bodyOf);
+      const moving = regionMotionGeometry(m, analysisModel(), state.mech.bodyOf, state.regionAnalysis?.transfers);
+      const passive = m.blocks.map((_, i) => i).filter((i) => blockRole(m, i) !== 'structure' && !moving.loads.includes(i));
+      drawBlocks(mainAx, passive.map((i) => m.blocks[i]), { colours: passive.map((i) => blockRole(m, i) === 'fixed' ? '#89939d' : '#e5cb83') });
+      drawMacroBlocks(mainAx, moving.blocks, moving.bodyOf);
     } else {
       ensureGroups();
       const colours = ui.showGroups.checked
@@ -3143,7 +3147,8 @@ function draw() {
     const amp = (Number(ui.mechAmp.value) / 100) * 0.25;   // radians, capped
     if (a.dof > 0 && amp > 0) {
       const T = regionMechanismTransforms(amp);
-      drawMechanism(mainAx, displaced(analysisModel().blocks, a.bodyOf, T));
+      const moving = regionMotionGeometry(m, analysisModel(), a.bodyOf, state.regionAnalysis?.transfers);
+      drawMechanism(mainAx, displaced(moving.blocks, moving.bodyOf, T));
       drawCentres(mainAx, a.motion);
     }
     drawHinges(mainAx, a.hinges);
@@ -5695,16 +5700,13 @@ function drawSolidView() {
   // from the DISPLACED voussoirs, so the collapse can be watched in three
   // dimensions and, on a dome, seen to open along the lunes. The colouring by
   // macro-block below is kept either way.
+  const sourceBodies = ui.showMech.checked && state.mech
+    ? regionBodyAssignments(m, analysisModel(), state.mech.bodyOf, state.regionAnalysis?.transfers) : null;
   let shown = m.blocks;
   if (ui.showMech.checked && state.mech && state.mech.dof > 0) {
     const amp = (Number(ui.mechAmp.value) / 100) * 0.25;
     if (amp > 0) {
       const T = regionMechanismTransforms(amp);
-      const active = analysisModel();
-      const sourceBodies = m.blocks.map((_, i) => {
-        const k = active === m ? i : active.sources?.findIndex((ids) => ids.includes(i));
-        return k >= 0 ? state.mech.bodyOf[k] : -1;
-      });
       shown = displaced(m.blocks, sourceBodies, T);
     }
   }
@@ -5744,9 +5746,7 @@ function drawSolidView() {
   // the two views agree about which pieces move together.
   const mechanismHighlight = ui.showMech.checked && state.mech
     ? m.blocks.map((_, k) => {
-      const active = analysisModel();
-      const at = active === m ? k : active.sources?.findIndex((ids) => ids.includes(k));
-      const b = at >= 0 ? state.mech.bodyOf[at] : -1;
+      const b = sourceBodies[k];
       const c = BODY_RGB[b % BODY_RGB.length];
       return b < 0 ? (blockRole(m, k) === 'load' ? [229, 203, 131] : [137, 147, 157]) : c;
     })

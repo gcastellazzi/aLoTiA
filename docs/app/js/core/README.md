@@ -714,8 +714,16 @@ structural material is tolerated as a tracing imperfection: the full assigned
 dead weight is retained (no subtraction of the overlap). If its resultant lies
 inside a structural piece, it is applied on that piece's upper face at the
 same X. Material entirely above a load is not a receiving support. A missing
-receiver remains an analysis error. These are *dead loads*, not moving
-bodies or additional seismic masses: they contribute virtual work but are not
+receiver is resolved by fusion with an adjacent supported load strip, also
+through chains of neighbouring strips in the same Z layer. Supported strips
+keep their receivers; unsupported strips choose the nearest reachable anchor
+along the adjacency graph. A shared face of positive length or overlapping
+material establishes adjacency; isolated or point-touching unsupported
+components still report an error. Fusion is a transient load reduction: source
+geometry remains editable. Each fused resultant sums the weights and their
+first moments, retaining an eccentric X if its line lies outside the receiving
+block. Per-source transfers keep every original strip linked to that receiver.
+These are *dead loads*, not independent mechanism bodies or additional seismic masses: they contribute virtual work but are not
 amplified by alpha. Manual forces retain their existing semantics.
 
 Only structural blocks enter a selected chain or the solidary equivalent
@@ -738,8 +746,13 @@ The mechanism family remains the current ordered arch chain with four hinges.
 This extension filters those modes against fixed boundaries; it does not
 introduce arbitrary contact graphs, additional pivot locations, sliding modes,
 or a general assembly limit-analysis solver. The 2D/3D displacement illustration
-keeps the load and fixed regions at their original positions and checks each
-integration step for area collision, returning the last accepted configuration
+keeps fixed regions at their original positions. Every original load strip,
+including fused unsupported strips, follows the rigid transform of its receiving
+structural block in both 2D and 3D. Receiver ownership is mapped through selected
+layer ordering and solidary equivalent sources; inactive layers stay still.
+Load geometry does not introduce new hinges, seismic masses or boundary
+constraints. The illustration checks structural geometry at each integration
+step for area collision, returning the last accepted configuration
 when fixed material is reached. This finite display check is numerical and is
 separate from the infinitesimal admissibility test at activation.
 

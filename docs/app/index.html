@@ -109,7 +109,7 @@
       <label class="inline">Region role
         <select id="regionRole"><option value="structure">Structure</option><option value="load">Load only</option><option value="fixed">Fixed boundary</option></select>
       </label>
-      <p class="hint">Load-only regions transmit dead weight vertically and do not become moving blocks. Fixed regions allow detachment and frictionless sliding, but prevent penetration.</p>
+      <p class="hint">Load-only regions transmit dead weight vertically and follow their structural receivers in animation, without adding independent mechanism bodies. Fixed regions allow detachment and frictionless sliding, but prevent penetration.</p>
       <p id="regionStatus" class="meta"></p>
       <p class="hint">New blocks occupy [Z, Z + thickness]. Groups sharing Z belong to the same layer.</p>
       <label><input type="checkbox" id="showGroups"> Group colours</label>
@@ -217,7 +217,7 @@
       </label>
       <button id="cutProfile" disabled>Cut into blocks</button>
       <button id="cutLoadRegion" disabled>Subdivide load region from structure</button>
-      <p class="hint">For Load only: vertical cuts project the endpoints of the underlying structural upper faces onto the outline. Create the structure in the same Z layer first. Each strip transfers its weight vertically; loads without a receiving block are reported.</p>
+      <p class="hint">For Load only: vertical cuts project the endpoints of the underlying structural upper faces onto the outline. Create the structure in the same Z layer first. Each strip transfers its weight vertically. A strip without a receiver is fused with adjacent load strips connected to the structure; isolated unsupported loads are reported.</p>
       <p id="profileStatus" class="meta">no outline traced</p>
     </section>
 
@@ -423,7 +423,7 @@
         hinges at the ends of the joints, or over the four hinges you pick.
         The mechanism found from the line of thrust above is not used: its
         own line passes through its hinges, so its multiplier is zero.</p>
-      <p class="hint">For compatible Z layers, assume solidary motion and use a temporary equivalent layer: weights and moments add, with no relative sliding or detachment between layers. Original blocks remain editable; the 3D view shows their shared motion.</p>
+      <p class="hint">For compatible Z layers, assume solidary motion and use a temporary equivalent layer: weights and moments add, with no relative sliding or detachment between layers. Original blocks remain editable; load regions follow their structural receivers in both views.</p>
       <button id="equivalentSelect" type="button" disabled>Use solidary equivalent layer</button>
       <p id="equivalentStatus" class="meta"></p>
       <div class="row">
@@ -667,6 +667,6 @@ Plain text, with **bold**, *emph*, _underline_ and
     &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
 </footer>
 
-<script type="module" src="js/app.js?v=20261111-region-snap"></script>
+<script type="module" src="js/app.js?v=20261111-load-follow"></script>
 </body>
 </html>
