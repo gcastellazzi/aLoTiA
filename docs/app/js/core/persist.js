@@ -28,11 +28,12 @@ export const VERSION = 1;
 /** Round-trip a polygon, whatever shape it arrived in. */
 function polygon(p) {
   if (!p) return null;
-  if (p.pieces) return { pieces: p.pieces.map(polygon) };
+  const support = p.supportDisplacement ? { supportDisplacement: [...p.supportDisplacement] } : {};
+  if (p.pieces) return { pieces: p.pieces.map(polygon), ...support };
   if (Array.isArray(p)) {
     return { x: p.map((q) => q[0]), y: p.map((q) => q[1]) };
   }
-  return { x: Array.from(p.x), y: Array.from(p.y) };
+  return { x: Array.from(p.x), y: Array.from(p.y), ...support };
 }
 
 const points = (a) => (a ?? []).map(([x, y]) => [x, y]);
@@ -236,6 +237,10 @@ export function deserialise(text) {
       ? Array.isArray(p.pieces) && p.pieces.length > 0 && p.pieces.every(validPolygon)
       : Array.isArray(p.x) && Array.isArray(p.y) && p.x.length >= 3 && p.x.length === p.y.length
         && [...p.x, ...p.y].every(Number.isFinite));
+    if ((m.blocks ?? []).some((b) => b?.supportDisplacement != null && (!Array.isArray(b.supportDisplacement)
+      || b.supportDisplacement.length !== 2 || !b.supportDisplacement.every(Number.isFinite)))) {
+      throw new Error('the file has an invalid support translation');
+    }
     if (!(m.blocks ?? []).every(validPolygon)) {
       throw new Error('the file has a malformed block');
     }

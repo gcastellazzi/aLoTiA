@@ -41,14 +41,15 @@ export function boundaryConstraints(source, section) {
   return { constraints, issues };
 }
 
-export function boundaryMotionAllowed(constraints, bodyOf, motions, sense = 1) {
+export function boundaryMotionAllowed(constraints, bodyOf, motions, sense = 1, fixedTranslations = null) {
   let fastest = 0, lowest = 0;
   for (const c of constraints ?? []) {
     const index = typeof bodyOf === 'function' ? bodyOf(c.block) : bodyOf[c.block];
-    const m = motions[index];
+    const m = motions[index] ?? (fixedTranslations ? { vx: 0, vy: 0, omega: 0 } : null);
     if (!m) continue;
-    const x = sense * (m.vx == null ? -m.omega * (c.point[1] - m.oy) : m.vx - m.omega * c.point[1]);
-    const y = sense * (m.vy == null ? m.omega * (c.point[0] - m.ox) : m.vy + m.omega * c.point[0]);
+    const d = fixedTranslations?.[c.fixed] ?? [0, 0];
+    const x = sense * (m.vx == null ? -m.omega * (c.point[1] - m.oy) : m.vx - m.omega * c.point[1]) - d[0];
+    const y = sense * (m.vy == null ? m.omega * (c.point[0] - m.ox) : m.vy + m.omega * c.point[0]) - d[1];
     const speed = Math.hypot(x, y); fastest = Math.max(fastest, speed);
     if (c.normal) lowest = Math.min(lowest, x * c.normal[0] + y * c.normal[1]);
     else if (speed > 0) {

@@ -220,10 +220,14 @@ export function jointsFromBlocks(blocks, opt = {}) {
     // units thick, and having succeeded it kept the looser pass from ever
     // running. A short joint is read as a crossing at a wild fraction and
     // reported as a hinge that is not there.
+    // Exact shared faces take precedence: the loose pass may include the
+    // opposite corners of narrow voussoirs and turn the cut into a diagonal.
+    const exact = contactJoint(P[k], P[k + 1], diag * 1e-10);
     const strict = contactJoint(P[k], P[k + 1], near);
     const loose = contactJoint(P[k], P[k + 1], near * slack);
     const span = (j) => (j ? distance(j.a, j.b) : -1);
-    const j = span(loose) > span(strict) ? loose : strict;
+    const j = span(exact) > diag * 1e-9 ? exact
+      : span(loose) > span(strict) ? loose : strict;
     if (!j) gaps.push(k);
     inner.push(j);
   }

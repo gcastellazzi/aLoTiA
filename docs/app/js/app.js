@@ -1,3 +1,4 @@
+import { settlementMotion, settlementTransforms } from './core/settlement.js';
 import { figureFont, setFigureFont } from './render/fonts.js';
 /**
  * aLOTofImaginArches, in the browser.
@@ -27,27 +28,27 @@ import {
 import { blockRole, REGION_ROLES, REGION_ROLE_LABELS } from './core/region-roles.js';
 import { regionBodyAssignments, regionMotionGeometry } from './core/region-motion.js';
 import { regionLoads, subdivideLoadRegion } from './core/region-loads.js?v=20261111-load-follow';
-import { boundaryConstraints, boundaryCollision } from './core/region-boundaries.js';
+import { boundaryConstraints, boundaryCollision } from './core/region-boundaries.js?v=20261112-settlement';
 import { EQUIVALENT_LAYER, equivalentLayer } from './core/equivalent-layer.js?v=20261111-regions';
-import { blockZ, blockLayerKey, zKey, layersOf, modelInLayer, forcesInLayer, layerReferenceWidth, solveLayer } from './core/layers.js?v=20261111-regions';
+import { blockZ, blockLayerKey, zKey, layersOf, modelInLayer, forcesInLayer, layerReferenceWidth, solveLayer } from './core/layers.js?v=20261112-joints';
 import { referenceChord, angleForChord, normalAngle, angularLayerForBlock, angularBlockProperties, radialExtent, angularPeriod } from './core/poleni-layers.js';
 import { fromExample, poleOf, consistency } from './core/model.js';
 import {
   blocksBetween, checkTrace, weighBlocks, centroidsOf, springings,
   normalCutsPreview,
 } from './core/trace.js';
-import { jointsFromBlocks, contactJoint } from './core/joints.js';
+import { jointsFromBlocks, contactJoint } from './core/joints.js?v=20261112-joints';
 import {
   blocksLike, circularRing, circularRingThroughPoints, betweenEnds,
 } from './core/blocks.js';
 import {
   SYSTEMS, unitsPerPixel, scaleModel, format, archDimensions,
   convertModel, conversionFactors,
-} from './core/units.js?v=20261111-regions';
+} from './core/units.js?v=20261112-settlement';
 
 import {
   serialise, deserialise, suggestedName, FORMAT,
-} from './core/persist.js?v=20261111-regions';
+} from './core/persist.js?v=20261112-settlement';
 import { abaqusInput } from './core/abaqus.js';
 import {
   multiplierInput, mechanismMultiplier, minimumMultiplier, rotationCentres,
@@ -57,7 +58,7 @@ import {
 } from './core/notes.js';
 import {
   bestLineForThrust, constrainedLine, collapseRange, analyse, imposedBand,
-  displacedConfiguration, displaced, freezeBranch, lineWithFrozenBranch,
+  displacedConfiguration, displaced, freezeBranch, lineWithFrozenBranch, hingeAt, bodies, bodyOfBlock,
 } from './core/mechanism.js?v=20261111-regions';
 import {
   ringStudySamples, ringBands, thicknesses, heymanPoint, heymanDomain, thirdMiddleBand,
@@ -115,6 +116,11 @@ const ui = {
   showGroups: el('showGroups'),
   mechOn: el('mechOn'), mechVerdict: el('mechVerdict'),
   mechCount: el('mechCount'), mechBand: el('mechBand'),
+  mechAmpLabel: el('mechAmpLabel'),
+  settlementSupport: el('settlementSupport'), settlementDx: el('settlementDx'), settlementDy: el('settlementDy'),
+  settlementApply: el('settlementApply'), settlementReset: el('settlementReset'), settlementUnits: el('settlementUnits'),
+  settlementOn: el('settlementOn'), settlementPick: el('settlementPick'), settlementUse: el('settlementUse'),
+  settlementClear: el('settlementClear'), settlementStatus: el('settlementStatus'), settlementAssigned: el('settlementAssigned'),
   mechAmp: el('mechAmp'), goHmin: el('goHmin'), goHmax: el('goHmax'),
   full3D: el('full3D'),
   abaqusLateral: el('abaqusLateral'),
@@ -705,6 +711,7 @@ function reportLayers() {
       : state.layers.selection === 'all' ? `${ls.length} layer(s) — combined XY weights; each applied force counted once.`
         : `${layerLabel(angularMode() ? state.layers.selection : Number(state.layers.selection))} — other layers shown faintly.`;
   reportAngularControls();
+  reportSettlementControls();
 }
 function changeLayer(selection, overlayLayer = state.layers.overlayLayer) {
   rememberLayer();
@@ -752,11 +759,17 @@ function regionSection(section, key) {
     ui.layerStatus.textContent = issues.map((q) => q.reason).join(' ');
     ui.regionStatus.textContent += ` · ${boundary.issues.map((q) => q.reason).join(' ')}`;
   }
-  const boundaryKey = JSON.stringify((state.model?.blocks ?? []).map((b, i) => blockRole(state.model, i) === 'fixed' ? [b, blockLayerKey(state.model, i)] : null));
+  const boundaryKey = JSON.stringify((state.model?.blocks ?? []).map((b, i) => blockRole(state.model, i) === 'fixed' ? [piecesOf(b).map((p) => [p.x, p.y]), blockLayerKey(state.model, i)] : null));
   return { ...section, boundaries: boundary.constraints, boundaryKey, analysisIssue: issues.map((q) => q.reason).join(' ') || null };
 }
 function regionMechanismTransforms(amp) {
   const m = state.mech, section = analysisModel();
+  if (m?.settlement) {
+    const fraction = amp / 0.25;
+    return [...settlementTransforms(m.motion.motions, fraction), ...m.settlement.supports.map((i) => ({
+      cos: 1, sin: 0, tx: m.settlement.shifts[i][0] * fraction, ty: m.settlement.shifts[i][1] * fraction,
+    }))];
+  }
   const cache = state.regionMotion;
   if (cache?.mechanism === m && cache.source === state.model && cache.amp === amp) return cache.transforms;
   let stopped = false;
@@ -775,6 +788,87 @@ function regionMechanismTransforms(amp) {
   ui.regionMotionStatus.textContent = stopped ? 'Displacement stopped before penetration into a fixed region.' : '';
   state.regionMotion = { mechanism: m, source: state.model, amp, transforms };
   return transforms;
+}
+
+
+function mechanismSourceBodies() {
+  const out = regionBodyAssignments(state.model, analysisModel(), state.mech.bodyOf, state.regionAnalysis?.transfers);
+  state.mech.settlement?.supports.forEach((i, k) => { out[i] = state.mech.bodies.length + k; });
+  return out;
+}
+function mechanismDisplayGeometry() {
+  const m = state.mech;
+  const out = regionMotionGeometry(state.model, analysisModel(), m.bodyOf, state.regionAnalysis?.transfers);
+  const supports = m.settlement?.supports ?? [];
+  return { ...out, supports, blocks: [...out.blocks, ...supports.map((i) => state.model.blocks[i])],
+    bodyOf: [...out.bodyOf, ...supports.map((_, k) => m.bodies.length + k)] };
+}
+function reportSettlementControls() {
+  const m = state.model, selected = ui.settlementSupport.value;
+  ui.settlementSupport.replaceChildren();
+  (m?.blocks ?? []).forEach((b, i) => {
+    if (blockRole(m, i) !== 'fixed') return;
+    const o = document.createElement('option'); o.value = i;
+    o.textContent = `Block #${i + 1} · ${layerLabel(blockLayerKey(m, i))}`;
+    ui.settlementSupport.append(o);
+  });
+  if ([...ui.settlementSupport.options].some((o) => o.value === selected)) ui.settlementSupport.value = selected;
+  const available = !!ui.settlementSupport.options.length && !angularMode();
+  ui.settlementApply.disabled = ui.settlementReset.disabled = !available;
+  const d = m?.blocks[Number(ui.settlementSupport.value)]?.supportDisplacement ?? [0, 0];
+  ui.settlementDx.value = d[0]; ui.settlementDy.value = d[1];
+  ui.settlementUnits.textContent = `Translation ${SYSTEMS[state.system].length.label} (+y upward)`;
+  ui.settlementAssigned.textContent = (m?.blocks ?? []).flatMap((b, i) => blockRole(m, i) === 'fixed' && b.supportDisplacement?.some((v) => v !== 0)
+    ? [`#${i + 1}: (${b.supportDisplacement.join(', ')})`] : []).join(' · ') || 'No support translation assigned. Create a Fixed boundary group for the supports.';
+}
+function settlementStudy() {
+  const m = analysisModel();
+  const key = JSON.stringify([m?.joints, m?.sources]);
+  if (state.settlementStudy?.key !== key) state.settlementStudy = { key, picks: [] };
+  return state.settlementStudy;
+}
+function reportSettlement() {
+  const section = analysisModel(), study = settlementStudy();
+  ui.alphaFind.disabled = ui.alphaPick.disabled = ui.alphaShow.disabled = true;
+  ui.alphaResult.className = 'verdict'; ui.alphaResult.textContent = 'α₀ is not calculated for moving supports.';
+  ui.alphaDetail.textContent = '';
+  state.mech = null;
+  ui.mechAmp.disabled = true;
+  ui.regionMotionStatus.textContent = '';
+  ui.settlementPick.textContent = state.settlementPicking ? `Picking (${study.picks.length}/3–4)` : 'Pick 3–4 hinges';
+  let result;
+  if (state.layers.selection === 'overlay') result = { ok: false, reason: 'Select one layer or a compatible solidary equivalent section.' };
+  else if (!section?.joints || section.analysisIssue) result = { ok: false, reason: section?.analysisIssue || 'A structural chain with joints is required.' };
+  else if (study.picks.length < 3) result = { ok: false, reason: `Choose the two support contacts and one or two internal hinges (${study.picks.length} selected).` };
+  else {
+    const hinges = study.picks.map((p) => hingeAt(section.joints, p.joint, p.face, { ends: true }));
+    const bodyList = bodies(hinges, section.blocks.length), bodyOf = bodyOfBlock(bodyList, section.blocks.length);
+    result = settlementMotion(state.model, section, hinges, bodyList, bodyOf);
+    if (result.ok) {
+      state.mech = { hinges, bodies: bodyList, bodyOf, dof: 1, kinematic: true,
+        motion: { motions: result.motions }, settlement: result };
+      ui.mechAmp.disabled = false;
+    }
+  }
+  ui.settlementStatus.className = `verdict ${result.ok ? 'ok' : ''}`;
+  ui.settlementStatus.textContent = result.reason;
+  ui.mechVerdict.className = `verdict ${result.ok ? 'ok' : ''}`;
+  ui.mechVerdict.textContent = result.ok ? 'Support settlement — compatible first-order motion' : 'Support settlement — choose a compatible hinge pattern';
+  ui.mechCount.textContent = study.picks.map((p) => `joint ${p.joint} ${p.face}`).join(' · ');
+  ui.mechBand.textContent = result.ok ? `Maximum first-order rotation: ${result.maxRotation.toPrecision(3)} rad. Geometry and loads are not updated.` : '';
+}
+function pickSettlementHinge(px) {
+  const m = analysisModel(), joint = pickJointAt(px);
+  if (joint === null || !m?.joints) return false;
+  const j = m.joints[joint];
+  const d = (p) => Math.hypot(...mainAx.toPx(p).map((v, i) => v - px[i]));
+  const face = d(j.a) <= d(j.b) ? 'intrados' : 'extrados';
+  const study = settlementStudy(), at = study.picks.findIndex((p) => p.joint === joint);
+  if (at >= 0 && study.picks[at].face === face) study.picks.splice(at, 1);
+  else if (at >= 0) study.picks[at] = { joint, face };
+  else if (study.picks.length < 4) study.picks.push({ joint, face });
+  study.picks.sort((a, b) => a.joint - b.joint);
+  reportMechanism(); draw(); return true;
 }
 
 function analysisBasePole() {
@@ -2133,6 +2227,7 @@ function showAlpha() {
 
 /** A click on the drawing while picking: add or remove the hinge at that joint end. */
 function pickAlphaHinge(px) {
+  if (ui.settlementOn.checked) return state.settlementPicking ? pickSettlementHinge(px) : false;
   const s = currentAlpha();
   const m = analysisModel();
   if (!s?.picking || !m?.joints) return false;
@@ -2158,6 +2253,10 @@ function pickAlphaHinge(px) {
 
 /** The hinges being picked, before they make a mechanism. */
 function drawAlphaPicks() {
+  if (ui.settlementOn.checked && state.settlementStudy?.picks.length && analysisModel()?.joints) {
+    drawHinges(mainAx, state.settlementStudy.picks.map((p) => hingeAt(analysisModel().joints, p.joint, p.face)));
+    return;
+  }
   const s = currentAlpha();
   const m = analysisModel();
   if (!s?.picking || !s.picks.length || !m?.joints) return;
@@ -2169,6 +2268,9 @@ function drawAlphaPicks() {
 
 function reportMechanism(thrustFraction) {
   const m = analysisModel();
+  ui.alphaShow.disabled = ui.settlementOn.checked;
+  ui.mechAmpLabel.textContent = ui.settlementOn.checked ? 'Settlement progress (0–100%)' : 'Displacement';
+  if (ui.settlementOn.checked) { reportSettlement(); return; }
   if (state.layers.selection === 'overlay') {
     state.mech = null; ui.mechAmp.disabled = true;
     ui.alphaFind.disabled = true; ui.alphaPick.disabled = true;
@@ -3068,8 +3170,8 @@ function draw() {
     if (ui.showMech.checked && state.mech) {
       // While a mechanism is on show, what matters is which pieces move
       // together, not that adjacent stones are distinguishable.
-      const moving = regionMotionGeometry(m, analysisModel(), state.mech.bodyOf, state.regionAnalysis?.transfers);
-      const passive = m.blocks.map((_, i) => i).filter((i) => blockRole(m, i) !== 'structure' && !moving.loads.includes(i));
+      const moving = mechanismDisplayGeometry();
+      const passive = m.blocks.map((_, i) => i).filter((i) => blockRole(m, i) !== 'structure' && !moving.loads.includes(i) && !moving.supports?.includes(i));
       drawBlocks(mainAx, passive.map((i) => m.blocks[i]), { colours: passive.map((i) => blockRole(m, i) === 'fixed' ? '#89939d' : '#e5cb83') });
       drawMacroBlocks(mainAx, moving.blocks, moving.bodyOf);
     } else {
@@ -3147,7 +3249,7 @@ function draw() {
     const amp = (Number(ui.mechAmp.value) / 100) * 0.25;   // radians, capped
     if (a.dof > 0 && amp > 0) {
       const T = regionMechanismTransforms(amp);
-      const moving = regionMotionGeometry(m, analysisModel(), a.bodyOf, state.regionAnalysis?.transfers);
+      const moving = mechanismDisplayGeometry();
       drawMechanism(mainAx, displaced(moving.blocks, moving.bodyOf, T));
       drawCentres(mainAx, a.motion);
     }
@@ -5701,7 +5803,7 @@ function drawSolidView() {
   // dimensions and, on a dome, seen to open along the lunes. The colouring by
   // macro-block below is kept either way.
   const sourceBodies = ui.showMech.checked && state.mech
-    ? regionBodyAssignments(m, analysisModel(), state.mech.bodyOf, state.regionAnalysis?.transfers) : null;
+    ? mechanismSourceBodies() : null;
   let shown = m.blocks;
   if (ui.showMech.checked && state.mech && state.mech.dof > 0) {
     const amp = (Number(ui.mechAmp.value) / 100) * 0.25;
@@ -7541,6 +7643,45 @@ ui.mechOn.addEventListener('change', () => {
   fitForceView();
   draw();
 });
+
+ui.settlementSupport.addEventListener('change', reportSettlementControls);
+function assignSettlement(reset = false) {
+  const i = Number(ui.settlementSupport.value), m = state.model;
+  if (!m?.blocks[i] || blockRole(m, i) !== 'fixed') return;
+  const d = reset ? [0, 0] : [ui.settlementDx.valueAsNumber, ui.settlementDy.valueAsNumber];
+  if (!d.every(Number.isFinite)) { ui.settlementStatus.textContent = 'Enter finite values for Δx and Δy.'; return; }
+  m.blocks[i].supportDisplacement = d;
+  state.regionMotion = null;
+  reportSettlementControls(); reportMechanism(); draw();
+  appendLog(`Support block #${i + 1}: imposed translation (${d.join(', ')}) ${SYSTEMS[state.system].length.label}`);
+}
+ui.settlementApply.addEventListener('click', () => assignSettlement());
+ui.settlementReset.addEventListener('click', () => assignSettlement(true));
+ui.settlementOn.addEventListener('change', () => {
+  state.settlementPicking = false;
+  if (ui.settlementOn.checked) { ui.showMech.checked = true; ui.mechAmp.value = 100; }
+  reportMechanism(); draw();
+});
+ui.settlementPick.addEventListener('click', () => {
+  ui.settlementOn.checked = true; ui.showMech.checked = true; ui.mechAmp.value = 100;
+  state.settlementPicking = !state.settlementPicking;
+  const s = currentAlpha(); if (s) s.picking = false;
+  reportMechanism(); draw();
+});
+ui.settlementUse.addEventListener('click', () => {
+  const shown = state.mech;
+  if (!shown?.hinges?.length || shown.hinges.length < 3 || shown.hinges.length > 4
+      || shown.hinges.some((h) => !['intrados', 'extrados'].includes(h.face))) {
+    ui.settlementStatus.textContent = 'Show a three- or four-hinge pattern, or pick its hinges on the drawing.'; return;
+  }
+  settlementStudy().picks = shown.hinges.map((h) => ({ joint: h.joint, face: h.face }));
+  state.settlementPicking = false; ui.settlementOn.checked = true; ui.showMech.checked = true; ui.mechAmp.value = 100;
+  reportMechanism(); draw();
+});
+ui.settlementClear.addEventListener('click', () => {
+  settlementStudy().picks = []; state.settlementPicking = false; reportMechanism(); draw();
+});
+
 ui.mechAmp.addEventListener('input', draw);
 ui.profileSnap.addEventListener('change', () => { state.snap = null; draw(); });
 ui.regionRole.addEventListener('change', () => { state.snap = null; reportProfiles(); draw(); });

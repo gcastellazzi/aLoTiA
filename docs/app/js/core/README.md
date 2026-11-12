@@ -766,3 +766,42 @@ layer. A green square previews the exact existing node used by the next click.
 The radius is 11 screen pixels at any zoom; the checkbox disables snapping for
 free placement. Snapping an outline never inserts vertices into existing
 blocks, unlike the separate block-edge snapping tool.
+
+### Prescribed support translations
+
+`settlement.js` verifies a chosen three- or four-hinge planar chain under
+translations assigned to individual fixed-boundary blocks. The original block
+stores `supportDisplacement: [dx, dy]`, in model length units, with +y upward.
+Keeping the assignment on the block avoids index drift when other blocks are
+deleted or reordered. Persistence validates the pair and unit/calibration
+changes scale both components. Region role still controls whether it acts as a
+support; the stored pair has no effect on a structural/load block.
+
+The two outer chosen hinges remain attached to their support blocks, whose
+rotations are zero; an end without an explicit boundary block remains stationary.
+Corresponding contacts in a combined/solidary section must prescribe the same
+translation. Moving supports in inactive layers are excluded, disconnected
+active supports are reported, and Poleni is not supported in this study.
+
+The solver assembles the inhomogeneous hinge compatibility equations in centred,
+non-dimensional coordinates. Three independent hinges give a unique field;
+four can leave one homogeneous mode. In that case it finds an admissible
+representative minimizing the squared normalized translation/rotation vector,
+and explicitly reports the remaining freedom. This is a display convention,
+not an energy principle or a prediction of which mechanism develops.
+Every hinged joint, including the supports, must open or remain closed, and
+all boundary contacts use structural displacement **relative to the prescribed
+support translation**. Corner contacts keep the existing unilateral tangent-cone
+check. These checks concern initiation; they do not constitute a general sliding
+mechanism search. At the selected hinges both velocity components are tied;
+other boundary contacts may detach or slide without friction.
+
+The independent Support settlement panel lets the user assign/reset a block's
+translation, pick three or four hinges, or reuse a displayed hinge pattern.
+The shared slider becomes progress from 0 to 100% of the assigned translation.
+Original editable geometry, weights and the LoT are unchanged. Both views use
+the same structural-body mapping, attached loads follow their receiver and the
+moving supports translate. The rigid transforms visualize the first-order
+field: finite hinge closure and contacts are not re-solved or certified at the
+full displayed displacement. This study computes no reactions or activation
+multiplier; switching it off restores the original fixed-support analysis.

@@ -410,10 +410,39 @@
         <button id="goHmax" disabled>H max</button>
       </div>
       <p id="mechBand" class="meta"></p>
-      <label for="mechAmp">Displacement</label>
+      <label id="mechAmpLabel" for="mechAmp">Displacement</label>
       <input id="mechAmp" type="range" min="0" max="100" value="0" disabled>
-      <p class="hint">Live only once the arch is a mechanism: the macro-blocks
-        turn about their own instantaneous centres, and the hinges stay shut.</p>
+      <p class="hint">For collapse mechanisms, displacement is a graphical amplification.
+        For support settlement, the slider shows 0–100% of the assigned translation;
+        the arch motion is a first-order visualization.</p>
+    </section>
+    <section id="settlementSection">
+      <h2>Support settlement</h2>
+      <label for="settlementSupport">Fixed boundary block</label>
+      <select id="settlementSupport"></select>
+      <label id="settlementUnits">Translation in model length units (+y upward)</label>
+      <div class="row">
+        <label>Δx <input id="settlementDx" type="number" step="any" value="0"></label>
+        <label>Δy <input id="settlementDy" type="number" step="any" value="0"></label>
+      </div>
+      <div class="row">
+        <button id="settlementApply" type="button">Assign translation</button>
+        <button id="settlementReset" type="button">Reset this support</button>
+      </div>
+      <p id="settlementAssigned" class="meta"></p>
+      <label class="inline"><input id="settlementOn" type="checkbox"> Study support settlement</label>
+      <div class="row">
+        <button id="settlementPick" type="button">Pick 3–4 hinges</button>
+        <button id="settlementUse" type="button">Use shown hinges</button>
+        <button id="settlementClear" type="button">Clear hinges</button>
+      </div>
+      <p id="settlementStatus" class="verdict">Assign a translation to a fixed boundary block.</p>
+      <p class="hint">Choose the two support contacts and one or two internal hinges.
+        The chosen support hinges follow their supports without slip. Other contacts may detach or slide without friction; initial penetration is forbidden.
+        The displacement slider shows 0–100% of the assigned translation.
+        This is a first-order compatibility study, with a rigid visualization:
+        finite settlement, reactions and α₀ for moving supports are not calculated.
+        With four hinges a free mode may remain; the displayed compatible motion is a minimum-norm representative.</p>
     </section>
     <section id="alphaSection">
       <h2>Activation multiplier &alpha;<sub>0</sub></h2>
@@ -667,6 +696,6 @@ Plain text, with **bold**, *emph*, _underline_ and
     &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
 </footer>
 
-<script type="module" src="js/app.js?v=20261111-load-follow"></script>
+<script type="module" src="js/app.js?v=20261112-settlement"></script>
 </body>
 </html>

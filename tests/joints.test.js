@@ -52,7 +52,7 @@ const readExample = (name) =>
 // ----------------------------------------------------- against a known ring --
 
 test('a ring recovers the joints it was built with', () => {
-  for (const [ri, ro, n] of [[4, 5, 12], [4, 5, 24], [3, 4.2, 16], [10, 11, 9]]) {
+  for (const [ri, ro, n] of [[4, 5, 12], [4, 5, 24], [3, 4.2, 16], [10, 11, 9], [14, 17, 100], [14, 17, 200]]) {
     const built = blocksBetween(arc(ri), arc(ro), n);
     const got = jointsFromBlocks(built.blocks);
     assert.ok(got.ok, `ri=${ri} n=${n}: ${got.warnings[0]}`);

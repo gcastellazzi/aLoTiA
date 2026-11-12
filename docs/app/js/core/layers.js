@@ -3,7 +3,7 @@
 import { angularLayerForBlock, referenceChord } from './poleni-layers.js';
 import { piecesOf } from './geometry.js';
 import { blockRole, structuralRegions, remapRegionSources } from './region-roles.js';
-import { jointsFromBlocks } from './joints.js';
+import { jointsFromBlocks } from './joints.js?v=20261112-joints';
 import { blockCentroid } from './profile.js';
 import { springings } from './trace.js';
 import { blocksLike, betweenEnds } from './blocks.js';

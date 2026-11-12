@@ -117,3 +117,24 @@ test('converting units carries group Z as a length', () => {
   const restored = convertModel(mm, 'Nmm', 'SI');
   assert.deepEqual(restored.groups.map((g) => g.z), [0, 1, 6]);
 });
+
+test('filtering load regions recovers the exact cuts of a finely subdivided structural arch', () => {
+  const ring = circularRing({ centre: [0, 0], innerRadius: 14, outerRadius: 17,
+    startAngle: 0, endAngle: 180, count: 100 });
+  const load = { x: [-18, 18, 18, -18], y: [18, 18, 19, 19] };
+  const blocks = [...ring.blocks, load];
+  const m = { blocks, centroids: centroidsOf(blocks), areas: blocks.map(blockArea),
+    thickness: blocks.map(() => 1), weights: weighBlocks(blocks, { specificWeight: 20, thickness: 1 }),
+    groups: [{ id: 1, role: 'structure', z: 0 }, { id: 2, role: 'load', z: 0 }],
+    blockGroups: [...ring.blocks.map(() => 1), 2], joints: null };
+  const before = structuredClone(m);
+  for (const key of ['0', 'all']) {
+    const section = modelInLayer(m, key);
+    assert.equal(section.joints.length, 101);
+    assert.deepEqual(section.sources, ring.blocks.map((_, i) => [i]));
+    section.joints.forEach((j, i) => {
+      for (const end of ['a', 'b']) for (const axis of [0, 1]) close(j[end][axis], ring.joints[i][end][axis]);
+    });
+  }
+  assert.deepEqual(m, before);
+});
