@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>aLOTofImaginArches — funicular analysis of masonry arches</title>
 <link rel="stylesheet" href="../css/ui-kit.css">
-<link rel="stylesheet" href="css/app.css?v=20261110-poleni">
+<link rel="stylesheet" href="css/app.css?v=20261112-context-help">
 </head>
 <body>
 
@@ -42,7 +42,7 @@
       <button class="tab" id="tabMech" role="tab">Mechanism</button>
     </div>
     <div class="pane" id="paneGeom">
-    <section>
+    <section data-area="project">
       <h2>Example</h2>
       <select id="example"></select>
       <button id="newWork">Start a new arch</button>
@@ -50,7 +50,7 @@
       <p id="scaleSource" class="meta scale-source" hidden></p>
       <p id="warn" class="warn" hidden></p>
     </section>
-    <section id="imageSection">
+    <section id="imageSection" data-area="image">
       <h2>Image and scale</h2>
       <label class="file">Load an image
         <input type="file" id="imageFile" accept="image/*">
@@ -78,7 +78,7 @@
       </label>
       <button id="applyImageRefScale" disabled>Apply distance scale</button>
     </section>
-    <section id="traceSection">
+    <section id="traceSection" data-area="generation">
       <h2>Block generation</h2>
       <div class="methodtabs" role="tablist">
         <button class="active method-draw" type="button" data-method="draw">Draw blocks</button>
@@ -88,7 +88,7 @@
         <button class="method-profile" type="button" data-method="profile">Trace whole profile</button>
       </div>
     </section>
-    <section>
+    <section data-area="properties">
       <h2>Block properties</h2>
       <label class="inline"><span id="gammaLabel">Unit weight kN/m³</span>
         <input type="number" id="gamma" min="0" step="0.5" value="20">
@@ -109,9 +109,9 @@
       <label class="inline">Region role
         <select id="regionRole"><option value="structure">Structure</option><option value="load">Load only</option><option value="fixed">Fixed boundary</option></select>
       </label>
-      <p class="hint">Load-only regions transmit dead weight vertically and follow their structural receivers in animation, without adding independent mechanism bodies. Fixed regions allow detachment and frictionless sliding, but prevent penetration.</p>
+      <p data-help-for="#regionRole" data-help-title="Region roles" class="hint">Load-only regions transmit dead weight vertically and follow their structural receivers in animation, without adding independent mechanism bodies. Fixed regions allow detachment and frictionless sliding, but prevent penetration.</p>
       <p id="regionStatus" class="meta"></p>
-      <p class="hint">New blocks occupy [Z, Z + thickness]. Groups sharing Z belong to the same layer.</p>
+      <p data-help-for="#blockZ" data-help-title="Z layers and thickness" class="hint">New blocks occupy [Z, Z + thickness]. Groups sharing Z belong to the same layer.</p>
       <label><input type="checkbox" id="showGroups"> Group colours</label>
       <label class="inline">Clear blocks in
         <select id="clearTarget"></select>
@@ -119,13 +119,13 @@
       <button id="clearBlocks" disabled>Clear blocks</button>
       <p id="groupStatus" class="meta">no groups yet</p>
     </section>
-    <section class="method-section" id="methodTrace" data-method-pane="trace" hidden>
+    <section class="method-section" id="methodTrace" data-method-pane="trace" hidden data-area="trace">
       <h2>Trace intrados/extrados</h2>
       <div class="row">
         <button id="traceInner">Trace intrados</button>
         <button id="traceOuter">Trace extrados</button>
       </div>
-      <p class="hint" id="traceHint">Click along a curve; double-click, or
+      <p data-help-for="#traceInner" data-help-title="Trace intrados and extrados" class="hint" id="traceHint">Click along a curve; double-click, or
         press Enter, to finish. Esc cancels.</p>
       <label class="inline"><span id="traceCountLabel">Blocks</span>
         <input type="number" id="nBlocks" min="1" max="200" value="16">
@@ -142,21 +142,21 @@
       <label class="inline" id="traceThicknessRow">Blocks through thickness
         <input type="number" id="traceThicknessBlocks" min="1" max="200" step="1" value="1">
       </label>
-      <p class="hint" id="traceThicknessHint">Equal divisions from intrados to extrados.
+      <p data-help-for="#traceThicknessBlocks" data-help-title="Blocks through thickness" class="hint" id="traceThicknessHint">Equal divisions from intrados to extrados.
         Without staggering: total blocks = blocks along the arch × blocks through thickness.</p>
       <div id="traceStaggerRow" hidden>
         <label class="inline"><input type="checkbox" id="traceStagger"> Stagger alternate layers</label>
         <label class="inline">Stagger (%)
           <input type="number" id="traceStaggerPercent" min="0" max="100" step="1" value="50" disabled>
         </label>
-        <p class="hint">50% = half a block. Shifted layers have shorter end blocks;
+        <p data-help-for="#traceStaggerPercent" data-help-title="Staggered layers" class="hint">50% = half a block. Shifted layers have shorter end blocks;
           0% and 100% align the joints. Click Generate blocks to apply.</p>
       </div>
       <label class="inline" id="subnormalWidthRow" hidden><span id="subnormalWidthLabel">Approx. block width</span>
         <input type="number" id="subnormalWidth" min="0" step="0.1"
           placeholder="automatic">
       </label>
-      <p class="hint">The traced curves remain editable until Clear curves.
+      <p data-help-for="#makeBlocks" data-help-title="Generate traced blocks" class="hint">The traced curves remain editable until Clear curves.
         With sub-normal courses, changing the approximate width updates an
         existing tessellation immediately.</p>
       <div class="row">
@@ -165,9 +165,9 @@
       </div>
       <p id="traceStatus" class="meta"></p>
     </section>
-    <section class="method-section" id="methodRing" data-method-pane="ring" hidden>
+    <section class="method-section" id="methodRing" data-method-pane="ring" hidden data-area="ring">
       <h2>Parametric circular arch</h2>
-      <p class="hint">An exact ring from its numbers, with no image to trace.
+      <p data-help-for="#makeRing" data-help-title="Parametric circular arch" class="hint">An exact ring from its numbers, with no image to trace.
         The published figures are computed on this ring: open the
         <b>t/ri</b> tab and press <b>Admissible band</b> to draw the band of
         admissible thrust against thickness, with the ends free and with the
@@ -184,7 +184,7 @@
       <button id="makeRing">Generate ring</button>
       <p id="ringStatus" class="meta">uses the unit weight and thickness above</p>
     </section>
-    <section class="method-section" id="methodThree" data-method-pane="three" hidden>
+    <section class="method-section" id="methodThree" data-method-pane="three" hidden data-area="three">
       <h2>3-point circular arch</h2>
       <div class="row">
         <button id="pickInnerArc">Pick 3 intrados points</button>
@@ -199,42 +199,42 @@
       </div>
       <p id="threePointRingStatus" class="meta">pick 3 intrados and 3 extrados points</p>
     </section>
-    <section class="method-section" id="methodProfile" data-method-pane="profile" hidden>
+    <section class="method-section" id="methodProfile" data-method-pane="profile" hidden data-area="profile">
       <h2>Trace a whole profile</h2>
       <div class="row">
         <button id="traceProfile">Trace an outline</button>
         <button id="clearProfiles">Clear</button>
       </div>
-      <p class="hint">For a section the two faces cannot describe: a filled
+      <p data-help-for="#traceProfile" data-help-title="Trace a whole profile" class="hint">For a section the two faces cannot describe: a filled
         haunch, a widening pier, or the two shells of a dome. Trace each closed
         outline in turn; the joints come from rays out of a picked centre, so
         every shell is cut at the same angles.</p>
       <label class="inline"><input type="checkbox" id="profileSnap" checked> Snap outline to existing nodes</label>
-      <p class="hint">A green square marks a node in the same layer. Click near it to use its exact coordinates; turn snapping off to place a point freely.</p>
+      <p data-help-for="#profileSnap" data-help-title="Snap to existing nodes" class="hint">A green square marks a node in the same layer. Click near it to use its exact coordinates; turn snapping off to place a point freely.</p>
       <button id="pickCutCentre">Pick the centre of the cuts</button>
       <label class="inline">Blocks
         <input type="number" id="nCuts" min="1" max="200" value="16">
       </label>
       <button id="cutProfile" disabled>Cut into blocks</button>
       <button id="cutLoadRegion" disabled>Subdivide load region from structure</button>
-      <p class="hint">For Load only: vertical cuts project the endpoints of the underlying structural upper faces onto the outline. Create the structure in the same Z layer first. Each strip transfers its weight vertically. A strip without a receiver is fused with adjacent load strips connected to the structure; isolated unsupported loads are reported.</p>
+      <p data-help-for="#cutLoadRegion" data-help-title="Subdivide a load region" class="hint">For Load only: vertical cuts project the endpoints of the underlying structural upper faces onto the outline. Create the structure in the same Z layer first. Each strip transfers its weight vertically. A strip without a receiver is fused with adjacent load strips connected to the structure; isolated unsupported loads are reported.</p>
       <p id="profileStatus" class="meta">no outline traced</p>
     </section>
 
-    <section class="method-section" id="methodDraw" data-method-pane="draw">
+    <section class="method-section" id="methodDraw" data-method-pane="draw" data-area="draw">
       <h2>Add a block</h2>
       <label class="inline">Sides
         <input type="number" id="nSides" min="3" max="24" value="4">
       </label>
       <button id="addBlock">Draw a block</button>
-      <p class="hint">Click the corners in turn. Useful for a pier, a fill, or
+      <p data-help-for="#addBlock" data-help-title="Draw a block" class="hint">Click the corners in turn. Useful for a pier, a fill, or
         anywhere the radial cut does not suit the shape. A click near a corner
         of a block already drawn snaps onto it &mdash; a green square shows
         which &mdash; so the two meet exactly and the joint between them can be
         recovered.</p>
     </section>
 
-    <section>
+    <section data-area="image">
       <h2>Scale</h2>
       <button id="pickRef">Pick a reference length</button>
       <label class="inline">is
@@ -249,10 +249,10 @@
       </div>
       <p id="measureStatus" class="meta">set the scale before measuring</p>
     </section>
-    <section id="domeSection">
+    <section id="domeSection" data-area="poleni">
       <h2>Dome slice &mdash; Poleni</h2>
       <label><input type="checkbox" id="poleni"> Treat the arch as a dome lune</label>
-      <p class="hint">A barrel vault cut into voussoirs gives blocks of constant
+      <p data-help-for="#poleni" data-help-title="Poleni dome slice" class="hint">A barrel vault cut into voussoirs gives blocks of constant
         width. A <em>dome</em> cut into lunes does not: each is bounded by two
         meridian planes, so it is broad at the major parallel and closes to
         nothing at the crown. The weights follow, and so does the line of
@@ -279,14 +279,14 @@
       <label class="inline"><span id="poleniChordLabel">Reference chord m</span>
         <input type="number" id="poleniChord" min="0" step="any">
       </label>
-      <p class="hint">c = 2R sin(Δα/2). R is common to all layers. Tapered sectors keep their opening; ribs keep a constant transverse width with parallel faces. Apply the settings before creating blocks.</p>
+      <p data-help-for="#applyAngularLayer" data-help-title="Angular layers and reference chord" class="hint">c = 2R sin(Δα/2). R is common to all layers. Tapered sectors keep their opening; ribs keep a constant transverse width with parallel faces. Apply the settings before creating blocks.</p>
       <button id="applyAngularLayer" type="button">Apply / add angular layer</button>
       <button id="activatePoleniLayers" type="button">Adopt angular layers for this project</button>
       <label class="inline">Copies including original
         <input type="number" id="repeatAngularCount" min="2" max="72" step="1" value="8">
       </label>
       <button id="repeatAngularLayer" type="button">Repeat selected layer around axis</button>
-      <p class="hint">Repeats its blocks and assigned loads. A section containing both sides already represents two opposite sectors; repeating it through 180° covers the dome once.</p>
+      <p data-help-for="#repeatAngularLayer" data-help-title="Repeat angular layers" class="hint">Repeats its blocks and assigned loads. A section containing both sides already represents two opposite sectors; repeating it through 180° covers the dome once.</p>
       <p id="angularStatus" class="meta"></p>
       </div>
       <label class="inline">Axis x
@@ -297,7 +297,7 @@
     </section>
     </div>
     <div class="pane" id="paneLot" hidden>
-    <section>
+    <section data-area="layers">
       <h2 id="layerHeading">Z layers</h2>
       <label class="inline">Calculate
         <select id="lotLayer"><option value="all">All — combined curve</option></select>
@@ -311,7 +311,7 @@
       <p id="layerStatus" class="meta"></p>
       <ul id="layerResults" class="layer-results"></ul>
     </section>
-    <section>
+    <section data-area="ends">
       <h2>Points A and B</h2>
       <label><input type="checkbox" id="imposeEnds"> Impose both ends</label>
       <div class="row">
@@ -319,12 +319,12 @@
         <button id="pickB">Pick B</button>
       </div>
       <p id="endsStatus" class="meta">not set &mdash; the ends follow the joints</p>
-      <p class="hint">With both ends imposed the thrust stays free and the other
+      <p data-help-for="#imposeEnds" data-help-title="Imposed ends A and B" class="hint">With both ends imposed the thrust stays free and the other
         two parameters become results: the pole's ordinate is whatever carries
         the line from A to B. The force polygon shows the construction &mdash;
         a trial pole, the closing error, the corrected pole.</p>
     </section>
-    <section>
+    <section data-area="forces">
       <h2>Applied forces</h2>
       <label class="inline"><span id="forceLayerLabel">Layer Z</span> <select id="forceLayer"></select></label>
       <label class="inline"><span id="forceLabelX">X kN</span>
@@ -337,11 +337,11 @@
         <button id="addForce">Add a force</button>
         <button id="clearForces">Clear</button>
       </div>
-      <p class="hint">Click where it acts. Y is positive downward; X is positive
+      <p data-help-for="#addForce" data-help-title="Applied forces and signs" class="hint">Click where it acts. Y is positive downward; X is positive
         to the right. The force joins the blocks in the same sequence.</p>
       <ul id="forceList" class="forces"></ul>
     </section>
-    <section>
+    <section data-area="equilibrium">
       <h2>Equilibrium state</h2>
       <label for="thrust">Horizontal thrust</label>
       <input id="thrust" type="range" min="0" max="100" step="0.01" value="50">
@@ -357,33 +357,33 @@
 
       <label for="thrustWidth">Thickness of the line</label>
       <input id="thrustWidth" type="range" min="0" max="100" value="30">
-      <p class="hint">The line of thrust is a band whose width is the force in
+      <p data-help-for="#thrustWidth" data-help-title="Thrust line width" class="hint">The line of thrust is a band whose width is the force in
         each segment, against the largest. This says how wide the largest is
         drawn &mdash; at nothing it is a bare line, which is what to use when
         the band would cover the joints it has to be read against.</p>
 
-      <p class="hint">Three numbers fix the line, and these are they: the pole&rsquo;s
+      <p data-help-for="#thrust" data-help-title="Equilibrium parameters" class="hint">Three numbers fix the line, and these are they: the pole&rsquo;s
         distance from the load line, which is the thrust; where the line leaves
         its springing joint; and how the total weight divides between the two
         reactions. Together they are the
         <em>&infin;<sup>3</sup></em> the tool exists to show. The last two need
         a traced arch, which has joints for the ends to slide along.</p>
     </section>
-    <section>
+    <section data-area="admissibility">
       <h2>Admissibility</h2>
       <p id="admissible" class="verdict">&mdash;</p>
-      <p class="hint">The thrust line must stay inside the ring. If it does,
+      <p data-help-for="[data-area=&quot;admissibility&quot;] > h2" data-help-title="Admissibility" class="hint">The thrust line must stay inside the ring. If it does,
         the safe theorem says the arch stands. A ring too thin at the
         mid-points of its end joints may still be admissible once those ends
         are free: the limit line runs through the <em>extrados</em> at both
         springings.</p>
     </section>
-      <section>
-        <h2>Hooke's cable</h2>
+      <section data-area="cable">
+      <h2>Hooke's cable</h2>
         <label><input type="checkbox" id="showCable2"> Show the hanging cable</label>
         <label for="cableWeights">Weight circles</label>
         <input id="cableWeights" type="range" min="0" max="100" value="0">
-        <p class="hint">A circle at each vertex with its area proportional to
+        <p data-help-for="#showCable2" data-help-title="Hooke’s cable and weight circles" class="hint">A circle at each vertex with its area proportional to
           the weight carried there: <b>blue for a voussoir</b>, <b>orange for a
           load you applied</b>, because the construction treats the two alike
           and the drawing should still say which is which. On a dome lune the
@@ -394,10 +394,10 @@
       </section>
     </div>
     <div class="pane" id="paneMech" hidden>
-    <section id="mechanismSection">
+    <section id="mechanismSection" data-area="mechanism">
       <h2>Mechanism</h2>
       <label><input type="checkbox" id="mechOn"> Drive from the thrust</label>
-      <p class="hint">The line of thrust cannot leave the ring: where it would,
+      <p data-help-for="#mechOn" data-help-title="Mechanism driven by thrust" class="hint">The line of thrust cannot leave the ring: where it would,
         it stays hooked at the intrados or the extrados between two voussoirs,
         and that point is a hinge. With this on, the thrust slider alone
         commands the line &mdash; the other two parameters are chosen to keep
@@ -412,11 +412,11 @@
       <p id="mechBand" class="meta"></p>
       <label id="mechAmpLabel" for="mechAmp">Displacement</label>
       <input id="mechAmp" type="range" min="0" max="100" value="0" disabled>
-      <p class="hint">For collapse mechanisms, displacement is a graphical amplification.
+      <p data-help-for="#mechAmpLabel" data-help-title="Displacement display" class="hint">For collapse mechanisms, displacement is a graphical amplification.
         For support settlement, the slider shows 0–100% of the assigned translation;
         the arch motion is a first-order visualization.</p>
     </section>
-    <section id="settlementSection">
+    <section id="settlementSection" data-area="settlement">
       <h2>Support settlement</h2>
       <label for="settlementSupport">Fixed boundary block</label>
       <select id="settlementSupport"></select>
@@ -437,22 +437,22 @@
         <button id="settlementClear" type="button">Clear hinges</button>
       </div>
       <p id="settlementStatus" class="verdict">Assign a translation to a fixed boundary block.</p>
-      <p class="hint">Choose the two support contacts and one or two internal hinges.
+      <p data-help-for="#settlementPick" data-help-title="Support settlement" class="hint">Choose the two support contacts and one or two internal hinges.
         The chosen support hinges follow their supports without slip. Other contacts may detach or slide without friction; initial penetration is forbidden.
         The displacement slider shows 0–100% of the assigned translation.
         This is a first-order compatibility study, with a rigid visualization:
         finite settlement, reactions and α₀ for moving supports are not calculated.
         With four hinges a free mode may remain; the displayed compatible motion is a minimum-norm representative.</p>
     </section>
-    <section id="alphaSection">
+    <section id="alphaSection" data-area="activation">
       <h2>Activation multiplier &alpha;<sub>0</sub></h2>
-      <p class="hint">Horizontal forces &alpha;&middot;W at the voussoir
+      <p data-help-for="#alphaFind" data-help-title="Activation multiplier α₀" class="hint">Horizontal forces &alpha;&middot;W at the voussoir
         centroids, in +x or &minus;x, added to the weights; applied forces are
         kept but not amplified. By virtual work, over every mechanism of four
         hinges at the ends of the joints, or over the four hinges you pick.
         The mechanism found from the line of thrust above is not used: its
         own line passes through its hinges, so its multiplier is zero.</p>
-      <p class="hint">For compatible Z layers, assume solidary motion and use a temporary equivalent layer: weights and moments add, with no relative sliding or detachment between layers. Original blocks remain editable; load regions follow their structural receivers in both views.</p>
+      <p data-help-for="#equivalentSelect" data-help-title="Solidary equivalent layer" class="hint">For compatible Z layers, assume solidary motion and use a temporary equivalent layer: weights and moments add, with no relative sliding or detachment between layers. Original blocks remain editable; load regions follow their structural receivers in both views.</p>
       <button id="equivalentSelect" type="button" disabled>Use solidary equivalent layer</button>
       <p id="equivalentStatus" class="meta"></p>
       <div class="row">
@@ -471,32 +471,32 @@
       <p id="alphaResult" class="verdict">&mdash;</p>
       <p id="alphaDetail" class="meta"></p>
       <p id="regionMotionStatus" class="meta"></p>
-      <p class="hint">Fixed-region contacts are checked at initiation for the four-hinge chain mechanisms searched here. This does not search arbitrary block assemblies or sliding collapse modes.</p>
+      <p data-help-for="#alphaFind" data-help-title="Activation multiplier α₀" class="hint">Fixed-region contacts are checked at initiation for the four-hinge chain mechanisms searched here. This does not search arbitrary block assemblies or sliding collapse modes.</p>
     </section>
-      <section>
-        <h2>Points A and B</h2>
+      <section data-area="ends">
+      <h2>Points A and B</h2>
         <label><input type="checkbox" id="imposeEnds2"> Impose both ends</label>
         <div class="row">
           <button id="pickA2">Pick A</button>
           <button id="pickB2">Pick B</button>
         </div>
-        <p class="hint">The same controls as in the LoT tab.</p>
+        <p data-help-for="#imposeEnds2" data-help-title="Imposed ends A and B" class="hint">The same controls as in the LoT tab.</p>
       </section>
-      <section>
-        <h2>Horizontal thrust</h2>
+      <section data-area="equilibrium">
+      <h2>Horizontal thrust</h2>
         <input id="thrustM" type="range" min="0" max="100" value="50">
         <p class="meta"><span id="thrustValueM">&mdash;</span></p>
-        <p class="hint">The same control as in the LoT tab, repeated here so the
+        <p data-help-for="#thrustM" data-help-title="Horizontal thrust" class="hint">The same control as in the LoT tab, repeated here so the
           mechanism can be driven without leaving it.</p>
       </section>
     </div>
-    <section>
+    <section data-area="project">
       <h2>Save and reopen</h2>
       <button id="saveState">Save work&hellip;</button>
       <button id="loadState">Reopen&hellip;</button>
       <input id="stateFile" type="file" accept=".json,application/json" hidden>
       <p id="saveStatus" class="meta">&mdash;</p>
-      <p class="hint">Writes everything &mdash; the traced curves, the blocks,
+      <p data-help-for="#saveState" data-help-title="Save and reopen" class="hint">Writes everything &mdash; the traced curves, the blocks,
         the applied forces, the scale, the background image and the equilibrium
         state &mdash; to one JSON file.</p>
     </section>
@@ -696,6 +696,6 @@ Plain text, with **bold**, *emph*, _underline_ and
     &middot; Giovanni Castellazzi, DICAM, University of Bologna</p>
 </footer>
 
-<script type="module" src="js/app.js?v=20261112-settlement"></script>
+<script type="module" src="js/app.js?v=20261112-context-help"></script>
 </body>
 </html>

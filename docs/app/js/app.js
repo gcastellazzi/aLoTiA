@@ -1,3 +1,4 @@
+import { installContextHelp } from './render/context-help.js';
 import { settlementMotion, settlementTransforms } from './core/settlement.js';
 import { figureFont, setFigureFont } from './render/fonts.js';
 /**
@@ -5159,6 +5160,7 @@ function traceStaggerPercent() {
 
 function reportTrace() {
   const t = state.trace;
+  ui.traceHint.classList.toggle('help-live', !!t.armed);
   const n = Number(ui.nBlocks.value) || 1;
   const bits = [`intrados ${t.inner.length} pts`,
     `extrados ${t.outer.length} pts`];
@@ -8156,3 +8158,6 @@ el('fontDialog').addEventListener('close', () => {
   }
   draw();
 });
+
+// Install after the controls are wired; copied help reads live descriptions.
+installContextHelp(document);

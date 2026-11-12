@@ -723,3 +723,74 @@ ul.forces .force-components select { width: auto; max-width: 100%; }
 #panel label.inline:has(> #poleniWidthMode) { display: block; }
 #panel label.inline select#poleniLayerSelect,
 #panel label.inline select#poleniWidthMode { display: block; width: 100%; margin-top: 4px; }
+
+/* Functional groups: restrained colour supports the labels, never replaces them. */
+main { grid-template-columns: 300px minmax(0, 1fr); }
+#panel { padding: 10px; }
+#panel > .tabs { top: -10px; padding-top: 10px; }
+#panel section[data-area] {
+  --area-bg: #f5f7f8; --area-edge: #cbd5dc;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in srgb, var(--area-edge) 60%, white);
+  border-left: 3px solid var(--area-edge);
+  border-radius: 8px;
+  background: var(--area-bg);
+}
+#panel section[data-area] h2 { color: #405652; letter-spacing: 1px; }
+#panel section[data-area="image"],
+#panel section[data-area="draw"],
+#panel section[data-area="ends"],
+#panel section[data-area="settlement"] { --area-bg: #eff5fb; --area-edge: #b5cce2; }
+#panel section[data-area="properties"],
+#panel section[data-area="equilibrium"],
+#panel section[data-area="admissibility"] { --area-bg: #eff7f2; --area-edge: #b5d2c2; }
+#panel section[data-area="trace"] { --area-bg: #f1f7eb; --area-edge: #c3d6ad; }
+#panel section[data-area="ring"],
+#panel section[data-area="layers"],
+#panel section[data-area="activation"] { --area-bg: #f5f1f9; --area-edge: #d0bfdf; }
+#panel section[data-area="three"],
+#panel section[data-area="mechanism"] { --area-bg: #fcf2ed; --area-edge: #e3c5b4; }
+#panel section[data-area="forces"],
+#panel section[data-area="poleni"],
+#panel section[data-area="cable"] { --area-bg: #faf6eb; --area-edge: #dfd0a7; }
+#panel .meta { margin-top: 4px; line-height: 1.4; }
+#panel .meta:empty { display: none; }
+
+/* The original prose stays live for tracing updates, but occupies no space
+   until requested. An active tracing instruction is intentionally visible. */
+#panel [data-help-for]:not(.help-live) { display: none; }
+#panel .help-live { margin-top: 6px; padding: 6px; background: #fff; border-radius: 4px; }
+.help-control { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 3px 0; }
+.help-control > :first-child { flex: 1 1 auto; min-width: 0; margin-top: 0; margin-bottom: 0; }
+#panel .help-control > .row { width: 100%; margin: 0; }
+#panel .help-control > h2 { margin-bottom: 0; }
+#panel button.context-help-button {
+  flex: 0 0 26px; width: 26px; height: 26px; min-height: 26px;
+  padding: 0; margin: 0;
+  border: 1px solid #a9bdb7; border-radius: 50%;
+  background: #ffffffd9; color: #3b6359;
+  line-height: 24px; font-size: 13px; font-weight: 600;
+  text-align: center; cursor: pointer;
+}
+#panel button.context-help-button:hover,
+#panel button.context-help-button[aria-expanded="true"] { background: #e3f0e9; border-color: #588b7b; }
+#panel button.context-help-button:focus-visible { outline: 2px solid #327e6c; outline-offset: 2px; }
+.context-help-dialog {
+  width: min(440px, calc(100vw - 32px)); max-height: 80vh;
+  padding: 18px; border: 1px solid #b9cdc4; border-radius: 12px;
+  color: var(--foreground); background: var(--surface);
+  box-shadow: 0 12px 48px #143b2a26;
+}
+.context-help-dialog::backdrop { background: #122c2545; }
+.context-help-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.context-help-header h2 { margin: 2px 0 0; font-size: 16px; line-height: 1.4; }
+.context-help-header button { flex: 0 0 auto; }
+.context-help-body { font-size: 13px; line-height: 1.65; }
+.context-help-body p { margin: 12px 0 0; }
+.blockgroups { background: #f1f7f4; border-radius: 8px; padding: 10px; }
+
+@media (max-width: 900px) {
+  main { display: block; }
+}
+#panel section[data-area] .row button { font-size: 12px; padding: 4px 6px; }
